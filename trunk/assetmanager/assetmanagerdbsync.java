@@ -1,0 +1,209 @@
+import com.peregrine.ac.api.*;
+import com.peregrine.ac.AmException;
+import java.util.*;
+import java.util.regex.*;
+
+class AMDB extends DB
+{
+	private long amconn = 0;
+	private String username;
+	private static AMDB instance;
+
+	class DBOper extends DB.DBOper
+	{
+		private int pos = 0;
+		private XML[] rowresult;
+
+		public DBOper(String name,String sql,List<String> list) throws Exception
+		{
+			if (list == null || list.size() == 0)
+				init(name,sql);
+			else
+			{
+				Matcher matcher = replacementPattern.matcher(sql);
+				StringBuffer sb = new StringBuffer();
+				int x = 0;
+				while(matcher.find())
+				{
+					if (x >= list.size()) throw new AdapterException("Too many replacement characters");
+					matcher.appendReplacement(sb,Matcher.quoteReplacement(getValue(list.get(x))));
+					x++;
+				}
+				if (x < list.size()) throw new AdapterException("Not enough replacement characters");
+				matcher.appendTail(sb);
+				init(name,sb.toString());
+			}
+		}
+
+		public DBOper(String name,String sql) throws Exception
+		{
+			init(name,sql);
+		}
+
+		private void init(String name,String sql) throws Exception
+		{
+			if (Misc.isLog(10)) Misc.log("AQL: " + sql);
+
+			if (sql.startsWith("select") || sql.startsWith("SELECT"))
+			{
+				String out = AmApi.AmQuery(amconn,sql,0,0,true);
+				StringBuffer sb = new StringBuffer(out);
+				XML xml = new XML(sb);
+
+				XML[] columnlist = xml.getElement("Schema").getElements("Column");
+				columnnames = new String[columnlist.length];
+				for(int i = 0;i < columnlist.length;i++)
+				{
+					int index = new Integer(columnlist[i].getAttribute("Index"));
+					columnnames[index] = columnlist[i].getAttribute("Name");
+				}
+
+				rowresult = xml.getElement("Result").getElements("Row");
+				if (Misc.isLog(15)) Misc.log("Number of entries returned: " + rowresult.length);
+				return;
+			}
+
+			try
+			{
+				AmApi.AmDbExecAql(amconn,sql);
+			}
+			catch(AmException ex)
+			{
+				String message = ex.getMessage();
+				if (message.indexOf("Impossible de changer de type de gestion") != -1) // TODO: Add English translation
+				{
+					throw new AdapterException(message + ": unique constraint");
+				}
+
+				Misc.rethrow(ex);
+			}
+		}
+
+		public Hashtable<String,String> next() throws Exception
+		{
+			if (rowresult == null || pos >= rowresult.length) return null;
+
+			Hashtable<String,String> row = new Hashtable<String,String>();
+
+			for(int i = 0;i < columnnames.length;i++)
+			{
+				String value = rowresult[pos].getValueByPath("Column[@Index='"+i+"']");
+				if (value == null) value = "";
+				row.put(columnnames[i],value);
+			}
+
+			pos++;
+			return row;
+		}
+
+		public void close() throws Exception
+		{
+		}
+	}
+
+	private AMDB() throws Exception
+	{
+		System.out.print("Connection to AM... ");
+		XML xml = javaadapter.getConfiguration().getElementByPath("/configuration/connection[@type='am']");
+		if (xml == null) throw new AdapterException("No connection element with type 'am' specified");
+
+		String instance = xml.getValue("instance");
+		username = xml.getValue("username");
+		String password = xml.getValueCrypt("password");
+		if (password == null) password = "";
+
+		amconn = AmApi.AmGetConnection(instance,username,password,"");
+		if (amconn == 0)
+			throw new AdapterException(xml,"AM connection paramaters are incorrect");
+		AmApi.AmAuthenticateUser(amconn,username,password);
+		System.out.println("Done");
+	}
+
+	public String getDate(String value) throws Exception
+	{
+		return "#" + value + "#";
+	}
+
+	public String getValue(String value) throws Exception
+	{
+		if (value == null) return "null";
+		if (value.matches("\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}"))
+			return getDate(value);
+		value = value.replace("'","''");
+		value = value.replace("\r","");
+		value = value.replace("\n","' + chr(13) + chr(10) + '");
+		return "'" + value + "'";
+	}
+
+	public synchronized static AMDB getInstance() throws Exception
+        {
+		if (instance == null)
+		{
+			instance = new AMDB();
+			javaadapter.setForShutdown(instance);
+		}
+		return instance;
+	}
+
+	public ArrayList<Hashtable<String,String>> execsql(String conn,String sql) throws Exception
+	{
+		return execsql(conn,sql,null);
+	}
+
+	public ArrayList<Hashtable<String,String>> execsql(String conn,String sql,List<String> list) throws Exception
+	{
+		DBOper oper = null;
+		ArrayList<Hashtable<String,String>> result = null;
+
+		oper = new DBOper(conn,sql,list);
+		result = new ArrayList<Hashtable<String,String>>();
+		Hashtable<String,String> row;
+
+		while((row = oper.next()) != null)
+			result.add(row);
+
+		if (Misc.isLog(result.size() > 0 ? 9 : 10)) Misc.log("AQL result [" + conn + "]: " + result);
+
+		return result;
+	}
+}
+
+class AssetManagerUpdateSubscriber extends DatabaseUpdateSubscriber
+{
+	private UpdateSQL update;
+	private AMDB db;
+
+	public AssetManagerUpdateSubscriber() throws Exception
+	{
+		db = AMDB.getInstance();
+		update = new UpdateSQL(db);
+		update.setQuoteField("");
+	}
+
+	protected void oper(XML xmldest,XML xmloper) throws Exception
+	{
+		try
+		{
+			update.oper(xmldest,xmloper);
+		}
+		catch(AmException ex)
+		{
+			if (stoponerror) Misc.rethrow(ex);
+			Misc.log("ERROR: " + ex.getMessage() + Misc.CR + "XML message was: " + xmloper);
+		}
+	}
+}
+
+public class assetmanagerdbsync
+{
+	public static void main(String[] args) throws Exception
+	{
+		long amconn = AmApi.AmGetConnection("db","Admin","Optimum987","");
+		if (amconn == 0)
+			throw new AdapterException("AM connection paramaters are incorrect");
+
+		String result = AmApi.AmQuery(amconn,"select Name,ComputerDesc from amComputer where AssetTag like 'PC112%'",0,0,true);
+		System.out.println("Query " + result);
+		AmApi.AmDbExecAql(amconn,"update amComputer set ComputerDesc = 'test' where AssetTag = 'PC112811'");
+	}
+}

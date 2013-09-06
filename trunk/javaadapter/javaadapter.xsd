@@ -1,0 +1,694 @@
+<?xml version="1.0" encoding="ISO-8859-1"?>
+<xs:schema
+xmlns:xs="http://www.w3.org/2001/XMLSchema"
+xmlns="http://schemas.hp.com/adapter"
+targetNamespace="http://schemas.hp.com/adapter"
+elementFormDefault="qualified">
+
+<xs:simpleType name="yesno">
+	<xs:restriction base="xs:string">
+		<xs:enumeration value="yes"/>
+		<xs:enumeration value="no"/>
+	</xs:restriction>
+</xs:simpleType>
+
+<xs:simpleType name="ratetypes">
+	<xs:restriction base="xs:string">
+		<xs:enumeration value="start"/>
+	</xs:restriction>
+</xs:simpleType>
+
+<xs:simpleType name="resulttypes">
+	<xs:restriction base="xs:string">
+		<xs:enumeration value="merge"/>
+		<xs:enumeration value="transparent"/>
+		<xs:enumeration value="last"/>
+	</xs:restriction>
+</xs:simpleType>
+
+<xs:simpleType name="publishertypes">
+	<xs:restriction base="xs:string">
+		<xs:enumeration value="jms"/>
+		<xs:enumeration value="soapoper"/>
+		<xs:enumeration value="soap"/>
+		<xs:enumeration value="exec"/>
+		<xs:enumeration value="file"/>
+		<xs:enumeration value="direct"/>
+		<xs:enumeration value="ldap"/>
+	</xs:restriction>
+</xs:simpleType>
+
+<xs:simpleType name="exectypes"> <!-- dbsynclugin -->
+	<xs:restriction base="xs:string">
+		<xs:enumeration value="exec"/>
+		<xs:enumeration value="db"/>
+		<xs:enumeration value="xml"/>
+	</xs:restriction>
+</xs:simpleType>
+
+<xs:simpleType name="httptypes">
+	<xs:restriction base="xs:string">
+		<xs:enumeration value="get"/>
+		<xs:enumeration value="post"/>
+		<xs:enumeration value="both"/>
+	</xs:restriction>
+</xs:simpleType>
+
+<xs:simpleType name="fieldtypes"> <!-- dbsynclugin -->
+	<xs:restriction base="xs:string">
+		<xs:enumeration value="key"/>
+		<xs:enumeration value="info"/>
+		<xs:enumeration value="initial"/>
+	</xs:restriction>
+</xs:simpleType>
+
+<xs:simpleType name="readertypes"> <!-- dbsynclugin -->
+	<xs:restriction base="xs:string">
+		<xs:enumeration value="db"/>
+		<xs:enumeration value="csv"/>
+		<xs:enumeration value="ldap"/>
+		<xs:enumeration value="xml"/>
+		<xs:enumeration value="soap"/>
+		<xs:enumeration value="class"/>
+	</xs:restriction>
+</xs:simpleType>
+
+<xs:simpleType name="lookuptypes">
+	<xs:restriction base="xs:string">
+		<xs:enumeration value="db"/> <!-- dbsynclugin -->
+		<xs:enumeration value="soap"/>
+	</xs:restriction>
+</xs:simpleType>
+
+<xs:simpleType name="connectiontypes"> <!-- dbsynclugin -->
+	<xs:restriction base="xs:string">
+		<xs:enumeration value="am"/> <!-- assetmanagerplugin -->
+		<xs:enumeration value="ucmdb"/> <!-- ucmdbreader -->
+		<xs:enumeration value="db"/>
+	</xs:restriction>
+</xs:simpleType>
+
+<xs:simpleType name="ondupstypes"> <!-- dbsynclugin -->
+	<xs:restriction base="xs:string">
+		<xs:enumeration value="ignore"/>
+		<xs:enumeration value="error"/>
+		<xs:enumeration value="recreate"/> <!-- Not supported for source element -->
+		<xs:enumeration value="merge"/>
+	</xs:restriction>
+</xs:simpleType>
+
+<xs:simpleType name="onnotfoundtypes"> <!-- dbsynclugin -->
+	<xs:restriction base="xs:string">
+		<xs:enumeration value="warning"/>
+		<xs:enumeration value="error"/>
+		<xs:enumeration value="ignore"/>
+		<xs:enumeration value="exception"/>
+		<xs:enumeration value="reject_record"/> <!-- Field element -->
+		<xs:enumeration value="reject_field"/> <!-- Field element -->
+	</xs:restriction>
+</xs:simpleType>
+
+<xs:simpleType name="xpath">
+	<xs:restriction base="xs:string"/>
+</xs:simpleType>
+
+<xs:simpleType name="crypted">
+	<xs:restriction base="xs:string"/>
+</xs:simpleType>
+
+<xs:simpleType name="ignorecasetypes"> <!-- dbsynclugin -->
+	<xs:restriction base="xs:string">
+		<xs:enumeration value="true"/>
+		<xs:enumeration value="false"/>
+		<xs:enumeration value="keys_only"/>
+		<xs:enumeration value="non_keys_only"/>
+	</xs:restriction>
+</xs:simpleType>
+
+<xs:attributeGroup name="operation"> <!-- dbsynclugin -->
+	<xs:attribute name="do_add" type="xs:boolean" default="true"/>
+	<xs:attribute name="do_remove" type="xs:boolean" default="true"/>
+	<xs:attribute name="do_update" type="xs:boolean" default="true"/>
+	<xs:attribute name="ignore_case" type="ignorecasetypes" default="false"/>
+</xs:attributeGroup>
+
+<xs:attributeGroup name="result">
+	<xs:attribute name="result_type" type="resulttypes" default="last"/>
+</xs:attributeGroup>
+
+<xs:attributeGroup name="activate">
+	<xs:attribute name="activate" type="yesno" default="yes"/>
+	<xs:attribute name="activate_hostname" type="xs:string"/>
+</xs:attributeGroup>
+
+<xs:attributeGroup name="filter">
+	<xs:attribute name="filter" type="xpath"/>
+	<xs:attribute name="filter_result" type="xs:boolean" default="true"/>
+</xs:attributeGroup>
+
+<xs:complexType name="simplestring">
+	<xs:simpleContent>
+		<xs:extension base="xs:string">
+			<xs:attributeGroup ref="activate"/>
+			<xs:attributeGroup ref="filter"/>
+			<xs:attributeGroup ref="result"/>
+		</xs:extension>
+	</xs:simpleContent>  
+</xs:complexType>
+
+<xs:complexType name="simplestringcrypted">
+	<xs:simpleContent>
+		<xs:extension base="crypted">
+			<xs:attributeGroup ref="activate"/>
+		</xs:extension>
+	</xs:simpleContent>  
+</xs:complexType>
+
+<xs:complexType name="simpleinteger">
+	<xs:simpleContent>
+		<xs:extension base="xs:integer">
+			<xs:attributeGroup ref="activate"/>
+			<xs:attributeGroup ref="filter"/>
+			<xs:attributeGroup ref="result"/>
+		</xs:extension>
+	</xs:simpleContent>  
+</xs:complexType>
+
+<xs:complexType name="simplestringfile">
+	<xs:simpleContent>
+		<xs:extension base="xs:string">
+			<xs:attribute name="filename" type="xs:string"/>
+			<xs:attributeGroup ref="activate"/>
+		</xs:extension>
+	</xs:simpleContent>  
+</xs:complexType>
+
+<xs:complexType name="anyxml">
+	<xs:sequence>
+		<xs:any processContents="skip"/>
+	</xs:sequence>
+	<xs:attribute name="filename" type="xs:string"/>
+	<xs:attributeGroup ref="activate"/>
+	<xs:attributeGroup ref="filter"/>
+	<xs:attributeGroup ref="result"/>
+</xs:complexType>
+
+<xs:complexType name="lookup">
+	<xs:sequence><xs:choice minOccurs="0" maxOccurs="unbounded">
+		<xs:element name="sql" type="simplestringfile"/> <!-- dbsyncplugin -->
+		<xs:element name="request">
+			<xs:complexType>
+				<xs:complexContent>
+					<xs:extension base="anyxml">
+						<xs:attribute name="ns" type="xs:anyURI"/>
+						<xs:attribute name="name" type="xs:string"/>
+						<xs:attribute name="setvaluepath" type="xs:string"/>
+					</xs:extension>
+				</xs:complexContent>
+			</xs:complexType>
+		</xs:element>
+		<xs:element name="valuepath">
+			<xs:complexType>
+				<xs:attribute name="get" type="xpath"/>
+				<xs:attribute name="set" type="xpath"/>
+				<xs:attributeGroup ref="activate"/>
+			</xs:complexType>
+		</xs:element>
+		<xs:element name="extractfield">
+			<xs:complexType>
+				<xs:attribute name="tagname" type="xs:string"/>
+				<xs:attribute name="getresultpath" type="xs:string"/>
+				<xs:attribute name="getresultvaluepath" type="xs:string"/>
+				<xs:attribute name="getresultvaluepathame" type="xs:string"/>
+			</xs:complexType>
+		</xs:element>
+		<xs:element name="publisher" type="publisher"/>
+	</xs:choice></xs:sequence>
+	<xs:attribute name="getsourcevaluepath" type="xs:string"/>
+	<xs:attribute name="type" type="lookuptypes"/>
+	<xs:attribute name="exception" type="xs:boolean" default="true"/>
+	<xs:attribute name="instance" type="xs:string"/> <!-- dbsyncplugin -->
+	<xs:attributeGroup ref="activate"/>
+	<xs:attributeGroup ref="filter"/>
+	<xs:attributeGroup ref="result"/>
+</xs:complexType>
+
+<xs:complexType name="simplelookup"> <!-- dbsyncplugin -->
+	<xs:complexContent>
+		<xs:extension base="read">
+		</xs:extension>
+	</xs:complexContent>
+</xs:complexType>
+
+<xs:complexType name="exec" mixed="true">
+	<xs:sequence>
+		<xs:element name="function" type="function" minOccurs="0" maxOccurs="unbounded"/>
+	</xs:sequence>
+	<xs:attribute name="type" type="exectypes" default="exec"/>
+	<xs:attribute name="instance" type="xs:string"/> <!-- dbsyncplugin -->
+	<xs:attribute name="charset" type="xs:string"/>
+	<xs:attribute name="filename" type="xs:string"/>
+	<xs:attributeGroup ref="activate"/>
+</xs:complexType>
+
+<xs:complexType name="read" mixed="true"> <!-- dbsyncplugin -->
+	<xs:sequence>
+		<xs:element name="extractsql" type="simplestringfile" minOccurs="0" maxOccurs="unbounded"/>
+	</xs:sequence>
+	<xs:attribute name="name" type="xs:string"/>
+	<xs:attribute name="type" type="readertypes"/>
+	<xs:attribute name="fields" type="xs:string"/>
+	<xs:attribute name="sort_fields" type="xs:string"/>
+	<xs:attribute name="instance" type="xs:string"/>
+	<xs:attribute name="keyfield" type="xs:string"/>
+	<xs:attribute name="sorted" type="xs:boolean" default="false"/>
+	<xs:attribute name="enclosure" type="xs:string" default='"'/>
+	<xs:attribute name="delimiter" type="xs:string" default=","/>
+	<xs:attribute name="header" type="xs:boolean" default="true"/>
+	<xs:attribute name="charset" type="xs:string"/>
+	<xs:attribute name="filename" type="xs:string"/>
+	<xs:attribute name="class" type="xs:string"/>
+	<xs:attribute name="url" type="xs:anyURI"/>
+	<xs:attribute name="username" type="xs:string"/>
+	<xs:attribute name="password" type="xs:string"/>
+	<xs:attribute name="basedn" type="xs:string"/>
+	<xs:attribute name="query" type="xs:string"/>
+	<xs:attribute name="root" type="xs:string"/>
+	<xs:attribute name="context" type="xs:string"/>
+	<xs:attribute name="resultpathrow" type="xs:string"/>
+	<xs:attribute name="resultpathcolumn" type="xs:string"/>
+	<xs:attributeGroup ref="activate"/>
+</xs:complexType>
+
+<xs:complexType name="publisher">
+	<xs:attribute name="type" type="publishertypes" default="jms"/>
+	<xs:attribute name="name" type="xs:string" use="required"/>
+	<xs:attribute name="username" type="xs:string"/>
+	<xs:attribute name="password" type="crypted"/>
+	<xs:attribute name="url" type="xs:anyURI"/>
+	<xs:attribute name="wsdl" type="xs:anyURI"/>
+	<xs:attribute name="command" type="xs:string"/>
+	<xs:attribute name="filename" type="xs:string"/>
+	<xs:attribute name="action" type="xs:string"/>
+	<xs:attribute name="request" type="xs:string"/>
+	<xs:attribute name="basedn" type="xs:string"/>
+	<xs:attribute name="fields" type="xs:string"/>
+	<xs:attribute name="operation" type="xs:string"/>
+	<xs:attribute name="port" type="xs:string"/>
+	<xs:attribute name="charset" type="xs:string" default="UTF-8"/>
+	<xs:attributeGroup ref="activate"/>
+</xs:complexType>
+
+<xs:complexType name="sorttable"> <!-- dbsyncplugin -->
+	<xs:attribute name="name" type="xs:string" use="required"/>
+	<xs:attribute name="instance" type="xs:string" use="required"/>
+	<xs:attributeGroup ref="activate"/>
+</xs:complexType>
+
+<xs:complexType name="function">
+	<xs:sequence><xs:choice minOccurs="0" maxOccurs="unbounded">
+		<xs:element name="function" type="function"/>
+		<xs:element name="element" type="anyxml"/>
+		<xs:element name="lookup" type="lookup"/>
+		<xs:element name="sleep" type="simpleinteger"/>
+		<xs:element name="transformation" type="simplestring"/>
+		<xs:element name="valuepath">
+			<xs:complexType>
+				<xs:attribute name="get" type="xpath" use="required"/>
+				<xs:attribute name="set" type="xpath" use="required"/>
+				<xs:attributeGroup ref="activate"/>
+				<xs:attributeGroup ref="filter"/>
+				<xs:attributeGroup ref="result"/>
+			</xs:complexType>
+		</xs:element>
+		<xs:element name="splitpath">
+			<xs:complexType>
+				<xs:attribute name="path" type="xpath" use="required"/>
+				<xs:attribute name="value" type="xs:string" use="required"/>
+				<xs:attribute name="name" type="xs:string" default="value"/>
+				<xs:attributeGroup ref="activate"/>
+				<xs:attributeGroup ref="filter"/>
+				<xs:attributeGroup ref="result"/>
+			</xs:complexType>
+		</xs:element>
+		<xs:element name="attributepath">
+			<xs:complexType>
+				<xs:attribute name="get" type="xpath" use="required"/>
+				<xs:attribute name="set" type="xpath" use="required"/>
+				<xs:attribute name="name" type="xs:string" use="required"/>
+				<xs:attributeGroup ref="activate"/>
+				<xs:attributeGroup ref="filter"/>
+				<xs:attributeGroup ref="result"/>
+			</xs:complexType>
+		</xs:element>
+		<xs:element name="addpath">
+			<xs:complexType>
+				<xs:attribute name="path" type="xpath"/>
+				<xs:attribute name="value" type="xs:string"/>
+				<xs:attribute name="name" type="xs:string" use="required"/>
+				<xs:attributeGroup ref="activate"/>
+				<xs:attributeGroup ref="filter"/>
+				<xs:attributeGroup ref="result"/>
+			</xs:complexType>
+		</xs:element>
+		<xs:element name="removepath">
+			<xs:complexType>
+				<xs:attribute name="path" type="xpath" use="required"/>
+				<xs:attributeGroup ref="activate"/>
+				<xs:attributeGroup ref="filter"/>
+				<xs:attributeGroup ref="result"/>
+			</xs:complexType>
+		</xs:element>
+		<xs:element name="variablepath">
+			<xs:complexType>
+				<xs:attribute name="name" type="xs:string" use="required"/>
+				<xs:attribute name="path" type="xpath"/>
+				<xs:attributeGroup ref="activate"/>
+				<xs:attributeGroup ref="filter"/>
+				<xs:attributeGroup ref="result"/>
+			</xs:complexType>
+		</xs:element>
+		<xs:element name="log">
+			<xs:complexType>
+				<xs:simpleContent>
+					<xs:extension base="xs:string">
+						<xs:attribute name="level" default="1">
+							<xs:simpleType>
+								<xs:union memberTypes="xs:integer">
+									<xs:simpleType>
+										<xs:restriction base="xs:token">
+											<xs:enumeration value="exception"/>
+										</xs:restriction>
+									</xs:simpleType>
+								</xs:union>
+							</xs:simpleType>
+						</xs:attribute>
+						<xs:attribute name="dumpfilename" type="xs:string"/>
+						<xs:attribute name="append" type="xs:boolean" default="false"/>
+						<xs:attribute name="charset" type="xs:string" default="false"/>
+						<xs:attributeGroup ref="activate"/>
+						<xs:attributeGroup ref="filter"/>
+						<xs:attributeGroup ref="result"/>
+					</xs:extension>
+				</xs:simpleContent>
+			</xs:complexType>
+		</xs:element>
+		<xs:element name="rate">
+			<xs:complexType>
+				<xs:attribute name="oper" type="ratetypes"/>
+				<xs:attribute name="level" type="xs:integer" default="1"/>
+				<xs:attributeGroup ref="activate"/>
+				<xs:attributeGroup ref="filter"/>
+				<xs:attributeGroup ref="result"/>
+			</xs:complexType>
+		</xs:element>
+		<xs:element name="publisher">
+			<xs:complexType>
+				<xs:complexContent>
+					<xs:extension base="publisher">
+						<xs:attributeGroup ref="filter"/>
+						<xs:attributeGroup ref="result"/>
+					</xs:extension>
+				</xs:complexContent>
+			</xs:complexType>
+		</xs:element>
+	</xs:choice></xs:sequence>
+	<xs:attribute name="name" type="xs:string"/>
+	<xs:attribute name="for_sync" type="xs:string"/>
+	<xs:attributeGroup ref="activate"/>
+	<xs:attributeGroup ref="filter"/>
+	<xs:attributeGroup ref="result"/>
+</xs:complexType>
+
+<xs:complexType name="fieldclass">
+	<xs:all>
+		<xs:element name="lookup" minOccurs="0">
+			<xs:complexType>
+				<xs:complexContent>
+					<xs:extension base="simplelookup">
+						<xs:attribute name="use_key_when_not_found" type="xs:boolean" default="false"/>
+						<xs:attribute name="on_not_found" type="onnotfoundtypes" default="exception"/>
+					</xs:extension>
+				</xs:complexContent>
+			</xs:complexType>
+		</xs:element>
+		<xs:element name="default_lookup" type="simplelookup" minOccurs="0"/>
+		<xs:element name="exclude_lookup" type="simplelookup" minOccurs="0"/>
+		<xs:element name="include_lookup" type="simplelookup" minOccurs="0"/>
+		<xs:element name="script" type="xs:string" minOccurs="0"/>
+	</xs:all>
+	<xs:attribute name="name" type="xs:string" use="required"/>
+	<xs:attribute name="rename" type="xs:string"/>
+	<xs:attribute name="copy" type="xs:string"/>
+	<xs:attribute name="strip" type="xs:boolean" default="false"/>
+	<xs:attribute name="type" type="fieldtypes"/>
+	<xs:attribute name="default" type="xs:string"/>
+	<xs:attribute name="on_not_found" type="onnotfoundtypes" default="ignore"/>
+	<xs:attribute name="for_sync" type="xs:string"/>
+	<xs:attributeGroup ref="activate"/>
+	<xs:attributeGroup ref="filter"/>
+</xs:complexType>
+
+<xs:complexType name="functionclass">
+	<xs:sequence>
+		<xs:element name="dir" type="simplestring" minOccurs="0"/> <!-- queuedirplugin -->
+
+		<xs:element name="class" minOccurs="0" maxOccurs="unbounded">
+			<xs:complexType>
+				<xs:simpleContent>
+					<xs:extension base="xs:string">
+						<xs:attribute name="name" type="xs:string"/>
+						<xs:attributeGroup ref="filter"/>
+						<xs:attributeGroup ref="activate"/>
+					</xs:extension>
+				</xs:simpleContent>  
+			</xs:complexType>
+		</xs:element>
+		<xs:element name="function" type="function" minOccurs="0" maxOccurs="unbounded"/>
+	</xs:sequence>
+	<xs:attributeGroup ref="activate"/>
+</xs:complexType>
+
+<xs:element name="configuration">
+	<xs:complexType>
+		<xs:sequence><xs:choice minOccurs="0" maxOccurs="unbounded">
+			<xs:element name="logfile">
+				<xs:complexType>
+					<xs:simpleContent>
+						<xs:extension base="xs:string">
+							<xs:attribute name="level" type="xs:integer" default="1"/>
+							<xs:attribute name="maxsize" type="xs:integer" default="0"/>
+							<xs:attribute name="charset" type="xs:string"/>
+							<xs:attributeGroup ref="activate"/>
+						</xs:extension>
+					</xs:simpleContent>  
+				</xs:complexType>
+			</xs:element>
+
+			<xs:element name="property">
+				<xs:complexType>
+					<xs:simpleContent>
+						<xs:extension base="simplestringcrypted">
+							<xs:attribute name="name" type="xs:string" use="required"/>
+						</xs:extension>
+					</xs:simpleContent>  
+				</xs:complexType>
+			</xs:element>
+
+			<xs:element name="default">
+				<xs:complexType>
+					<xs:simpleContent>
+						<xs:extension base="xs:string">
+							<xs:attribute name="attribute" type="xs:string"/>
+							<xs:attribute name="name" type="xs:string"/>
+							<xs:attribute name="value" type="xs:string"/>
+							<xs:attribute name="tagname" type="xs:string"/>
+							<xs:attributeGroup ref="activate"/>
+							<xs:attributeGroup ref="filter"/>
+						</xs:extension>
+					</xs:simpleContent>  
+				</xs:complexType>
+			</xs:element>
+
+			<xs:element name="connection"> <!-- dbsyncplugin -->
+				<xs:complexType>
+					<xs:sequence><xs:choice minOccurs="0" maxOccurs="unbounded">
+						<xs:element name="driver" type="simplestring" default="oracle.jdbc.driver.OracleDriver"/>
+						<xs:element name="url" type="simplestring"/>
+						<xs:element name="initsql" type="simplestringfile"/>
+						<xs:element name="username" type="simplestring"/>
+						<xs:element name="instance" type="simplestring"/>
+						<xs:element name="password" type="simplestringcrypted"/>
+						<xs:element name="server" type="simplestring"/>
+						<xs:element name="protocol" type="simplestring"/>
+						<xs:element name="port" type="simpleinteger" default="1521"/>
+					</xs:choice></xs:sequence>
+					<xs:attribute name="name" type="xs:string" use="required"/>
+					<xs:attribute name="type" type="connectiontypes" default="db"/>
+					<xs:attributeGroup ref="activate"/>
+				</xs:complexType>
+			</xs:element>
+
+			<xs:element name="testing"> <!-- testingplugin -->
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="reporting">
+							<xs:complexType>
+								<xs:attribute name="type" type="xs:string"/>
+								<xs:attribute name="filename" type="xs:string"/>
+								<xs:attribute name="charset" type="xs:string"/>
+							</xs:complexType>
+						</xs:element>
+					</xs:sequence>
+					<xs:attribute name="filename" type="xs:string"/>
+					<xs:attributeGroup ref="activate"/>
+				</xs:complexType>
+			</xs:element>
+
+			<xs:element name="jms">
+				<xs:complexType>
+					<xs:sequence><xs:choice minOccurs="0" maxOccurs="unbounded">
+						<xs:element name="context" type="simplestring" default="weblogic.jndi.WLInitialContextFactory"/>
+						<xs:element name="connectionfactory" type="simplestring"/>
+						<xs:element name="url" type="simplestring"/>
+						<xs:element name="username" type="simplestring"/>
+						<xs:element name="password" type="simplestring"/>
+						<xs:element name="topic">
+							<xs:complexType>
+								<xs:complexContent>
+									<xs:extension base="functionclass">
+										<xs:attribute name="name" type="xs:string" use="required"/>
+										<xs:attribute name="clientid" type="xs:string"/>
+										<xs:attribute name="exceptiondelay" type="xs:integer" default="60"/>
+									</xs:extension>
+								</xs:complexContent>  
+							</xs:complexType>
+						</xs:element>
+					</xs:choice></xs:sequence>
+					<xs:attributeGroup ref="activate"/>
+				</xs:complexType>
+			</xs:element>
+
+			<xs:element name="soapserver">
+				<xs:complexType>
+					<xs:complexContent>
+						<xs:extension base="functionclass">
+							<xs:sequence><xs:choice minOccurs="0" maxOccurs="unbounded">
+								<xs:element name="fileserver" type="simplestring"/>
+							</xs:choice></xs:sequence>
+							<xs:attribute name="port" type="xs:string"/> <!-- soapserverstandalone -->
+							<xs:attribute name="username" type="xs:string"/>
+							<xs:attribute name="password" type="crypted"/>
+							<xs:attribute name="keystore" type="xs:string"/> <!-- soapserverstandalone -->
+							<xs:attribute name="passphrase" type="crypted" default="changeit"/> <!-- soapserverstandalone -->
+							<xs:attribute name="type" type="httptypes" default="post"/>
+						</xs:extension>
+					</xs:complexContent>
+				</xs:complexType>
+			</xs:element>
+
+			<xs:element name="subscriber">
+				<xs:complexType>
+					<xs:complexContent>
+						<xs:extension base="functionclass">
+							<xs:attribute name="name" type="xs:string" use="required"/>
+						</xs:extension>
+					</xs:complexContent>
+				</xs:complexType>
+			</xs:element>
+
+			<xs:element name="hook">
+				<xs:complexType>
+					<xs:complexContent>
+						<xs:extension base="functionclass">
+							<xs:attribute name="interval" type="xs:string"/>
+						</xs:extension>
+					</xs:complexContent>
+				</xs:complexType>
+			</xs:element>
+
+			<xs:element name="dbsyncsorttable" type="sorttable"/> <!-- dbsyncplugin -->
+			<xs:element name="dbsync"> <!-- dbsyncplugin -->
+				<xs:complexType>
+					<xs:sequence><xs:choice minOccurs="0" maxOccurs="unbounded">
+						<xs:element name="dbsyncsorttable" type="sorttable"/>
+						<xs:element name="preexec" type="exec"/>
+						<xs:element name="field" type="fieldclass"/>
+						<xs:element name="element_function" type="function"/>
+						<xs:element name="source" minOccurs="1">
+							<xs:complexType><xs:complexContent mixed="true"><xs:extension base="read">
+								<xs:sequence><xs:choice minOccurs="0" maxOccurs="unbounded">
+									<xs:element name="field" type="fieldclass"/>
+									<xs:element name="dbsyncsorttable" type="sorttable"/>
+									<xs:element name="remotefilter" type="simplestring"/>
+									<xs:element name="preextractsql" type="simplestringfile"/>
+									<xs:element name="extractsql" type="simplestringfile"/>
+									<xs:element name="read" type="read"/>
+									<xs:element name="element" type="anyxml"/>
+									<xs:element name="function" type="function"/>
+									<xs:element name="element_function" type="function"/>
+								</xs:choice></xs:sequence>
+								<xs:attribute name="filter" type="xs:string"/>
+								<xs:attribute name="dumpcsvfilename" type="xs:string"/>
+								<xs:attribute name="on_duplicates" type="ondupstypes" default="merge"/>
+								<xs:attribute name="on_duplicates_fields" type="xs:string"/>
+								<xs:attribute name="on_not_found" type="onnotfoundtypes" default="exception"/>
+								<xs:attributeGroup ref="operation"/>
+							</xs:extension></xs:complexContent></xs:complexType>
+						</xs:element>
+						<xs:element name="destination">
+							<xs:complexType><xs:complexContent mixed="true"><xs:extension base="read">
+								<xs:sequence><xs:choice minOccurs="0" maxOccurs="unbounded">
+									<xs:element name="field" type="fieldclass"/>
+									<xs:element name="dbsyncsorttable" type="sorttable"/>
+									<xs:element name="preextractsql" type="simplestringfile"/>
+									<xs:element name="extractsql" type="simplestringfile"/>
+									<xs:element name="read" type="read"/>
+									<xs:element name="element" type="anyxml"/>
+									<xs:element name="function" type="function"/>
+									<xs:element name="preinsertsql" type="simplestringfile"/>
+									<xs:element name="postinsertsql" type="simplestringfile"/>
+									<xs:element name="customaddsql" type="simplestringfile"/>
+									<xs:element name="customupdatesql" type="simplestringfile"/>
+									<xs:element name="customremovesql" type="simplestringfile"/>
+									<xs:element name="element_function" type="function"/>
+								</xs:choice></xs:sequence>
+								<xs:attribute name="table" type="xs:string"/>
+								<xs:attribute name="filter" type="xs:string"/>
+								<xs:attribute name="dumpcsvfilename" type="xs:string"/>
+								<xs:attribute name="stop_on_error" type="xs:boolean" default="false"/>
+								<xs:attribute name="on_duplicates" type="ondupstypes" default="recreate"/>
+								<xs:attribute name="merge_fields" type="xs:string"/>
+								<xs:attribute name="ignore_fields" type="xs:string"/>
+								<xs:attributeGroup ref="operation"/>
+								<!-- archivage -->
+								<xs:attribute name="reftable" type="xs:string"/>
+								<xs:attribute name="refendtime" type="xs:string"/>
+								<xs:attribute name="refkey" type="xs:string"/>
+								<xs:attribute name="key" type="xs:string"/>
+								<xs:attribute name="id" type="xs:string"/>
+								<xs:attribute name="time" type="xs:string"/>
+								<xs:attribute name="endtime" type="xs:string"/>
+							</xs:extension></xs:complexContent></xs:complexType>
+						</xs:element>
+						<xs:element name="publisher" type="publisher"/>
+						<xs:element name="postexec" type="exec"/>
+					</xs:choice></xs:sequence>
+					<xs:attribute name="name" type="xs:string" use="required"/>
+					<xs:attribute name="keyfield" type="xs:string" use="required"/>
+					<xs:attribute name="root" type="xs:string" default="ISMDatabaseUpdate"/>
+					<xs:attribute name="maxqueuelength" type="xs:integer" default="100"/>
+					<xs:attributeGroup ref="operation"/>
+					<xs:attributeGroup ref="activate"/>
+				</xs:complexType>
+			</xs:element>
+
+			<xs:element name="queuedir" type="functionclass"/> <!-- queuedirplugin -->
+
+			<xs:element name="publisher" type="publisher"/>
+		</xs:choice></xs:sequence>
+		<xs:attribute name="exitwhencomplete" type="xs:boolean" default="false"/>
+	</xs:complexType>
+</xs:element>
+
+</xs:schema>
