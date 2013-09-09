@@ -90,6 +90,7 @@ class XML
 	private void init() throws Exception
 	{
 		SAXParserFactory factory = SAXParserFactory.newInstance();
+		factory.setXIncludeAware(true);
 		parser = factory.newSAXParser();
 		DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
 		DocumentBuilder db = dbf.newDocumentBuilder();

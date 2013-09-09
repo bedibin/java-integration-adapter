@@ -1,4 +1,5 @@
 import java.util.*;
+import java.util.regex.*;
 import java.text.SimpleDateFormat;
 import com.hp.ucmdb.api.*;
 import com.hp.ucmdb.api.view.*;
@@ -11,10 +12,11 @@ class Ucmdb
 {
 	private static Ucmdb instance;
 	private UcmdbService service;
-	public static SimpleDateFormat dateformat = new SimpleDateFormat(Misc.DATEFORMAT);
+	public static SimpleDateFormat dateformat;
 
 	private Ucmdb() throws Exception
 	{
+		dateformat = new SimpleDateFormat(Misc.DATEFORMAT);
 		dateformat.setTimeZone(TimeZone.getTimeZone("GMT"));
 
 		System.out.print("Connection to UCMDB... ");
@@ -29,7 +31,7 @@ class Ucmdb
 		String password = xml.getValueCrypt("password");
 
 		UcmdbServiceProvider serviceProvider = UcmdbServiceFactory.getServiceProvider(protocol,host,port);
-		ClientContext clientContext = serviceProvider.createClientContext("uCMDBAdapter");
+		ClientContext clientContext = serviceProvider.createClientContext("uCMDBAdapter:"+javaadapter.getName());
 		Credentials credentials = serviceProvider.createCredentials(username,password);
 		service = serviceProvider.connect(credentials,clientContext);
 		System.out.println("Done");
@@ -55,6 +57,23 @@ class Ucmdb
 		if (instance == null)
 			instance = new Ucmdb();
 		return instance;
+	}
+
+	static final Pattern causedbypattern = Pattern.compile("Caused by:\\s.*?:\\s+(\\S.+)$",Pattern.MULTILINE);
+
+	public static String cleanupException(Exception ex)
+	{
+		String error = ex.getMessage();
+		Matcher matcher = causedbypattern.matcher(error);
+		HashSet<String> causes = new HashSet<String>();
+		while(matcher.find())
+		{
+			String cause = matcher.group(1);
+			causes.add(cause);
+		}
+
+		if (causes.size() == 0) return error;
+		return Misc.implode(causes);
 	}
 }
 
@@ -231,7 +250,7 @@ class ReaderUCMDB implements Reader
 	}
 }
 
-class UCMDBUpdateSubscriber extends Subscriber
+class UCMDBUpdateSubscriber extends UpdateSubscriber
 {
 	private TopologyUpdateService update;
 	private TopologyUpdateFactory factory;
@@ -239,7 +258,15 @@ class UCMDBUpdateSubscriber extends Subscriber
 	private Hashtable<String,Type> attrtypes = new Hashtable<String,Type>();
 	private Ucmdb ucmdb;
 
-	private void FillUpdateData(TopologyModificationData data,XML xml,String prefix,boolean dosub) throws Exception
+	public UCMDBUpdateSubscriber() throws Exception
+	{
+		ucmdb = Ucmdb.getInstance();
+		update = ucmdb.getUpdate();
+		factory = update.getFactory();
+		classmodel = ucmdb.getClassModel();
+	}
+
+	private void FillUpdateData(TopologyModificationData data,XML xml,String prefix,boolean isdelete) throws Exception
 	{
 		String citype = xml.getValue(prefix == null ? "INFO" : prefix + ":INFO");
 		if (citype == null) throw new AdapterException("INFO field not found. Set it to CI type");
@@ -259,6 +286,15 @@ class UCMDBUpdateSubscriber extends Subscriber
 		{
 			String type = field.getAttribute("type");
 			if (type != null && type.equals("info")) continue;
+			if (type != null && isdelete && !type.equals("key")) continue;
+
+			XML old = field.getElement("oldvalue");
+			if (type != null && old != null)
+			{
+				String oldvalue = old.getValue();
+				if (type.equals("initial") && oldvalue != null) continue;
+			}
+
 			String tagname = field.getTagName();
 			String suffix = tagname;
 			if (prefix != null)
@@ -273,8 +309,8 @@ class UCMDBUpdateSubscriber extends Subscriber
 			if (suffix.equals("END1")) continue;
 			if (suffix.equals("END2")) continue;
 
-			if (suffix.equals(":INFO") && dosub)
-				FillUpdateData(data,xml,tagname.substring(0,tagname.length()-5),dosub);
+			if (suffix.equals(":INFO") && !isdelete)
+				FillUpdateData(data,xml,tagname.substring(0,tagname.length()-5),isdelete);
 			else if (suffix.indexOf(':') == -1)
 			{
 				Type attrtype = attrtypes.get(citype + ":" + suffix);
@@ -296,7 +332,7 @@ class UCMDBUpdateSubscriber extends Subscriber
 					try {
 					ci.setLongProperty(suffix,new Long(value));
 					} catch (NumberFormatException ex) {
-					Misc.log("ERROR: Cannot convert '" + value + "' for field '" + suffix + "' into a float: " + xml);
+					Misc.log("ERROR: Cannot convert '" + value + "' for field '" + suffix + "' into a long: " + xml);
 					}
 					break;
 				case ENUM:
@@ -307,6 +343,7 @@ class UCMDBUpdateSubscriber extends Subscriber
 					Misc.log("ERROR: Cannot convert '" + value + "' for field '" + suffix + "' into an integer: " + xml);
 					}
 					break;
+				case LIST:
 				case STRING:
 					ci.setStringProperty(suffix,value);
 					break;
@@ -329,49 +366,52 @@ class UCMDBUpdateSubscriber extends Subscriber
 	private void add(XML xml) throws Exception
 	{
 		TopologyModificationData data = factory.createTopologyModificationData();
-		FillUpdateData(data,xml,null,true);
+		FillUpdateData(data,xml,null,false);
 		update.create(data,CreateMode.UPDATE_EXISTING);
 	}
 
-	private void remove(XML xml) throws Exception
+	private void remove(XML xmldest,XML xml) throws Exception
 	{
 		TopologyModificationData data = factory.createTopologyModificationData();
-		FillUpdateData(data,xml,null,false);
+		XML[] customs = xmldest.getElements("customremove");
+		for(XML custom:customs)
+		{
+			String name = custom.getAttribute("name");
+			if (name == null) throw new AdapterException(custom,"Attribute 'name' required");
+			String value = custom.getAttribute("value");
+			if (value == null) value = "";
+			xml.add(name,value);
+			if (Misc.isLog(10)) Misc.log("Updating " + name + " with value " + value + " instead of deleting: " + xml);
+			FillUpdateData(data,xml,null,true);
+			update.update(data);
+			return;
+		}
+		
+		FillUpdateData(data,xml,null,true);
 		update.delete(data,DeleteMode.IGNORE_NON_EXISTING);
 	}
 
 	private void update(XML xml) throws Exception
 	{
 		TopologyModificationData data = factory.createTopologyModificationData();
-		FillUpdateData(data,xml,null,true);
+		FillUpdateData(data,xml,null,false);
 		update.update(data);
 	}
 
-	public XML run(XML xml) throws Exception
+	@Override
+	protected void oper(XML xmldest,XML xmloper) throws Exception
 	{
-		ucmdb = Ucmdb.getInstance();
-		update = ucmdb.getUpdate();
-		factory = update.getFactory();
-		classmodel = ucmdb.getClassModel();
-
-		XML[] xmloperlist = xml.getElements(null);
-		for(XML xmloper:xmloperlist)
+		String oper = xmloper.getTagName();
+		try
 		{
-			if (javaadapter.isShuttingDown()) return null;
-			String oper = xmloper.getTagName();
-			try
-			{
-				if (oper.equals("add")) add(xmloper);
-				else if (oper.equals("remove")) remove(xmloper);
-				else if (oper.equals("update")) update(xmloper);
-			} catch(Exception ex) {
-				Misc.rethrow(ex,"UCMDB API error while processing: " + xmloper);
-			}
+			if (oper.equals("add")) add(xmloper);
+			else if (oper.equals("remove")) remove(xmldest,xmloper);
+			else if (oper.equals("update")) update(xmloper);
+		} catch(ExecutionException ex) {
+			if (stoponerror) Misc.rethrow(ex);
+			Misc.log("ERROR: " + Ucmdb.cleanupException(ex) + ": " + xmloper);
+		} catch(Exception ex) {
+			Misc.rethrow(ex,"UCMDB API error while processing: " + xmloper);
 		}
-
-		XML result = new XML();
-		result.add("ok");
-
-		return result;
 	}
 }

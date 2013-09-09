@@ -64,6 +64,7 @@ public final class JavaAdapterServlet extends HttpServlet
 		out.close();
 	}
 
+	@Override
 	public void doGet(HttpServletRequest request,HttpServletResponse response) throws IOException,ServletException
 	{
 
@@ -134,6 +135,7 @@ public final class JavaAdapterServlet extends HttpServlet
 		write(response,"html","<html><head><title>Test</title></head><body>Java Adapter servlet is working</body></html>");
 	}
 
+	@Override
 	public void doPost(HttpServletRequest request,HttpServletResponse response) throws IOException,ServletException
 	{
 		String path = request.getServletPath();

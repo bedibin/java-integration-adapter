@@ -79,6 +79,7 @@ class AMDB extends DB
 			}
 		}
 
+		@Override
 		public Hashtable<String,String> next() throws Exception
 		{
 			if (rowresult == null || pos >= rowresult.length) return null;
@@ -119,11 +120,15 @@ class AMDB extends DB
 		System.out.println("Done");
 	}
 
+	@Override
 	public String getDate(String value) throws Exception
 	{
-		return "#" + value + "#";
+		// AM API requires local time and a special syntax
+		Date date = gmtdateformat.parse(value);
+		return "#" + Misc.dateformat.format(date) + "#";
 	}
 
+	@Override
 	public String getValue(String value) throws Exception
 	{
 		if (value == null) return "null";
@@ -145,11 +150,13 @@ class AMDB extends DB
 		return instance;
 	}
 
+	@Override
 	public ArrayList<Hashtable<String,String>> execsql(String conn,String sql) throws Exception
 	{
 		return execsql(conn,sql,null);
 	}
 
+	@Override
 	public ArrayList<Hashtable<String,String>> execsql(String conn,String sql,List<String> list) throws Exception
 	{
 		DBOper oper = null;
@@ -180,6 +187,7 @@ class AssetManagerUpdateSubscriber extends DatabaseUpdateSubscriber
 		update.setQuoteField("");
 	}
 
+	@Override
 	protected void oper(XML xmldest,XML xmloper) throws Exception
 	{
 		try

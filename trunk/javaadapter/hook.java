@@ -72,6 +72,7 @@ class Hook extends Operation
 		super(function);
 	}
 
+	@Override
 	public void run()
 	{
 		try

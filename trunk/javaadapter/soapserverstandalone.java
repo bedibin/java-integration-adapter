@@ -110,11 +110,13 @@ class SoapServerStandAlone extends SoapServer implements HttpHandler
 		rawSend(exchange,200,"text/html",html);
 	}
 
+	@Override
 	public void handle(HttpExchange exchange) throws IOException
 	{
 		String path = exchange.getRequestURI().getPath();
 		String method = exchange.getRequestMethod().toUpperCase();
 		String pathcontext = exchange.getHttpContext().getPath();
+		Headers headers = exchange.getRequestHeaders();
 
 		if (!path.startsWith(pathcontext)) return;
 		path = path.substring(pathcontext.length());
@@ -127,7 +129,6 @@ class SoapServerStandAlone extends SoapServer implements HttpHandler
 
 			if ("POST".equals(method))
 			{
-				Headers headers = exchange.getRequestHeaders();
 				String type =  headers.get("Content-type").get(0);
 				Misc.log("Type: " + type);
 				Pattern pat = Pattern.compile("boundary=((?:[^; ])+)");
@@ -242,7 +243,26 @@ class SoapServerStandAlone extends SoapServer implements HttpHandler
 			return;
 		}
 
-		InputStream in = exchange.getRequestBody();
+		if (Misc.isLog(30)) for(Map.Entry<String,List<String>> entry:headers.entrySet())
+			Misc.log("HTTP Headers " + entry.getKey() + ": " + entry.getValue());
+
+		String charset = "utf-8";
+		List<String> typelist = headers.get("Content-Type");
+		if (typelist == null) typelist = headers.get("Content-type");
+		if (typelist != null)
+		{
+			String contenttype = typelist.get(0);
+			if (Misc.isLog(30)) Misc.log("Content type: " + contenttype);
+			Pattern pat = Pattern.compile("(?<=charset=)[^;]*");
+			Matcher m = pat.matcher(contenttype);
+			if (m.find())
+				charset = m.group(0);
+		}
+
+		if (Misc.isLog(30)) Misc.log("Using charset: " + charset);
+
+		InputStreamReader in = new InputStreamReader(exchange.getRequestBody(),charset);
+		//InputStream in = exchange.getRequestBody();
 		StringBuilder sb = new StringBuilder();
 		int ch = in.read();
 		while(ch != -1)
@@ -250,6 +270,7 @@ class SoapServerStandAlone extends SoapServer implements HttpHandler
 			sb.append((char)ch);
 			ch = in.read();
 		}
+		if (Misc.isLog(30)) Misc.log("RAW HTTP Data: " + sb.toString());
 
 		try
 		{
@@ -260,7 +281,6 @@ class SoapServerStandAlone extends SoapServer implements HttpHandler
 				action = path.substring(1);
 			else if (issoap && "/soap".equals(path) && (httptype == null || !httptype.equals("get")))
 			{
-				Headers headers = exchange.getRequestHeaders();
 				List<String> list = headers.get("SOAPAction");
 				if (list != null)
 					action = list.get(0).replaceAll("^\"","").replaceAll("\"$","");

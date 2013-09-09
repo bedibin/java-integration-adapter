@@ -99,7 +99,7 @@ class DBSyncOper
 
 			if (oper == null)
 			{
-				String sql = "select key,value from " + tablename + db.getorderby(conn,new String[]{"key"});
+				String sql = "select key,value from " + tablename + db.getorderby(conn,new String[]{"key"},ignorecasekeys);
 				oper = db.makesqloper(conn,sql);
 			}
 
@@ -249,17 +249,9 @@ class DBSyncOper
 			boolean issorted = sorted != null && sorted.equals("true");
 			if (!issorted)
 			{
-				/* This sort was tested with Oracle and MySQL. It works at least
-				   when default DB collation is available or when ASCII 7-bit is used */
 				sql = "select * from (" + sql + ") d1";
-				String concatsql = "''";
-				for(String keyfield:fields.getKeys())
-				{
-					concatsql = "{fn concat(" + concatsql + ",replace(\"" + keyfield + "\",' ','!'))}";
-					concatsql = "{fn concat(" + concatsql + ",'!')}";
-				}
 				Set<String> keys = fields.getKeys();
-				sql += db.getorderby(conn,keys.toArray(new String[keys.size()]));
+				sql += db.getorderby(conn,keys.toArray(new String[keys.size()]),ignorecasekeys);
 			}
 
 
@@ -485,10 +477,14 @@ class DBSyncOper
 		private String filterresult;
 		private boolean iskey = false;
 		private Preload preloadinfo;
+
 		private HashSet<String> excludetable;
 		private Set<String> excludefields;
+		private boolean excludefield;
 		private HashSet<String> includetable;
 		private Set<String> includefields;
+		private boolean includeexcludefield;
+
 		private String onnotfound;
 		private String synclist[];
 		private Scope scope;
@@ -591,25 +587,46 @@ class DBSyncOper
 				table.add(keyvalue);
 			}
 
+			String scope = xml.getAttribute("exclude_scope");
+			boolean onfield = false;
+			if (scope != null && scope.equals("field"))
+				onfield = true;
+
 			if (def)
 			{
 				includefields = fields;
 				includetable = table;
+				includeexcludefield = onfield;
 			}
 			else
 			{
 				excludefields = fields;
 				excludetable = table;
+				excludefield = onfield;
 			}
 		}
 
-		public boolean isInclude(Hashtable<String,String> result) throws Exception
+		public boolean isIncludeRecord(Hashtable<String,String> result) throws Exception
 		{
+			if (includeexcludefield) return true;
 			return isInLookup(result,includetable,includefields,true);
 		}
 
-		public boolean isExclude(Hashtable<String,String> result) throws Exception
+		public boolean isExcludeRecord(Hashtable<String,String> result) throws Exception
 		{
+			if (excludefield) return false;
+			return isInLookup(result,excludetable,excludefields,false);
+		}
+
+		public boolean isIncludeField(Hashtable<String,String> result) throws Exception
+		{
+			if (!includeexcludefield) return true;
+			return isInLookup(result,includetable,includefields,true);
+		}
+
+		public boolean isExcludeField(Hashtable<String,String> result) throws Exception
+		{
+			if (!excludefield) return false;
 			return isInLookup(result,excludetable,excludefields,false);
 		}
 
@@ -872,11 +889,17 @@ class DBSyncOper
 
 					if (Misc.isLog(30)) Misc.log("Field: " + name + " is valid");
 
-					if (field.isExclude(result) || !field.isInclude(result))
+					if (field.isExcludeRecord(result) || !field.isIncludeRecord(result))
 					{
 						result = null;
 						break;
 					}
+					if (field.isExcludeField(result) || !field.isIncludeField(result))
+					{
+						result.remove(name);
+						continue;
+					}
+
 					if (Misc.isLog(30)) Misc.log("Field: " + name + " is not excluded");
 
 					if (value != null && !"".equals(value))
@@ -994,6 +1017,19 @@ class DBSyncOper
 						doFunction(result,function);
 				}
 
+				if (ignoreallemptyfields)
+				{
+					for(Iterator<Map.Entry<String,String>> it = result.entrySet().iterator();it.hasNext();)
+					{
+						Map.Entry<String,String> entry = it.next();
+						if ("".equals(entry.getValue()) && !keyfields.contains(entry.getKey()))
+						{
+							if (Misc.isLog(30)) Misc.log("Removing empty entry " + entry.getKey());
+							it.remove();
+						}
+					}
+				}
+
 				if (result.isEmpty())
 				{
 					if (Misc.isLog(30)) Misc.log("REJECTED because empty");
@@ -1040,11 +1076,14 @@ class DBSyncOper
 	private Fields fields;
 	private Fields fieldssource;
 	private Fields fieldsdestination;
+
+	// Global flags
 	private boolean doadd;
 	private boolean doremove;
 	private boolean doupdate;
 	private boolean ignorecasekeys;
 	private boolean ignorecasefields;
+	private boolean ignoreallemptyfields;
 
 	public DBSyncOper() throws Exception
 	{
@@ -1130,7 +1169,6 @@ class DBSyncOper
 
 		XML xml = new XML();
 		XML xmlop = xml.add(oper);
-		xmlop.setAttribute("position","" + (counter.add + counter.remove + counter.update));
 
 		ArrayList<String> destinationheader = destinationsync.getHeader();
 		Set<String> keyset = new HashSet<String>(destinationheader);
@@ -1189,7 +1227,8 @@ class DBSyncOper
 			{
 				String oldvalue = rowold.get(key);
 				if (oldvalue == null) oldvalue = "";
-				if (!newvalue.equals(oldvalue) && (!isinfo || oldvalue.length() > 0))
+				boolean issame = ignorecasefields ? oldvalue.equalsIgnoreCase(newvalue) : oldvalue.equals(newvalue);
+				if (!issame && (!isinfo || oldvalue.length() > 0))
 				{
 					if (oldvalue.indexOf("\n") == -1)
 						xmlrow.add("oldvalue",oldvalue);
@@ -1198,6 +1237,51 @@ class DBSyncOper
 				}
 			}
 		}
+
+		String keys = null;
+		String changes = null;
+		for(XML entry:xml.getElements())
+		{
+			String tag = entry.getTagName();
+			String value = entry.getValue();
+			if (value == null) value = "";
+			String type = entry.getAttribute("type");
+			if ("key".equals(type))
+				keys = keys == null ? value : keys + "," + value;
+			else if ("info".equals(type))
+				;
+			else if ("update".equals(oper))
+			{
+				XML old = entry.getElement("oldvalue");
+				if (old != null)
+				{
+					String oldvalue = old.getValue();
+					boolean initial = "initial".equals(type);
+					if (!initial || ("initial".equals(type) && oldvalue == null))
+					{
+						if (oldvalue == null) oldvalue = "";
+						String text = tag + "[" + oldvalue + "->" + value + "]";
+						changes = changes == null ? text : changes + ", " + text;
+					}
+				}
+			}
+			else
+			{
+				String text = tag + ":" + value;
+				changes = changes == null ? text : changes + ", " + text;
+			}
+			
+		}
+		if ("update".equals(oper) && changes == null) return;
+		if (Misc.isLog(2))
+		{
+			String prevkeys = Misc.getKeyValue(fields.getKeys(),row);
+			Misc.log(oper + ": " + prevkeys + " " + changes);
+		}
+		if ("update".equals(oper)) counter.update++;
+		else if ("add".equals(oper)) counter.add++;
+		else if ("remove".equals(oper)) counter.remove++;
+		xmlop.setAttribute("position","" + (counter.add + counter.remove + counter.update));
 
 		if (directmode)
 		{
@@ -1214,8 +1298,7 @@ class DBSyncOper
 	private void remove(Hashtable<String,String> row) throws Exception
 	{
 		if (!doremove) return;
-		if (Misc.isLog(2)) Misc.log("remove: " + row);
-		counter.remove++;
+		if (Misc.isLog(4)) Misc.log("quick_remove: " + row);
 		push("remove",row,null);
 	}
 
@@ -1223,15 +1306,14 @@ class DBSyncOper
 	{
 		if (!doadd) return;
 		if (destinationsync == null) return;
-		if (Misc.isLog(2)) Misc.log("add: " + row);
-		counter.add++;
+		if (Misc.isLog(4)) Misc.log("quick_add: " + row);
 		push("add",row,null);
 	}
 
 	private void update(Hashtable<String,String> rowold,Hashtable<String,String> rownew) throws Exception
 	{
 		if (!doupdate) return;
-		if (Misc.isLog(2))
+		if (Misc.isLog(4))
 		{
 			String delta = null;
 			for(String key:rownew.keySet())
@@ -1240,7 +1322,7 @@ class DBSyncOper
 				if (newvalue == null) newvalue = "";
 				String oldvalue = rowold.get(key);
 				if (oldvalue == null) oldvalue = "";
-				if (!(ignorecasefields ? oldvalue.equalsIgnoreCase(newvalue) : oldvalue.equals(newvalue)))
+				if (!oldvalue.equals(newvalue))
 				{
 					if (delta != null) delta += ", ";
 					else delta = "";
@@ -1248,9 +1330,8 @@ class DBSyncOper
 				}
 			}
 
-			Misc.log("update: " + Misc.getKeyValue(fields.getKeys(),rownew) + " " + delta);
+			Misc.log("quick_update: " + Misc.getKeyValue(fields.getKeys(),rownew) + " " + delta);
 		}
-		counter.update++;
 		push("update",rownew,rowold);
 	}
 
@@ -1261,7 +1342,7 @@ class DBSyncOper
 
 		for(String keyfield:fields.getKeys())
 			/* Use exclamation mark since it is the lowest ASCII character */
-			key += row.get(keyfield).replace(' ','!') + "!";
+			key += row.get(keyfield).replace(' ','!').replace('_','!') + "!";
 
 		return key;
 	}
@@ -1346,7 +1427,7 @@ class DBSyncOper
 			if (tobreak) break;
 			counter.total++;
 
-			if (Misc.isLog(15)) Misc.log("Key source: " + sourcekey + " dest: " + destkey);
+			if (Misc.isLog(5)) Misc.log("Key source: " + sourcekey + " dest: " + destkey);
 
 			if (rowdest != null && (row == null || (ignorecasekeys ? db.collator.compareIgnoreCase(sourcekey,destkey) : db.collator.compare(sourcekey,destkey)) > 0))
 			{
@@ -1368,7 +1449,7 @@ class DBSyncOper
 				continue;
 			}
 
-			if (row != null && (ignorecasefields ? sourcekey.equalsIgnoreCase(destkey) : sourcekey.equals(destkey)))
+			if (row != null && (ignorecasekeys ? db.collator.compareIgnoreCase(sourcekey,destkey) : db.collator.compare(sourcekey,destkey)) == 0)
 			{
 				for(String key:destinationsync.getHeader())
 				{
@@ -1460,6 +1541,8 @@ class DBSyncOper
 		if (result != null) doremove = result.booleanValue();
 		result = getOperationFlag(xml,"do_update");
 		if (result != null) doupdate = result.booleanValue();
+		result = getOperationFlag(xml,"ignore_empty");
+		if (result != null) ignoreallemptyfields = result.booleanValue();
 
 		String casestr = xml.getAttribute("ignore_case");
 		if (casestr != null)
@@ -1599,6 +1682,12 @@ class DBSyncOper
 					fieldsxml = destinations[k].getElements("field");
 					for(XML field:fieldsxml) fields.add(field,Scope.SCOPE_DESTINATION);
 
+					doadd = doupdate = doremove = true;
+					ignoreallemptyfields = ignorecasekeys = ignorecasefields = false;
+					setOperationFlags(xmlsync);
+					setOperationFlags(source);
+					setOperationFlags(destinations[k]);
+
 					try
 					{
 						sourcesync = getSync(source,destinations[k],xmlsource);
@@ -1624,12 +1713,6 @@ class DBSyncOper
 							throw new AdapterException("Invalid on_not_found attribute",source);
 					}
 					destinationsync = getSync(destinations[k],source,xmlsource);
-
-					doadd = doupdate = doremove = true;
-					ignorecasekeys = ignorecasefields = false;
-					setOperationFlags(xmlsync);
-					setOperationFlags(source);
-					setOperationFlags(destinations[k]);
 
 					compare();
 

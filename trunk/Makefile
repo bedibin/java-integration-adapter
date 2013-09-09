@@ -1,7 +1,6 @@
 DIR =	javaadapter \
 	dbsyncplugin \
 	queuedirplugin \
-	servicemanager \
 	servlet \
 	assetmanager \
 	ucmdb

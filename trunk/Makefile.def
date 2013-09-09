@@ -1,0 +1,13 @@
+OS := $(shell uname -s)
+OSREL := $(shell uname -r)
+OSARCH := $(shell uname -m | sed 's/\//_/g')
+
+JAVA_HOME = /usr
+JAR_DIR = ${HOME}/lib
+
+JAVAC_ARGS = -target 1.5 -Xlint:unchecked
+JAVA_ARGS += -Dcom.sun.management.jmxremote -Xmx256M
+
+# See Java 6 bug: http://bugs.sun.com/bugdatabase/view_bug.do?bug_id=6434149
+JAVA_ARGS += -Dsun.lang.ClassLoader.allowArraySyntax=true
+
