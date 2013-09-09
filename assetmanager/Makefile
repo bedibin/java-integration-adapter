@@ -1,4 +1,4 @@
-include ../../Makefile.def
+include ../Makefile.def
 
 envl = LANG=fr_CA.iso88591 NLS_LANG=FRENCH_CANADA.WE8ISO8859P1
 
@@ -15,7 +15,7 @@ FILES =	assetmanagerdbsync.java
 all:	${JAR}
 
 $(JAR): $(FILES) ../javaadapter/javaadapter.jar ../dbsyncplugin/dbsyncplugin.jar
-	$(JAVA_HOME)/bin/javac -d ${DIR} -Xlint:unchecked -classpath ${CLASS} ${FILES}
+	$(JAVA_HOME)/bin/javac -d ${DIR} ${JAVAC_ARGS} -classpath ${CLASS} ${FILES}
 	(cd ${DIR}; $(JAVA_HOME)/bin/jar cvf ../${JAR} *.class)
 
 clean::

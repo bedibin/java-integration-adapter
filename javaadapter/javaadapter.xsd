@@ -108,6 +108,13 @@ elementFormDefault="qualified">
 	</xs:restriction>
 </xs:simpleType>
 
+<xs:simpleType name="excludescopetypes"> <!-- dbsynclugin -->
+	<xs:restriction base="xs:string">
+		<xs:enumeration value="field"/>
+		<xs:enumeration value="record"/>
+	</xs:restriction>
+</xs:simpleType>
+
 <xs:simpleType name="xpath">
 	<xs:restriction base="xs:string"/>
 </xs:simpleType>
@@ -130,6 +137,7 @@ elementFormDefault="qualified">
 	<xs:attribute name="do_remove" type="xs:boolean" default="true"/>
 	<xs:attribute name="do_update" type="xs:boolean" default="true"/>
 	<xs:attribute name="ignore_case" type="ignorecasetypes" default="false"/>
+	<xs:attribute name="ignore_empty" type="xs:boolean" default="false"/>
 </xs:attributeGroup>
 
 <xs:attributeGroup name="result">
@@ -305,6 +313,12 @@ elementFormDefault="qualified">
 	<xs:attributeGroup ref="activate"/>
 </xs:complexType>
 
+<xs:complexType name="namevalue">
+	<xs:attribute name="name" type="xs:string" use="required"/>
+	<xs:attribute name="value" type="xs:string"/>
+	<xs:attributeGroup ref="activate"/>
+</xs:complexType>
+
 <xs:complexType name="function">
 	<xs:sequence><xs:choice minOccurs="0" maxOccurs="unbounded">
 		<xs:element name="function" type="function"/>
@@ -433,8 +447,24 @@ elementFormDefault="qualified">
 			</xs:complexType>
 		</xs:element>
 		<xs:element name="default_lookup" type="simplelookup" minOccurs="0"/>
-		<xs:element name="exclude_lookup" type="simplelookup" minOccurs="0"/>
-		<xs:element name="include_lookup" type="simplelookup" minOccurs="0"/>
+		<xs:element name="exclude_lookup" minOccurs="0">
+			<xs:complexType>
+				<xs:complexContent>
+					<xs:extension base="simplelookup">
+						<xs:attribute name="exclude_scope" type="excludescopetypes" default="record"/>
+					</xs:extension>
+				</xs:complexContent>
+			</xs:complexType>
+		</xs:element>
+		<xs:element name="include_lookup" minOccurs="0">
+			<xs:complexType>
+				<xs:complexContent>
+					<xs:extension base="simplelookup">
+						<xs:attribute name="exclude_scope" type="excludescopetypes" default="record"/>
+					</xs:extension>
+				</xs:complexContent>
+			</xs:complexType>
+		</xs:element>
 		<xs:element name="script" type="xs:string" minOccurs="0"/>
 	</xs:all>
 	<xs:attribute name="name" type="xs:string" use="required"/>
@@ -651,6 +681,7 @@ elementFormDefault="qualified">
 									<xs:element name="customaddsql" type="simplestringfile"/>
 									<xs:element name="customupdatesql" type="simplestringfile"/>
 									<xs:element name="customremovesql" type="simplestringfile"/>
+									<xs:element name="customremove" type="namevalue"/> <!-- uCMDB reader -->
 									<xs:element name="element_function" type="function"/>
 								</xs:choice></xs:sequence>
 								<xs:attribute name="table" type="xs:string"/>

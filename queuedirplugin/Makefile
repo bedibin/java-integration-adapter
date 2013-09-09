@@ -1,4 +1,4 @@
-include ../../Makefile.def
+include ../Makefile.def
 
 CLASS = .:../javaadapter/javaadapter.jar:${JAR_DIR}/scheduling.jar:${JAR_DIR}/xercesImpl.jar:${JAR_DIR}/wljmsclient.jar:${JAR_DIR}/webserviceclient.jar
 JAR =	queuedirplugin.jar
@@ -9,7 +9,7 @@ FILES =	queuedirplugin.java
 all:	${JAR}
 
 $(JAR): $(FILES) ../javaadapter/javaadapter.jar
-	$(JAVA_HOME)/bin/javac -d ${DIR} -Xlint:unchecked -classpath ${CLASS} ${FILES}
+	$(JAVA_HOME)/bin/javac -d ${DIR} ${JAVAC_ARGS} -classpath ${CLASS} ${FILES}
 	(cd ${DIR}; $(JAVA_HOME)/bin/jar cvf ../${JAR} *.class)
 
 clean::

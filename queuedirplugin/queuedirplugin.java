@@ -44,6 +44,7 @@ class QueueDirPluginHook extends Hook
 		}
 	}
 
+	@Override
 	public void run() 
 	{
 		try

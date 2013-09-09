@@ -43,6 +43,7 @@ class DBSyncPluginHook extends Hook
 		sync = new DBSyncOper();
 	}
 
+	@Override
 	public void run()
 	{
 		try
@@ -66,6 +67,7 @@ class DBSyncPluginSubscriber extends Subscriber
 		sync = new DBSyncOper();
 	}
 
+	@Override
 	public XML run(XML xml) throws Exception
 	{
 		sync.run(getFunction(),xml);
@@ -377,11 +379,12 @@ class UpdateSQL
 		ArrayList<String> list = new ArrayList<String>();
 		for(XML field:fields)
 		{
-			String type = field.getAttribute("type");
-			if (type != null && (type.equals("info") || type.equals("key") || type.equals("initial"))) continue;
-
 			XML old = field.getElement("oldvalue");
 			if (old == null) continue;
+
+			String oldvalue = old.getValue();
+			String type = field.getAttribute("type");
+			if (type != null && (type.equals("info") || type.equals("key") || (type.equals("initial") && old != null))) continue;
 
 			sql += " " + sep + " " + quotefield + field.getTagName() + quotefield + " = " + DB.replacement;
 			list.add(field.getValue());
@@ -416,18 +419,11 @@ class UpdateSQL
 	}
 }
 
-class DatabaseUpdateSubscriber extends Subscriber
+class UpdateSubscriber extends Subscriber
 {
-	private UpdateSQL update;
-	protected DB db;
 	protected boolean stoponerror = false;
 
-	public DatabaseUpdateSubscriber() throws Exception
-	{
-		db = DB.getInstance();
-		update = new UpdateSQL(db);
-	}
-
+	@Override
 	public XML run(XML xml) throws Exception
 	{
 		String instance = xml.getAttribute("instance");
@@ -461,6 +457,23 @@ class DatabaseUpdateSubscriber extends Subscriber
 		return result;
 	}
 
+	protected void oper(XML xmldest,XML xmloper) throws Exception
+	{
+	}
+}
+
+class DatabaseUpdateSubscriber extends UpdateSubscriber
+{
+	private UpdateSQL update;
+	protected DB db;
+
+	public DatabaseUpdateSubscriber() throws Exception
+	{
+		db = DB.getInstance();
+		update = new UpdateSQL(db);
+	}
+
+	@Override
 	protected void oper(XML xmldest,XML xmloper) throws Exception
 	{
 		try

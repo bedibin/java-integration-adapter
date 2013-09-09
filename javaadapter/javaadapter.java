@@ -1,6 +1,7 @@
 import java.util.*;
 import javax.jms.*;
 import javax.naming.*;
+import java.io.File;
 
 class Shutdown extends Thread
 {
@@ -17,6 +18,7 @@ class Shutdown extends Thread
 		this.shuttingdown = shuttingdown;
 	}
 
+	@Override
 	public synchronized void run()
 	{
 		shuttingdown = true;
@@ -68,6 +70,7 @@ public class javaadapter
 	static boolean isstarted = false;
 	static boolean dohooks = true;
 	static String currentdir;
+	static String adaptername;
 	final static String DEFAULTCFGFILENAME = "javaadapter.xml";
 
 	public static boolean isShuttingDown()
@@ -147,6 +150,10 @@ public class javaadapter
 	{
 		ArrayList<Hook> hooklist = new ArrayList<Hook>();
 
+		File file = new File(filename);
+		String[] parts = file.getName().split("\\.");
+		adaptername = parts[0];
+
 		xmlconfig = new XML(filename);
 		Misc.initXML(xmlconfig);
 
@@ -211,5 +218,10 @@ public class javaadapter
 		Misc.log(0,"Adapter startup completed");
 
 		isstarted = true;
+	}
+
+	public static String getName()
+	{
+		return adaptername;
 	}
 }

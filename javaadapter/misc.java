@@ -332,7 +332,7 @@ class Misc
 
 	static public void initXML(XML xmlconfig) throws Exception
 	{
-		if (hostname == null) hostname = getHostName();
+		if (hostname == null || "".equals(hostname)) hostname = getHostName();
 
 		setLogInfo(xmlconfig);
 		XML.setDefaults(xmlconfig);

@@ -3,7 +3,6 @@ import java.sql.*;
 import java.util.regex.*;
 import java.text.SimpleDateFormat;
 import java.text.Collator;
-import oracle.jdbc.driver.OracleConnection;
 
 interface ComparatorIgnoreCase<T> extends Comparator<T>
 {
@@ -14,6 +13,7 @@ class DB
 {
 	class DBComparator implements ComparatorIgnoreCase<String>
 	{
+		@Override
 		public int compare(String a,String b)
 		{
 			return a.compareTo(b);
@@ -45,7 +45,7 @@ class DB
 
 			if (sql.startsWith("select") || sql.startsWith("SELECT"))
 				isselect = true;
-			if (Misc.isLog(10)) Misc.log("SQL " + (isselect ? "SELECT " : "") + "query [" + name + "]: " + sql);
+			if (Misc.isLog(5)) Misc.log("SQL " + (isselect ? "SELECT " : "") + "query [" + name + "]: " + sql);
 
 			stmt = conn.prepareStatement(sql);
 
@@ -208,7 +208,7 @@ class DB
 					value = rset.getString(i+1);
 				}
 
-				if (date != null) value = dateformat.format(date);
+				if (date != null) value = gmtdateformat.format(date);
 				if (value == null) value = "";
 
 				row.put(columnnames[i],value);
@@ -242,7 +242,7 @@ class DB
 	private static final String MYSQLJDBCDRIVER = "com.mysql.jdbc.Driver";
 	enum dbtype { MYSQL, MSSQL, ORACLE, OTHER };
 	public ComparatorIgnoreCase<String> collator;
-	private static SimpleDateFormat dateformat = new SimpleDateFormat(Misc.DATEFORMAT);
+	protected static SimpleDateFormat gmtdateformat = new SimpleDateFormat(Misc.DATEFORMAT);
 
 	private static DB instance;
 
@@ -362,8 +362,7 @@ class DB
 					{
 						try
 						{
-							OracleConnection oc = (OracleConnection)conn;
-							oc.abort();
+							Misc.invoke(conn,"abort");
 							Misc.log(3,"Connection aborted");
 						}
 						catch(Throwable th)
@@ -386,7 +385,7 @@ class DB
 
 	private void init(XML xmlcfg) throws Exception
 	{
-		dateformat.setTimeZone(TimeZone.getTimeZone("GMT"));
+		gmtdateformat.setTimeZone(TimeZone.getTimeZone("GMT"));
 
 		collator = new DBComparator();
 
@@ -420,13 +419,13 @@ class DB
 		System.out.println("Done");
 	}
 
-	public String getorderby(String conn,String[] keys) throws Exception
+	public String getorderby(String conn,String[] keys,boolean ignore_case) throws Exception
 	{
 		DBConnection dbc = db.get(conn);
 		if (dbc == null)
 			throw new AdapterException("Connection " + conn + " doesn't exist");
 
-		StringBuilder sql = new StringBuilder("(");
+		StringBuilder sql = new StringBuilder((ignore_case ? "upper" : "") + "(");
 		boolean first = true;
 
 		switch(dbc.dbtype)
@@ -438,19 +437,20 @@ class DB
 
 		for(String keyfield:keys)
 		{
+			keyfield = "replace(replace(coalesce(" + dbc.quote + keyfield + dbc.quote + ",''),' ','!'),'_','!')";
 			switch(dbc.dbtype)
 			{
 			case MYSQL:
 				if (!first) sql.append(",");
-				sql.append(dbc.quote + keyfield + dbc.quote + ",'!'");
+				sql.append(keyfield + ",'!'");
 				break;
 			case MSSQL:
 				if (!first) sql.append(" + ");
-				sql.append(dbc.quote + keyfield + dbc.quote + " + '!'");
+				sql.append(keyfield + " + '!'");
 				break;
 			default:
 				if (!first) sql.append(" || ");
-				sql.append(dbc.quote + keyfield + dbc.quote + " || '!'");
+				sql.append(keyfield + " || '!'");
 			}
 			first = false;
 		}

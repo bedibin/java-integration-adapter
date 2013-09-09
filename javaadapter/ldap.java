@@ -377,6 +377,7 @@ class ldap extends directory
 		ctx = ld;
 	}
 
+	@Override
 	protected String getRelativeName(String name) throws Exception
 	{
 		LdapName ln;
@@ -403,6 +404,7 @@ class ldap extends directory
 		return ln.toString();
 	}
 
+	@Override
 	protected boolean setPagedNext(int count) throws Exception
 	{
 		byte[] cookie = null;
@@ -440,6 +442,7 @@ class ldap extends directory
 		return true;
 	}
 
+	@Override
 	protected String fixAttributeName(String name)
 	{
 		int pos = name.indexOf(";range=");
