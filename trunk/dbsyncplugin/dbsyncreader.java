@@ -4,7 +4,7 @@ import java.util.regex.*;
 
 interface Reader
 {
-	public Hashtable<String,String> next() throws Exception;
+	public LinkedHashMap<String,String> next() throws Exception;
 	public ArrayList<String> getHeader();
 	public String getName();
 }
@@ -104,12 +104,12 @@ class ReaderCSV implements Reader
 		return result;
 	}
 
-	public Hashtable<String,String> next() throws Exception
+	public LinkedHashMap<String,String> next() throws Exception
 	{
 		ArrayList<String> csv = readCSV();
 		if (csv == null) return null;
 
-		Hashtable<String,String> row = new Hashtable<String,String>();
+		LinkedHashMap<String,String> row = new LinkedHashMap<String,String>();
 		int size = csv.size();
 		for(int i = 0;i < headers.size();i++)
 		{
@@ -176,7 +176,7 @@ class ReaderLDAP implements Reader
 {
 	private ArrayList<String> headers;
 	private directory ld;
-	private Hashtable<String,String> first;
+	private LinkedHashMap<String,String> first;
 	private String instance;
 
 	private void init(String name,String url,String context,String username,String password,String basedn,String search,String[] attrs,String[] sortattrs) throws Exception
@@ -227,9 +227,9 @@ class ReaderLDAP implements Reader
 		init(name,url,null,username,password,basedn,search,attrs,sortattrs);
 	}
 
-	public Hashtable<String,String> next() throws Exception
+	public LinkedHashMap<String,String> next() throws Exception
 	{
-		Hashtable<String,String> row;
+		LinkedHashMap<String,String> row;
 
 		if (first != null)
 		{
@@ -265,7 +265,7 @@ class ReaderSQL implements Reader
 {
 	private ArrayList<String> headers;
 	private DB.DBOper oper = null;
-	private Hashtable<String,String> last;
+	private LinkedHashMap<String,String> last;
 	private Set<String> keyfields;
 	private DB db;
 	private String instance;
@@ -310,7 +310,7 @@ class ReaderSQL implements Reader
 		init(name,conn,sql,keyfields,issorted);
 	}
 
-	private void pushCurrent(Hashtable<String,String> row,Hashtable<String,List<String>> set)
+	private void pushCurrent(LinkedHashMap<String,String> row,HashMap<String,List<String>> set)
 	{
 		for(String keyrow:row.keySet())
 		{
@@ -334,14 +334,14 @@ class ReaderSQL implements Reader
 		Collections.sort(list,db.collator);
 	}
 
-	public Hashtable<String,String> next() throws Exception
+	public LinkedHashMap<String,String> next() throws Exception
 	{
 		if (keyfields == null)
 			return oper.next();
 
-		Hashtable<String,String> row;
-		Hashtable<String,String> current = last;
-		Hashtable<String,List<String>> currentlist = new Hashtable<String,List<String>>();
+		LinkedHashMap<String,String> row;
+		LinkedHashMap<String,String> current = last;
+		HashMap<String,List<String>> currentlist = new HashMap<String,List<String>>();
 		if (current != null) pushCurrent(current,currentlist);
 
 		while((row = oper.next()) != null)
@@ -404,12 +404,12 @@ class ReaderXML implements Reader
 	private String pathcol;
 	private String instance;
 
-	private Hashtable<String,String> getXML(int pos) throws Exception
+	private LinkedHashMap<String,String> getXML(int pos) throws Exception
 	{
 		if (pos >= xmltable.length) return null;
 		XML[] elements = xmltable[pos].getElementsByPath(pathcol);
 
-		Hashtable<String,String> row = new Hashtable<String,String>();
+		LinkedHashMap<String,String> row = new LinkedHashMap<String,String>();
 		for(XML element:elements)
 		{
 			String name = element.getTagName();
@@ -456,16 +456,16 @@ class ReaderXML implements Reader
 			return;
 		}
 
-		Hashtable<String,String> first = getXML(0);
+		LinkedHashMap<String,String> first = getXML(0);
 		if (first == null)
 			throw new AdapterException("Processing empty XML content is not supported. Please set \"fields\" attribute");
 
 		headers = new ArrayList<String>(first.keySet());
 	}
 
-	public Hashtable<String,String> next() throws Exception
+	public LinkedHashMap<String,String> next() throws Exception
 	{
-		Hashtable<String,String> row = getXML(position);
+		LinkedHashMap<String,String> row = getXML(position);
 		if (row == null) return null;
 
 		position++;

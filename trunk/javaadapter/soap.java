@@ -162,7 +162,7 @@ class SoapServer
 		if (Misc.isLog(9)) Misc.log("SOAP request: " + request);
 
 		XML xml = new XML(new StringBuffer(request));
-		Hashtable<String,String> attrs = xml.getAttributes();
+		HashMap<String,String> attrs = xml.getAttributes();
 		xml = xml.getElement("Body");
 		if (xml != null)
 		{

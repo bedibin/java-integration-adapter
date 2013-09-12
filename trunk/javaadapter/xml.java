@@ -17,7 +17,7 @@ class XML
 	protected Document dom;
 	protected Node node;
 	private static ArrayList<XML> defaults = new ArrayList<XML>();
-	private static Hashtable<String,String> defaultvars = new Hashtable<String,String>();
+	private static HashMap<String,String> defaultvars = new HashMap<String,String>();
 	final static String LINE_NUMBER_KEY_NAME = "lineNumber";
 	Stack<Element> elementStack = new Stack<Element>();
 	StringBuilder textBuffer = new StringBuilder();
@@ -339,10 +339,10 @@ class XML
 		return javaadapter.crypter.decrypt(value);
 	}
 
-	public Hashtable<String,String> getAttributes() throws Exception
+	public HashMap<String,String> getAttributes() throws Exception
 	{
 		if (node == null) return null;
-		Hashtable<String,String> row = new Hashtable<String,String>();
+		HashMap<String,String> row = new HashMap<String,String>();
 
 		NamedNodeMap map = node.getAttributes();
 		for(int i = 0;i < map.getLength();i++)
@@ -847,7 +847,7 @@ class XML
 		return defaultvars.get(name);
 	}
 
-	static public synchronized Hashtable<String,String> getDefaultVariables()
+	static public synchronized HashMap<String,String> getDefaultVariables()
 	{
 		return defaultvars;
 	}

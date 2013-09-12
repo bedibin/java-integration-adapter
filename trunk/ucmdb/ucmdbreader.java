@@ -120,7 +120,7 @@ class ReaderUCMDB implements Reader
 		for(CI root:chunk.cis())
 		{
 			ArrayList<UcmdbId> ids = new ArrayList<UcmdbId>();
-			Hashtable<String,String> row = new Hashtable<String,String>();
+			HashMap<String,String> row = new HashMap<String,String>();
 			setProperties(null,row,root);
 			getRelated(subtopo.getCI(root.getId()),ids,row);
 		}
@@ -134,7 +134,7 @@ class ReaderUCMDB implements Reader
 		mapids = topo.getContainingNodesMap();
 	}
 
-	private String setProperties(String prefix,Hashtable<String,String> row,Element element)
+	private String setProperties(String prefix,LinkedHashMap<String,String> row,Element element)
 	{
 		String post = "";
 		if (prefix != null) post = prefix + ":";
@@ -179,7 +179,7 @@ class ReaderUCMDB implements Reader
 		return ci.getType();
 	}
 
-	void getLink(TopologyRelation relation,ArrayList<UcmdbId> ids,Hashtable<String,String> row) throws Exception
+	void getLink(TopologyRelation relation,ArrayList<UcmdbId> ids,LinkedHashMap<String,String> row) throws Exception
 	{
 		if (ids.contains(relation.getId())) return;
 		ids.add(relation.getId());
@@ -188,7 +188,7 @@ class ReaderUCMDB implements Reader
 		row.put(id + "END2",relation.getEnd2CI().getId().getAsString());
 	}
 
-	void getRelated(TopologyCI root,ArrayList<UcmdbId> ids,Hashtable<String,String> row) throws Exception
+	void getRelated(TopologyCI root,ArrayList<UcmdbId> ids,LinkedHashMap<String,String> row) throws Exception
 	{
 		if (root == null) return;
 
@@ -213,7 +213,7 @@ class ReaderUCMDB implements Reader
 		}
 	}
 
-	public Hashtable<String,String> next() throws Exception
+	public LinkedHashMap<String,String> next() throws Exception
 	{
 		if (!cis.hasNext())
 		{
@@ -226,7 +226,7 @@ class ReaderUCMDB implements Reader
 		}
 
 		ArrayList<UcmdbId> ids = new ArrayList<UcmdbId>();
-		Hashtable<String,String> row = new Hashtable<String,String>();
+		LinkedHashMap<String,String> row = new LinkedHashMap<String,String>();
 		TopologyCI root = cis.next();
 
 		ids.add(root.getId());
@@ -255,7 +255,7 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 	private TopologyUpdateService update;
 	private TopologyUpdateFactory factory;
 	private ClassModelService classmodel;
-	private Hashtable<String,Type> attrtypes = new Hashtable<String,Type>();
+	private HashMap<String,Type> attrtypes = new HashMap<String,Type>();
 	private Ucmdb ucmdb;
 
 	public UCMDBUpdateSubscriber() throws Exception

@@ -7,7 +7,7 @@ CLASS = ${JAR_DIR}/scheduling.jar:${JAR_DIR}/xercesImpl.jar:${JAR_DIR}/wljmsclie
 JAR =	javaadapter.jar
 DIR =	classes
 
-FILES =	javaadapter.java publish.java soap.java topic.java xml.java misc.java crypt.java base64coder.java test.java ldap.java soapserverstandalone.java hook.java subscriber.java script.java
+FILES =	javaadapter.java publish.java soap.java topic.java xml.java misc.java crypt.java base64coder.java ldap.java soapserverstandalone.java hook.java subscriber.java script.java
 
 JAVA_ARGS += -Dweblogic.security.TrustKeyStore=CustomTrust -Dweblogic.security.CustomTrustKeyStoreFileName=/opt/hpws/tomcat/conf/.keystore -Dweblogic.security.CustomTrustKeyStorePassPhrase=projetMGT -Djavaadapter.soap.nsenv="http://www.w3.org/2003/05/soap-envelope"
 #JAVA_ARGS += -Djavax.xml.transform.TransformerFactory=oracle.xml.jaxp.JXSAXTransformerFactory

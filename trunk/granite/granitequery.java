@@ -85,7 +85,7 @@ class QueryChangeHook extends Hook
 			String idfield = xmlid.getValue().trim();
 			XML sql = xmlid.getElement("sql");
 
-			ArrayList<Hashtable<String,String>> result = null;
+			ArrayList<LinkedHashMap<String,String>> result = null;
 			if (sql != null && idfield != null)
 				result = db.execsql(sql.getAttribute("name"),sql.getValue());
 
@@ -194,11 +194,11 @@ class QueryChangeHook extends Hook
 
 			if (sqlstr == null) continue;
 
-			ArrayList<Hashtable<String,String>> result = db.execsql(sql.getAttribute("name"),sqlstr);
+			ArrayList<LinkedHashMap<String,String>> result = db.execsql(sql.getAttribute("name"),sqlstr);
 
 /*
-			result = new ArrayList<Hashtable<String,String>>();
-			Hashtable<String,String> r = new Hashtable<String,String>();
+			result = new ArrayList<HashMap<String,String>>();
+			HashMap<String,String> r = new HashMap<String,String>();
 			r.put("ID","942236");
 			r.put("NEW","03");
 			r.put("INST_ID","29345");
@@ -210,7 +210,7 @@ class QueryChangeHook extends Hook
 			result.add(r);
 */
 
-			if (result != null) for(Hashtable<String,String> row:result)
+			if (result != null) for(LinkedHashMap<String,String> row:result)
 			{
 				if (xmlcontent == null)
 					xmlcontent = new XML();

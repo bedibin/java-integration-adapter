@@ -172,9 +172,9 @@ class DB
 			return headers;
 		}
 
-		public Hashtable<String,String> next() throws Exception
+		public LinkedHashMap<String,String> next() throws Exception
 		{
-			Hashtable<String,String> row = new Hashtable<String,String>();
+			LinkedHashMap<String,String> row = new LinkedHashMap<String,String>();
 
 			if (stmt == null) return null;
 			if (javaadapter.isShuttingDown() || rset == null || !rset.next())
@@ -211,7 +211,7 @@ class DB
 				if (date != null) value = gmtdateformat.format(date);
 				if (value == null) value = "";
 
-				row.put(columnnames[i],value);
+				row.put(columnnames[i],value.trim());
 			}
 
 			if (Misc.isLog(15)) Misc.log("row [" + name + "]: " + row);
@@ -246,7 +246,7 @@ class DB
 
 	private static DB instance;
 
-	private Hashtable<String,DBConnection> db;
+	private HashMap<String,DBConnection> db;
 	private XML[] xmlconn;
 
 	protected DB() { }
@@ -389,7 +389,7 @@ class DB
 
 		collator = new DBComparator();
 
-		db = new Hashtable<String,DBConnection>();
+		db = new HashMap<String,DBConnection>();
 
 		System.out.print("Connection to database... ");
 
@@ -437,7 +437,7 @@ class DB
 
 		for(String keyfield:keys)
 		{
-			keyfield = "replace(replace(coalesce(" + dbc.quote + keyfield + dbc.quote + ",''),' ','!'),'_','!')";
+			keyfield = "replace(replace(rtrim(ltrim(coalesce(" + dbc.quote + keyfield + dbc.quote + ",''))),' ','!'),'_','!')";
 			switch(dbc.dbtype)
 			{
 			case MYSQL:
@@ -486,19 +486,19 @@ class DB
 		return new DBOper(conn,sql);
 	}
 
-	public ArrayList<Hashtable<String,String>> execsql(String conn,String sql) throws Exception
+	public ArrayList<LinkedHashMap<String,String>> execsql(String conn,String sql) throws Exception
 	{
 		return execsql(conn,sql,null);
 	}
 
-	public ArrayList<Hashtable<String,String>> execsql(String conn,String sql,List<String> list) throws Exception
+	public ArrayList<LinkedHashMap<String,String>> execsql(String conn,String sql,List<String> list) throws Exception
 	{
 		DBOper oper = null;
-		ArrayList<Hashtable<String,String>> result = null;
+		ArrayList<LinkedHashMap<String,String>> result = null;
 
 		oper = new DBOper(conn,sql,list);
-		result = new ArrayList<Hashtable<String,String>>();
-		Hashtable<String,String> row;
+		result = new ArrayList<LinkedHashMap<String,String>>();
+		LinkedHashMap<String,String> row;
 
 		while((row = oper.next()) != null)
 			result.add(row);
@@ -508,13 +508,13 @@ class DB
 		return result;
 	}
 
-	public ArrayList<Hashtable<String,String>> execsql(XML xml) throws Exception
+	public ArrayList<LinkedHashMap<String,String>> execsql(XML xml) throws Exception
 	{
 		String conn = xml.getAttribute("instance");
 		return execsql(conn,xml);
 	}
 
-	public ArrayList<Hashtable<String,String>> execsql(String conn,XML xml) throws Exception
+	public ArrayList<LinkedHashMap<String,String>> execsql(String conn,XML xml) throws Exception
 	{
 		String sql = xml.getValue();
 		return execsql(conn,sql);
@@ -551,7 +551,7 @@ class DB
 			}
 		}));
 
-		Hashtable<String,String> row;
+		LinkedHashMap<String,String> row;
 		XML xmltable = xml.add(conn);
 
 		while((row = oper.next()) != null)
@@ -576,7 +576,7 @@ public class dbsql
 		DB.DBOper oper = db.makesqloper(instance,"select * from " + table);
 		CsvWriter csvout = new CsvWriter("select_" + table + ".csv");
 
-		Hashtable<String,String> row;
+		LinkedHashMap<String,String> row;
 
 		while((row = oper.next()) != null)
 			csvout.write(row);
@@ -588,7 +588,7 @@ public class dbsql
 	{
 		ReaderCSV csvin = new ReaderCSV("select_" + table + ".csv");
 
-		Hashtable<String,String> row;
+		LinkedHashMap<String,String> row;
 
 		while((row = csvin.next()) != null)
 		{
@@ -648,11 +648,11 @@ public class dbsql
 			String oper = isimport ? "Exporting" : "Importing";
 			System.out.println(oper + " " + name + "...");
 
-			ArrayList<Hashtable<String,String>> tables = db.execsql(name,extract);
+			ArrayList<LinkedHashMap<String,String>> tables = db.execsql(name,extract);
 
-			for(Hashtable<String,String> table:tables)
+			for(LinkedHashMap<String,String> table:tables)
 			{
-				String tablename = table.elements().nextElement();
+				String tablename = Misc.getFirstValue(table);
 				System.out.print("    " + tablename + "... ");
 
 				try

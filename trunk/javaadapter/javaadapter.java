@@ -64,7 +64,7 @@ public class javaadapter
 {
 	private static XML xmlconfig;
 	static Shutdown shutdown = new Shutdown();
-	private static Hashtable<String,ArrayList<Subscriber>> subscriberlist;
+	private static HashMap<String,ArrayList<Subscriber>> subscriberlist;
 	static ArrayList<SoapServer> soapservers = new ArrayList<SoapServer>();
 	static crypt crypter = new crypt();
 	static boolean isstarted = false;
@@ -157,7 +157,7 @@ public class javaadapter
 		xmlconfig = new XML(filename);
 		Misc.initXML(xmlconfig);
 
-		subscriberlist = new Hashtable<String,ArrayList<Subscriber>>();
+		subscriberlist = new HashMap<String,ArrayList<Subscriber>>();
 
 		XML jms = xmlconfig.getElement("jms");
 		if (jms != null)
