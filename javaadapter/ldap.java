@@ -43,7 +43,7 @@ class directory
 			count = 0;
 		}
 
-		public Hashtable<String,String> next() throws Exception
+		public LinkedHashMap<String,String> next() throws Exception
 		{
 			if (results == null || !results.hasMore())
 			{
@@ -57,7 +57,7 @@ class directory
 			}
 
 			count++;
-			Hashtable<String,String> row = new Hashtable<String,String>();
+			LinkedHashMap<String,String> row = new LinkedHashMap<String,String>();
 
 			SearchResult entry = results.next();
 			row.put("dn",entry.getNameInNamespace());
@@ -210,7 +210,7 @@ class directory
 			String info = xml.getAttribute("info");
 			if (info != null) result.setAttribute("info",info);
 
-			Hashtable<String,String> row;
+			LinkedHashMap<String,String> row;
 			while((row = search.next()) != null)
 				rootresult.add("row",row);
 
@@ -331,7 +331,7 @@ class directory
 		return false;
 	}
 
-	public Hashtable<String,String> searchNext() throws Exception
+	public LinkedHashMap<String,String> searchNext() throws Exception
 	{
 		return search_info.next();
 	}

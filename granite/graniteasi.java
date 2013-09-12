@@ -27,7 +27,7 @@ class ASI
 	static public final String ROOTSERVICE = "RootService";
 	static public final String PARENTSERVICE = "ParentService";
 
-	public Hashtable<String,Hashtable<String,Object>> infoServices = new Hashtable<String,Hashtable<String,Object>>();
+	public HashMap<String,HashMap<String,Object>> infoServices = new HashMap<String,HashMap<String,Object>>();
 
 	public XML xml;
 	public String domain;
@@ -43,7 +43,7 @@ class ASI
 
 		init();
 
-		Hashtable<String,Object> info = new Hashtable<String,Object>();
+		HashMap<String,Object> info = new HashMap<String,Object>();
 		info.put(CORESERVICE,CoreServices.CABLE);
 		info.put(KEYCLASS,"generated.CableKey");
 		info.put(UDAGROUP,"OpenView - C\u00E2ble");
@@ -51,7 +51,7 @@ class ASI
 		info.put(INSTANCEID,"CableInstId");
 		infoServices.put("Cable",info);
 
-		info = new Hashtable<String,Object>();
+		info = new HashMap<String,Object>();
 		info.put(CORESERVICE,CoreServices.PAIR);
 		info.put(KEYCLASS,"PairKey");
 		info.put(UDAGROUP,"OpenView - Paire/Fibre");
@@ -61,7 +61,7 @@ class ASI
 		info.put(PARENTSERVICE,"Cable");
 		infoServices.put("CablePair",info);
 
-		info = new Hashtable<String,Object>();
+		info = new HashMap<String,Object>();
 		info.put(CORESERVICE,CoreServices.CARD);
 		info.put(KEYCLASS,"CardKey");
 		info.put(UDAGROUP,"OpenView - Carte");
@@ -71,7 +71,7 @@ class ASI
 		info.put(PARENTSERVICE,"Slot");
 		infoServices.put("Card",info);
 
-		info = new Hashtable<String,Object>();
+		info = new HashMap<String,Object>();
 		info.put(CORESERVICE,CoreServices.SUBCARD);
 		info.put(KEYCLASS,"SubCardKey");
 		info.put(UDAGROUP,"OpenView - Carte");
@@ -81,7 +81,7 @@ class ASI
 		info.put(PARENTSERVICE,"Slot");
 		infoServices.put("SubCard",info);
 
-		info = new Hashtable<String,Object>();
+		info = new HashMap<String,Object>();
 		info.put(CORESERVICE,CoreServices.CONTAINER);
 		info.put(KEYCLASS,"ContainerKey");
 		info.put(UDAGROUP,"OpenView - Equipement");
@@ -89,7 +89,7 @@ class ASI
 		info.put(INSTANCEID,"EquipInstId");
 		infoServices.put("Container",info);
 
-		info = new Hashtable<String,Object>();
+		info = new HashMap<String,Object>();
 		info.put(KEYCLASS,"PathElementKey");
 		info.put(COREDATAOBJECT,CoreDataObjects.PATHELEMENT);
 		info.put(INSTANCEID,"ElementInstId");
@@ -97,7 +97,7 @@ class ASI
 		info.put(PARENTSERVICE,"Leg");
 		infoServices.put("Element",info);
 
-		info = new Hashtable<String,Object>();
+		info = new HashMap<String,Object>();
 		info.put(KEYCLASS,"PathLegKey");
 		info.put(COREDATAOBJECT,CoreDataObjects.PATHLEG);
 		info.put(INSTANCEID,"LegInstId");
@@ -105,7 +105,7 @@ class ASI
 		info.put(PARENTSERVICE,"Path");
 		infoServices.put("Leg",info);
 
-		info = new Hashtable<String,Object>();
+		info = new HashMap<String,Object>();
 		info.put(CORESERVICE,CoreServices.PATH);
 		info.put(KEYCLASS,"generated.PathKey");
 		info.put(UDAGROUP,"OpenView - Circuit");
@@ -113,7 +113,7 @@ class ASI
 		info.put(INSTANCEID,"CircPathInstId");
 		infoServices.put("Path",info);
 
-		info = new Hashtable<String,Object>();
+		info = new HashMap<String,Object>();
 		info.put(CORESERVICE,CoreServices.PORT);
 		info.put(KEYCLASS,"PortKey");
 		info.put(UDAGROUP,"OpenView - Port");
@@ -123,7 +123,7 @@ class ASI
 		info.put(PARENTSERVICE,"Card");
 		infoServices.put("Port",info);
 
-		info = new Hashtable<String,Object>();
+		info = new HashMap<String,Object>();
 		info.put(CORESERVICE,CoreServices.SEGMENT);
 		info.put(KEYCLASS,"generated.SegmentKey");
 		info.put(UDAGROUP,"OpenView - Segment");
@@ -131,7 +131,7 @@ class ASI
 		info.put(INSTANCEID,"CircInstId");
 		infoServices.put("Segment",info);
 
-		info = new Hashtable<String,Object>();
+		info = new HashMap<String,Object>();
 		info.put(CORESERVICE,CoreServices.SHELF);
 		info.put(KEYCLASS,"ShelfKey");
 		info.put(UDAGROUP,"OpenView - Equipement");
@@ -139,7 +139,7 @@ class ASI
 		info.put(INSTANCEID,"EquipInstId");
 		infoServices.put("Shelf",info);
 
-		info = new Hashtable<String,Object>();
+		info = new HashMap<String,Object>();
 		info.put(CORESERVICE,CoreServices.SLOT);
 		info.put(KEYCLASS,"SlotKey");
 		info.put(COREDATAOBJECT,CoreDataObjects.SLOT);
@@ -148,7 +148,7 @@ class ASI
 		info.put(PARENTSERVICE,"Shelf");
 		infoServices.put("Slot",info);
 
-		info = new Hashtable<String,Object>();
+		info = new HashMap<String,Object>();
 		info.put(CORESERVICE,CoreServices.SUBCARD);
 		info.put(KEYCLASS,"SubCardKey");
 		info.put(UDAGROUP,"OpenView - Carte");
@@ -158,7 +158,7 @@ class ASI
 		info.put(PARENTSERVICE,"Slot");
 		infoServices.put("SubCard",info);
 
-		info = new Hashtable<String,Object>();
+		info = new HashMap<String,Object>();
 		info.put(CORESERVICE,CoreServices.SITE);
 		info.put(KEYCLASS,"generated.SiteKey");
 		info.put(UDAGROUP,"OpenView - Site");
@@ -288,7 +288,7 @@ class ASI
 		return object;
 	}
 
-	public synchronized Key getKey(Hashtable<String,Object> infoService,long id) throws Exception
+	public synchronized Key getKey(HashMap<String,Object> infoService,long id) throws Exception
 	{
 		Object objects[] = new Object[1];
 		objects[0] = id;
@@ -339,9 +339,9 @@ class ASIobject
 	private Service service;
 	private Long parentId;
 	private Key key;
-	private Hashtable<String,Object> infoService;
-	private Hashtable<String,Object> parentInfoService;
-	private Hashtable<String,Object> rootInfoService;
+	private HashMap<String,Object> infoService;
+	private HashMap<String,Object> parentInfoService;
+	private HashMap<String,Object> rootInfoService;
 
 	private void init(String classname) throws Exception
 	{
@@ -409,7 +409,7 @@ class ASIobject
 		}
 	}
 
-	public Hashtable<String,Object> getAllAttributes() throws Exception
+	public HashMap<String,Object> getAllAttributes() throws Exception
 	{
 		synchronized(asi)
 		{
@@ -417,9 +417,9 @@ class ASIobject
 		}
 	}
 
-	private Hashtable<String,Object> getAllAttributesImpl() throws Exception
+	private HashMap<String,Object> getAllAttributesImpl() throws Exception
 	{
-		Hashtable<String,Object> result = new Hashtable<String,Object>();
+		HashMap<String,Object> result = new HashMap<String,Object>();
 
 		Method[] methods = object.getClass().getMethods();
 		for (int i = 0;i < methods.length;i++)

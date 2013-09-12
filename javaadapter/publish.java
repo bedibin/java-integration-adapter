@@ -251,9 +251,9 @@ class Publisher
 	private int default_soap_read_timeout = 60000;
 
 	private static Publisher instance;
-	private Hashtable<String,String> sessionids = new Hashtable<String,String>();
+	private HashMap<String,String> sessionids = new HashMap<String,String>();
 
-	static public Hashtable<String,PublisherObject> publishers = new Hashtable<String,PublisherObject>();
+	static public HashMap<String,PublisherObject> publishers = new HashMap<String,PublisherObject>();
 
 	private Publisher()
 	{

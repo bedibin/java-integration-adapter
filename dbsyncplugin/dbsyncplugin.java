@@ -204,14 +204,14 @@ class UpdateSQL
 			String instance = xmldest.getAttribute("instance");
 
 			String sqlid = "select " + idfield + " from " + table + sql;
-			ArrayList<Hashtable<String,String>> ids = db.execsql(instance,sqlid);
+			ArrayList<LinkedHashMap<String,String>> ids = db.execsql(instance,sqlid);
 			if (ids.size() != 1)
 			{
 				Misc.log(1,"WARNING: Operation on table " + table + " cannot be done since key doesn't exists: " + sql);
 				return " where false";
 			}
 
-			String id = ids.get(0).elements().nextElement();
+			String id = Misc.getFirstValue(ids.get(0));
 			return " where " + idfield + " = " + db.getValue(id);
 		}
 

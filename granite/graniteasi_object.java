@@ -117,7 +117,7 @@ class ObjectRequestSubscriber
 		XML node = xml.add(object.getClassName().toLowerCase());
 		if (domain != null) node.add("Database",domain);
 
-		Hashtable<String,Object> result = object.getAllAttributes();
+		HashMap<String,Object> result = object.getAllAttributes();
 		Iterator<String> itr = result.keySet().iterator();
 		while(itr.hasNext())
 		{

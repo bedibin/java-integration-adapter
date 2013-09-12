@@ -1221,4 +1221,12 @@ class Misc
 			}
 		});
 	}
+
+	public static String getFirstValue(Map<String,String> map)
+	{
+		if (map == null) return null;
+		Iterator<String> it = map.values().iterator();
+		if (!it.hasNext()) return null;
+		return it.next();
+	}
 }

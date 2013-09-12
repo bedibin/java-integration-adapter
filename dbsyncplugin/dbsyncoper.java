@@ -12,14 +12,14 @@ class DBSyncOper
 		private String tablename;
 		private String conn;
 		private DB.DBOper oper;
-		private TreeMap<String,Hashtable<String,String>> sortedmap;
+		private TreeMap<String,LinkedHashMap<String,String>> sortedmap;
 		private Iterator<?> iterator;
 		private String instance;
 		private ArrayList<String> header;
 
-		private TreeMap<String,Hashtable<String,String>> getMap()
+		private TreeMap<String,LinkedHashMap<String,String>> getMap()
 		{
-			return new TreeMap<String,Hashtable<String,String>>(db.collator);
+			return new TreeMap<String,LinkedHashMap<String,String>>(db.collator);
 		}
 
 		public SortTable(XML xml,Sync sync,String name,ArrayList<String> header) throws Exception
@@ -54,12 +54,12 @@ class DBSyncOper
 
 		public void put(Sync sync) throws Exception
 		{
-			Hashtable<String,String> row;
+			LinkedHashMap<String,String> row;
 			while((row = fields.getNext(sync)) != null)
 				put(row);
 		}
 
-		public void put(Hashtable<String,String> row) throws Exception
+		public void put(LinkedHashMap<String,String> row) throws Exception
 		{
 			String key = getKey(row);
 			if (sortedmap != null)
@@ -81,9 +81,9 @@ class DBSyncOper
 			db.execsql(conn,sql,list);
 		}
 
-		public Hashtable<String,String> next() throws Exception
+		public LinkedHashMap<String,String> next() throws Exception
 		{
-			Hashtable<String,String> row;
+			LinkedHashMap<String,String> row;
 
 			if (sortedmap != null)
 			{
@@ -103,7 +103,7 @@ class DBSyncOper
 				oper = db.makesqloper(conn,sql);
 			}
 
-			Hashtable<String,String> result = oper.next();
+			LinkedHashMap<String,String> result = oper.next();
 			if (result == null)
 			{
 				db.execsql(conn,"truncate table " + tablename);
@@ -113,7 +113,7 @@ class DBSyncOper
 			XML xml = new XML(new StringBuffer(result.get("VALUE")));
 			XML[] elements = xml.getElements(null);
 
-			row = new Hashtable<String,String>();
+			row = new LinkedHashMap<String,String>();
 			for(XML el:elements)
 			{
 				String value = el.getValue();
@@ -152,7 +152,7 @@ class DBSyncOper
 			// Important: reader must be set by extended constructor class
 		}
 
-		public Hashtable<String,String> next() throws Exception
+		public LinkedHashMap<String,String> next() throws Exception
 		{
 			return reader.next();
 		}
@@ -295,7 +295,7 @@ class DBSyncOper
 		{
 			Reader reader = ReaderUtil.getReader(xml);
 
-			Hashtable<String,String> row;
+			LinkedHashMap<String,String> row;
 
 			XML xmltable = xmlsource.add(reader.getName());
 
@@ -363,17 +363,27 @@ class DBSyncOper
 	{
 		class Preload
 		{
-			private Hashtable<String,String> table;
+			private HashMap<String,String> table;
+			private HashMap<String,String> datetable;
 			private Set<String> fields;
 			private boolean usekeywhennotfound = false;
+			private String datefield;
 
 			Preload(XML xml) throws Exception
 			{
 				if (Misc.isLog(15)) Misc.log("Field: Doing preload for " + name);
 
 				String attr = xml.getAttribute("use_key_when_not_found");
+				if (attr != null && !"lookup".equals(xml.getTagName()))
+					throw new AdapterException(xml,"Invalid use_key_when_not_found attribute");
 				if (attr != null && attr.equals("true"))
 					usekeywhennotfound = true;
+
+				datefield = xml.getAttribute("date_field");
+				if (datefield != null && !"merge_lookup".equals(xml.getTagName()))
+					throw new AdapterException(xml,"Invalid date_field attribute");
+				if (datefield == null && "merge_lookup".equals(xml.getTagName()))
+					throw new AdapterException(xml,"Attribute date_field mandatory for preload");
 
 				Reader reader = null;
 				try
@@ -401,25 +411,33 @@ class DBSyncOper
 						throw new AdapterException("Invalid on_not_found attribute",xml);
 				}
 
-				Hashtable<String,String> result;
+				LinkedHashMap<String,String> result;
 				if (reader != null) while((result = reader.next()) != null)
 				{
 					String value = result.get(name);
+					String datevalue = null;
 					if (value == null)
 						throw new AdapterException(xml,"Preload query doesn't return " + name + " field");
 
-					if (table == null)
-						table = new Hashtable<String,String>();
+					if (table == null) table = new HashMap<String,String>();
+					if (datetable == null) datetable = new HashMap<String,String>();
 
 					if (fields == null)
 					{
 						fields = result.keySet();
 						fields.remove(name);
+						if (datefield != null)
+						{
+							if (!result.containsKey(datefield))
+								throw new AdapterException(xml,"Preload must return date_field " + datefield);
+							datevalue = result.get(datefield);
+							fields.remove(datefield);
+						}
 						if (fields.isEmpty())
 							throw new AdapterException(xml,"Preload query must return more than just " + name + " field");
 					}
 
-					String keyvalue = Misc.getKeyValue(fields,result);
+					String keyvalue = Misc.getKeyValue(fields,result).toLowerCase();
 					if (Misc.isLog(25)) Misc.log("Field: Storing preload for " + name + " key " + keyvalue + ": " + value);
 
 					if (table.get(keyvalue) != null)
@@ -428,25 +446,22 @@ class DBSyncOper
 						value = null;
 					}
 
-					if (value != null && !"".equals(value))
-						table.put(keyvalue,value);
+					if (value == null || "".equals(value)) continue;
+
+					table.put(keyvalue,value);
+					if (datevalue != null) datetable.put(keyvalue,datevalue);
 				}
 
 				if (table == null)
 					Misc.log("WARNING: Preload for field '" + name + "' returned empty result");
 			}
 
-			public String getPreloadKey(Hashtable<String,String> result) throws Exception
+			public String getPreload(LinkedHashMap<String,String> values) throws Exception
 			{
 				if (fields == null) return null;
-
-				String keyvalue = Misc.getKeyValue(fields,result);
+				String keyvalue = Misc.getKeyValue(fields,values).toLowerCase();
 				if (Misc.isLog(25)) Misc.log("Field: Preload key for " + name + " is " + keyvalue);
-				return keyvalue;
-			}
 
-			public String getPreload(String keyvalue) throws Exception
-			{
 				String result = null;
 				if (usekeywhennotfound) result = keyvalue;
 
@@ -457,6 +472,19 @@ class DBSyncOper
 
 				if (lookupvalue != null) result = lookupvalue;
 
+				if (datefield == null) return result;
+
+				if (!values.containsKey(datefield))
+					throw new AdapterException("Extraction must return a value for date_field " + datefield);
+				String datevalue = values.get(datefield);
+				if (datevalue == null) return result;
+				String mergedatevalue = datetable.get(keyvalue);
+				if (mergedatevalue == null) return null;
+
+				Date date = Misc.dateformat.parse(datevalue);
+				Date mergedate = Misc.dateformat.parse(mergedatevalue);
+
+				if (date.after(mergedate)) return null;
 				return result;
 			}
 		}
@@ -465,6 +493,7 @@ class DBSyncOper
 		private String defaultlookupvalue;
 		private XML xmlfield;
 		private XML xmllookup;
+		private XML xmllookupmerge;
 		private XML xmllookupinclude;
 		private XML xmllookupexclude;
 		private String script;
@@ -477,6 +506,7 @@ class DBSyncOper
 		private String filterresult;
 		private boolean iskey = false;
 		private Preload preloadinfo;
+		private Preload preloadinfomerge;
 
 		private HashSet<String> excludetable;
 		private Set<String> excludefields;
@@ -514,9 +544,9 @@ class DBSyncOper
 			if (xmldefault != null)
 			{
 				Reader reader = ReaderUtil.getReader(xmldefault);
-				Hashtable<String,String> result = reader.next();
+				LinkedHashMap<String,String> result = reader.next();
 				if (result != null)
-					defaultlookupvalue = result.elements().nextElement();
+					defaultlookupvalue = Misc.getFirstValue(result);
 
 				if (Misc.isLog(10)) Misc.log("Field: Default " + name + " value from lookup: " + defaultlookupvalue);
 			}
@@ -535,6 +565,13 @@ class DBSyncOper
 			{
 				preloadinfo = new Preload(xmllookup);
 				xmllookup = null;
+			}
+
+			xmllookupmerge = xml.getElement("merge_lookup");
+			if (xmllookupmerge != null && !Misc.substitutepattern.matcher(xmllookupmerge.toString()).find())
+			{
+				preloadinfomerge = new Preload(xmllookupmerge);
+				xmllookupmerge = null;
 			}
 
 			xmllookupinclude = xml.getElement("include_lookup");
@@ -576,12 +613,12 @@ class DBSyncOper
 
 			Reader reader = ReaderUtil.getReader(xml);
 
-			Hashtable<String,String> result;
+			LinkedHashMap<String,String> result;
 			while((result = reader.next()) != null)
 			{
 				if (fields == null) fields = result.keySet();
 
-				String keyvalue = Misc.getKeyValue(fields,result);
+				String keyvalue = Misc.getKeyValue(fields,result).toLowerCase();
 				if (Misc.isLog(25)) Misc.log("Field: Storing " + operstr + " for " + name + " key " + keyvalue);
 
 				table.add(keyvalue);
@@ -606,31 +643,31 @@ class DBSyncOper
 			}
 		}
 
-		public boolean isIncludeRecord(Hashtable<String,String> result) throws Exception
+		public boolean isIncludeRecord(LinkedHashMap<String,String> result) throws Exception
 		{
 			if (includeexcludefield) return true;
 			return isInLookup(result,includetable,includefields,true);
 		}
 
-		public boolean isExcludeRecord(Hashtable<String,String> result) throws Exception
+		public boolean isExcludeRecord(LinkedHashMap<String,String> result) throws Exception
 		{
 			if (excludefield) return false;
 			return isInLookup(result,excludetable,excludefields,false);
 		}
 
-		public boolean isIncludeField(Hashtable<String,String> result) throws Exception
+		public boolean isIncludeField(LinkedHashMap<String,String> result) throws Exception
 		{
 			if (!includeexcludefield) return true;
 			return isInLookup(result,includetable,includefields,true);
 		}
 
-		public boolean isExcludeField(Hashtable<String,String> result) throws Exception
+		public boolean isExcludeField(LinkedHashMap<String,String> result) throws Exception
 		{
 			if (!excludefield) return false;
 			return isInLookup(result,excludetable,excludefields,false);
 		}
 
-		public boolean isInLookup(Hashtable<String,String> result,HashSet<String> table,Set<String> fields,boolean def) throws Exception
+		public boolean isInLookup(LinkedHashMap<String,String> result,HashSet<String> table,Set<String> fields,boolean def) throws Exception
 		{
 			if (fields == null) return def;
 
@@ -641,7 +678,7 @@ class DBSyncOper
 				return value != null;
 			}
 
-			String keyvalue = Misc.getKeyValue(fields,result);
+			String keyvalue = Misc.getKeyValue(fields,result).toLowerCase();
 			boolean contains = table.contains(keyvalue);
 			if (Misc.isLog(25)) Misc.log("Field: Getting " + (def ? "include" : "exclude") + " for " + name + " key " + keyvalue + ": " + contains);
 
@@ -668,12 +705,17 @@ class DBSyncOper
 			return copyname;
 		}
 
-		public String lookup(Hashtable<String,String> row) throws Exception
+		public String lookupMerge(LinkedHashMap<String,String> row) throws Exception
+		{
+			return lookupFor(xmllookupmerge,row);
+		}
+
+		public String lookup(LinkedHashMap<String,String> row) throws Exception
 		{
 			return lookupFor(xmllookup,row);
 		}
 
-		public String lookupFor(XML xml,final Hashtable<String,String> row) throws Exception
+		public String lookupFor(XML xml,final LinkedHashMap<String,String> row) throws Exception
 		{
 			if (xml == null) return null;
 
@@ -695,14 +737,8 @@ class DBSyncOper
 
 			DB.DBOper oper = db.makesqloper(instance,str);
 
-			String value = null;
-			Hashtable<String,String> result = oper.next();
-			if (result != null)
-			{
-				Enumeration<String> elements = result.elements();
-				if (elements.hasMoreElements())
-					value = elements.nextElement();
-			}
+			LinkedHashMap<String,String> result = oper.next();
+			String value = Misc.getFirstValue(result);
 
 			oper.close();
 
@@ -731,6 +767,11 @@ class DBSyncOper
 			return preloadinfo;
 		}
 
+		public Preload getPreloadMerge()
+		{
+			return preloadinfomerge;
+		}
+
 		public String getType()
 		{
 			if (typeoverwrite != null) return typeoverwrite;
@@ -752,7 +793,7 @@ class DBSyncOper
 			return true;
 		}
 
-		public boolean isValidFilter(Hashtable<String,String> result) throws Exception
+		public boolean isValidFilter(LinkedHashMap<String,String> result) throws Exception
 		{
 			if (filtername == null && filterresult == null) return true;
 
@@ -829,7 +870,7 @@ class DBSyncOper
 			return fields.entrySet();
 		}
 
-		private void doFunction(Hashtable<String,String> result,XML function) throws Exception
+		private void doFunction(LinkedHashMap<String,String> result,XML function) throws Exception
 		{
 			if (function == null) return;
 			if (javaadapter.isShuttingDown()) return;
@@ -864,9 +905,9 @@ class DBSyncOper
 			}
 		}
 
-		public Hashtable<String,String> getNext(Sync sync) throws Exception
+		public LinkedHashMap<String,String> getNext(Sync sync) throws Exception
 		{
-			Hashtable<String,String> result;
+			LinkedHashMap<String,String> result;
 			CsvWriter csvout = sync.getCsvWriter();
 
 			while((result = sync.next()) != null)
@@ -902,6 +943,14 @@ class DBSyncOper
 
 					if (Misc.isLog(30)) Misc.log("Field: " + name + " is not excluded");
 
+					Field.Preload preloadmerge = field.getPreloadMerge();
+					String mergevalue = preloadmerge == null ? field.lookupMerge(result) : preloadmerge.getPreload(result);
+					if (mergevalue != null)
+					{
+						if (Misc.isLog(30)) Misc.log("Field: Using value " + mergevalue + " instead of " + value + " since more recent");
+						value = mergevalue;
+					}
+
 					if (value != null && !"".equals(value))
 					{
 						// We have a value, just use it
@@ -910,13 +959,7 @@ class DBSyncOper
 					else
 					{
 						Field.Preload preload = field.getPreload();
-						if (preload == null)
-							value = field.lookup(result);
-						else
-						{
-							String keyvalue = preload.getPreloadKey(result);
-							value = keyvalue == null ? null : preload.getPreload(keyvalue);
-						}
+						value = preload == null ? field.lookup(result) : preload.getPreload(result);
 
 						if (value != null && !"".equals(value))
 						{
@@ -1163,7 +1206,7 @@ class DBSyncOper
 		xmloperlist.add(xml);
 	}
 
-	private void push(String oper,Hashtable<String,String> row,Hashtable<String,String> rowold) throws Exception
+	private void push(String oper,LinkedHashMap<String,String> row,LinkedHashMap<String,String> rowold) throws Exception
 	{
 		if (destinationsync == null) return;
 
@@ -1295,14 +1338,14 @@ class DBSyncOper
 			flush();
 	}
 
-	private void remove(Hashtable<String,String> row) throws Exception
+	private void remove(LinkedHashMap<String,String> row) throws Exception
 	{
 		if (!doremove) return;
 		if (Misc.isLog(4)) Misc.log("quick_remove: " + row);
 		push("remove",row,null);
 	}
 
-	private void add(Hashtable<String,String> row) throws Exception
+	private void add(LinkedHashMap<String,String> row) throws Exception
 	{
 		if (!doadd) return;
 		if (destinationsync == null) return;
@@ -1310,7 +1353,7 @@ class DBSyncOper
 		push("add",row,null);
 	}
 
-	private void update(Hashtable<String,String> rowold,Hashtable<String,String> rownew) throws Exception
+	private void update(LinkedHashMap<String,String> rowold,LinkedHashMap<String,String> rownew) throws Exception
 	{
 		if (!doupdate) return;
 		if (Misc.isLog(4))
@@ -1335,7 +1378,7 @@ class DBSyncOper
 		push("update",rownew,rowold);
 	}
 
-	private String getKey(Hashtable<String,String> row)
+	private String getKey(LinkedHashMap<String,String> row)
 	{
 		String key = "";
 		if (row == null) return key;
@@ -1391,8 +1434,8 @@ class DBSyncOper
 
 		push("start");
 
-		Hashtable<String,String> row = fields.getNext(sourcesync);
-		Hashtable<String,String> rowdest = (destinationsync == null) ? null : fields.getNext(destinationsync);
+		LinkedHashMap<String,String> row = fields.getNext(sourcesync);
+		LinkedHashMap<String,String> rowdest = (destinationsync == null) ? null : fields.getNext(destinationsync);
 
 		/* keycheck is obsolete and should no longer be used */
 		String keycheck = sourcesync.getXML().getAttribute("keycheck");

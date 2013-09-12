@@ -80,11 +80,11 @@ class AMDB extends DB
 		}
 
 		@Override
-		public Hashtable<String,String> next() throws Exception
+		public LinkedHashMap<String,String> next() throws Exception
 		{
 			if (rowresult == null || pos >= rowresult.length) return null;
 
-			Hashtable<String,String> row = new Hashtable<String,String>();
+			LinkedHashMap<String,String> row = new LinkedHashMap<String,String>();
 
 			for(int i = 0;i < columnnames.length;i++)
 			{
@@ -151,20 +151,20 @@ class AMDB extends DB
 	}
 
 	@Override
-	public ArrayList<Hashtable<String,String>> execsql(String conn,String sql) throws Exception
+	public ArrayList<LinkedHashMap<String,String>> execsql(String conn,String sql) throws Exception
 	{
 		return execsql(conn,sql,null);
 	}
 
 	@Override
-	public ArrayList<Hashtable<String,String>> execsql(String conn,String sql,List<String> list) throws Exception
+	public ArrayList<LinkedHashMap<String,String>> execsql(String conn,String sql,List<String> list) throws Exception
 	{
 		DBOper oper = null;
-		ArrayList<Hashtable<String,String>> result = null;
+		ArrayList<LinkedHashMap<String,String>> result = null;
 
 		oper = new DBOper(conn,sql,list);
-		result = new ArrayList<Hashtable<String,String>>();
-		Hashtable<String,String> row;
+		result = new ArrayList<LinkedHashMap<String,String>>();
+		LinkedHashMap<String,String> row;
 
 		while((row = oper.next()) != null)
 			result.add(row);

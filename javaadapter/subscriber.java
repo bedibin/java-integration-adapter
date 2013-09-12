@@ -7,7 +7,7 @@ class Operation extends SchedulerTask
 	protected XML function;
 	private Rate rate;
 	protected enum ResultTypes { LAST, MERGE, TRANSPARENT };
-	private Hashtable<String,String> variablelist = new Hashtable<String,String>();
+	private HashMap<String,String> variablelist = new HashMap<String,String>();
 
 	public void run() {}
 
@@ -195,7 +195,7 @@ class Operation extends SchedulerTask
 		String name = xml.getTagName();
 		if (name != null && name.equals("javaadapter:multi"))
 		{
-			Hashtable<String,String> attrs = xml.getAttributes();
+			HashMap<String,String> attrs = xml.getAttributes();
 
 			XML[] xmllist = xml.getElements(null);
 			XML resultxml = null;
