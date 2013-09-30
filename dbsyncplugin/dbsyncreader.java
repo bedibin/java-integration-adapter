@@ -328,7 +328,6 @@ class ReaderSQL implements Reader
 		}
 	}
 
-	@SuppressWarnings({"unchecked"})
 	private void sort(List<String> list)
 	{
 		Collections.sort(list,db.collator);

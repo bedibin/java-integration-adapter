@@ -437,7 +437,9 @@ class DBSyncOper
 							throw new AdapterException(xml,"Preload query must return more than just " + name + " field");
 					}
 
-					String keyvalue = Misc.getKeyValue(fields,result).toLowerCase();
+					String keyvalue = Misc.getKeyValue(fields,result);
+					if (keyvalue == null) continue;
+
 					if (Misc.isLog(25)) Misc.log("Field: Storing preload for " + name + " key " + keyvalue + ": " + value);
 
 					if (table.get(keyvalue) != null)
@@ -459,7 +461,9 @@ class DBSyncOper
 			public String getPreload(LinkedHashMap<String,String> values) throws Exception
 			{
 				if (fields == null) return null;
-				String keyvalue = Misc.getKeyValue(fields,values).toLowerCase();
+				String keyvalue = Misc.getKeyValue(fields,values);
+				if (keyvalue == null) return null;
+
 				if (Misc.isLog(25)) Misc.log("Field: Preload key for " + name + " is " + keyvalue);
 
 				String result = null;
@@ -618,7 +622,9 @@ class DBSyncOper
 			{
 				if (fields == null) fields = result.keySet();
 
-				String keyvalue = Misc.getKeyValue(fields,result).toLowerCase();
+				String keyvalue = Misc.getKeyValue(fields,result);
+				if (keyvalue == null) continue;
+
 				if (Misc.isLog(25)) Misc.log("Field: Storing " + operstr + " for " + name + " key " + keyvalue);
 
 				table.add(keyvalue);
@@ -678,7 +684,9 @@ class DBSyncOper
 				return value != null;
 			}
 
-			String keyvalue = Misc.getKeyValue(fields,result).toLowerCase();
+			String keyvalue = Misc.getKeyValue(fields,result);
+			if (keyvalue == null) return !def;
+
 			boolean contains = table.contains(keyvalue);
 			if (Misc.isLog(25)) Misc.log("Field: Getting " + (def ? "include" : "exclude") + " for " + name + " key " + keyvalue + ": " + contains);
 
@@ -1281,7 +1289,6 @@ class DBSyncOper
 			}
 		}
 
-		String keys = null;
 		String changes = null;
 		for(XML entry:xml.getElements())
 		{
@@ -1290,7 +1297,7 @@ class DBSyncOper
 			if (value == null) value = "";
 			String type = entry.getAttribute("type");
 			if ("key".equals(type))
-				keys = keys == null ? value : keys + "," + value;
+				;
 			else if ("info".equals(type))
 				;
 			else if ("update".equals(oper))
@@ -1315,12 +1322,17 @@ class DBSyncOper
 			}
 			
 		}
-		if ("update".equals(oper) && changes == null) return;
-		if (Misc.isLog(2))
+
+		String prevkeys = Misc.getKeyValue(fields.getKeys(),row);
+		if (prevkeys == null)
 		{
-			String prevkeys = Misc.getKeyValue(fields.getKeys(),row);
-			Misc.log(oper + ": " + prevkeys + " " + changes);
+			Misc.log("ERROR: Discarting record with null keys: " + row);
+			return;
 		}
+
+		if ("update".equals(oper) && changes == null) return;
+		if (Misc.isLog(2)) Misc.log(oper + ": " + prevkeys + " " + changes);
+
 		if ("update".equals(oper)) counter.update++;
 		else if ("add".equals(oper)) counter.add++;
 		else if ("remove".equals(oper)) counter.remove++;
@@ -1384,8 +1396,11 @@ class DBSyncOper
 		if (row == null) return key;
 
 		for(String keyfield:fields.getKeys())
+		{
 			/* Use exclamation mark since it is the lowest ASCII character */
+			/* This code must match db.getorderby logic */
 			key += row.get(keyfield).replace(' ','!').replace('_','!') + "!";
+		}
 
 		return key;
 	}

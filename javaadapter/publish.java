@@ -414,13 +414,13 @@ class Publisher
 
 		if (result == null)
 		{
-			Misc.log("WARNING: No publisher response. Message was: " + str);
+			if (Misc.isLog(5)) Misc.log("WARNING: No publisher response. Message was: " + str);
 			return null;
 		}
 
 		if (result.length() == 0)
 		{
-			Misc.log("WARNING: Empty publisher response. Message was:" + str);
+			if (Misc.isLog(5)) Misc.log("WARNING: Empty publisher response. Message was:" + str);
 			return null;
 		}
 

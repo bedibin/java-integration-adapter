@@ -335,6 +335,7 @@ class DB
 		}
 		else if (driverstr != null && driverstr.equals(MYSQLJDBCDRIVER))
 		{
+			execsql(name,"set names utf8 collate utf8_bin");
 			dbc.quote = "`";
 			dbc.dbtype = dbtype.MYSQL;
 		}
@@ -425,7 +426,7 @@ class DB
 		if (dbc == null)
 			throw new AdapterException("Connection " + conn + " doesn't exist");
 
-		StringBuilder sql = new StringBuilder((ignore_case ? "upper" : "") + "(");
+		StringBuilder sql = new StringBuilder("(");
 		boolean first = true;
 
 		switch(dbc.dbtype)
@@ -437,7 +438,9 @@ class DB
 
 		for(String keyfield:keys)
 		{
-			keyfield = "replace(replace(rtrim(ltrim(coalesce(" + dbc.quote + keyfield + dbc.quote + ",''))),' ','!'),'_','!')";
+			keyfield = dbc.quote + keyfield + dbc.quote;
+			if (ignore_case) keyfield = "upper(" + keyfield + ")";
+			keyfield = "replace(replace(rtrim(ltrim(coalesce(" + keyfield + ",''))),' ','!'),'_','!')";
 			switch(dbc.dbtype)
 			{
 			case MYSQL:
@@ -468,7 +471,7 @@ class DB
 			sql.append(" collate latin1_general_bin2");
 			break;
 		case MYSQL:
-			sql.append(" collate utf8_bin");
+			//sql.append(" collate utf8_bin");
 			break;
 		}
 
