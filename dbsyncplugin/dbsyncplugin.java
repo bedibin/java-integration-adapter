@@ -228,7 +228,7 @@ class UpdateSQL
 		if (message == null) message = "";
 		if (Misc.isLog(20)) Misc.log("Retry exception: " + message);
 
-		if (message.indexOf("unique constraint") != -1 || message.indexOf("contrainte unique") != -1 || message.indexOf("ORA-00001:") != -1 || message.indexOf("duplicate key") != -1)
+		if (message.indexOf("unique constraint") != -1 || message.indexOf("contrainte unique") != -1 || message.indexOf("ORA-00001:") != -1 || message.indexOf("duplicate key") != -1 || message.indexOf("NoDupIndexTriggered") != -1)
 		{
 			if (Misc.isLog(15))
 			{
@@ -251,9 +251,7 @@ class UpdateSQL
 				else if (ondups.equals("merge"))
 				{
 					String mergefields = xmldest.getAttribute("merge_fields");
-					if (mergefields == null)
-						throw new AdapterException(xmldest,"merge_fields required for merge operation");
-					String[] attrs = mergefields.split("\\s*,\\s*");
+					String[] attrs = mergefields == null ? null : mergefields.split("\\s*,\\s*");
 					XML updxml = new XML();
 					XML xmlop = updxml.add("update");
 					for(XML field:fields)
@@ -261,8 +259,13 @@ class UpdateSQL
 						String type = field.getAttribute("type");
 						if (type != null && type.equals("key"))
 							xmlop.add(field);
+						if (type == null && attrs == null)
+						{
+							XML xmlel = xmlop.add(field);
+							xmlel.add("oldvalue","");
+						}
 					}
-					for(String attr:attrs)
+					if (attrs != null) for(String attr:attrs)
 					{
 						XML field = xml.getElement(attr);
 						if (field != null)

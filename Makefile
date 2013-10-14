@@ -3,7 +3,8 @@ DIR =	javaadapter \
 	queuedirplugin \
 	servlet \
 	assetmanager \
-	ucmdb
+	ucmdb \
+	servicemanager
 
 all:	$(DIR)
 
