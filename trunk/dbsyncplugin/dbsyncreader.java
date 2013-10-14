@@ -16,7 +16,9 @@ class ReaderUtil
 		Reader reader = null;
 		String type = xml.getAttribute("type");
 
-		if (type.equals("db"))
+		if (type == null)
+			reader = new ReaderRow(xml);
+		else if (type.equals("db"))
 			reader = new ReaderSQL(xml);
 		else if (type.equals("csv"))
 			reader = new ReaderCSV(xml);
@@ -37,6 +39,38 @@ class ReaderUtil
 			throw new AdapterException(xml,"Unsupported reader type " + type);
 
 		return reader;
+	}
+}
+
+class ReaderRow implements Reader
+{
+	XML[] rows;
+	int rowpos;
+	private ArrayList<String> headers;
+
+	public ReaderRow(XML xml) throws Exception
+	{
+		rowpos = 0;
+		rows = xml.getElements("row");
+		if (rows.length > 0)headers = new ArrayList<String>(rows[0].getAttributes().keySet());
+	}
+
+	public ArrayList<String> getHeader()
+	{
+		return headers;
+	}
+
+	public LinkedHashMap<String,String> next() throws Exception
+	{
+		if (rowpos >= rows.length) return null;
+		LinkedHashMap<String,String> result = rows[rowpos].getAttributes();
+		rowpos++;
+		return result;
+	}
+
+	public String getName()
+	{
+		return "row";
 	}
 }
 
@@ -397,18 +431,43 @@ class ReaderSQL implements Reader
 
 class ReaderXML implements Reader
 {
-	private ArrayList<String> headers;
-	private XML[] xmltable;
-	private int position = 0;
+	protected ArrayList<String> headers;
+	protected XML[] xmltable;
+	protected int position = 0;
 	private String pathcol;
-	private String instance;
+	protected String instance;
 
-	private LinkedHashMap<String,String> getXML(int pos) throws Exception
+	private void getSubXML(LinkedHashMap<String,String> row,String prefix,XML xml) throws Exception
+	{
+		XML[] elements = xml.getElements(null);
+		for(XML element:elements)
+		{
+			String name = element.getTagName();
+			if (name == null) continue;
+			name = prefix + "_" + name;
+			if (headers != null && !headers.contains(name)) continue;
+			String value = element.getValue();
+			if (value == null) value = "";
+			row.put(name,value.trim());
+			getSubXML(row,name,element);
+		}
+	}
+
+	protected LinkedHashMap<String,String> getXML(int pos) throws Exception
 	{
 		if (pos >= xmltable.length) return null;
 		XML[] elements = xmltable[pos].getElementsByPath(pathcol);
+		HashMap<String,String> attributes = xmltable[pos].getAttributes();
 
 		LinkedHashMap<String,String> row = new LinkedHashMap<String,String>();
+
+		for(Map.Entry<String,String> entry:attributes.entrySet())
+		{
+			String value = entry.getValue();
+			if (value == null) value = "";
+			row.put(entry.getKey(),value.trim());
+		}
+
 		for(XML element:elements)
 		{
 			String name = element.getTagName();
@@ -416,10 +475,15 @@ class ReaderXML implements Reader
 			if (headers != null && !headers.contains(name)) continue;
 			String value = element.getValue();
 			if (value == null) value = "";
-			row.put(name,value);
+			row.put(name,value.trim());
+			getSubXML(row,name,element);
 		}
 
 		return row;
+	}
+
+	public ReaderXML()
+	{
 	}
 
 	public ReaderXML(XML xml) throws Exception

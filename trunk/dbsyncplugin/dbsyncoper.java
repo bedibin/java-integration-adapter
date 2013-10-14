@@ -267,7 +267,6 @@ class DBSyncOper
 	class SyncSoap extends Sync
 	{
 		private XML xml;
-		private Reader reader;
 
 		public SyncSoap(XML xml) throws Exception
 		{
@@ -289,7 +288,6 @@ class DBSyncOper
 	class SyncXML extends Sync
 	{
 		private XML xml;
-		private Reader reader;
 
 		private void Read(XML xml,XML xmlsource) throws Exception
 		{
@@ -308,47 +306,47 @@ class DBSyncOper
 			super(xml);
 
 			String name = xml.getAttribute("name");
+			String filename = xml.getAttribute("filename");
 
-			if (xmlsource == null)
+			if (filename == null)
 			{
-				xmlsource = new XML();
-				xmlsource.add(name == null ? "root" : name);
-			}
-
-			XML[] elements = xml.getElements(null);
-			for(XML element:elements)
-			{
-				String tagname = element.getTagName();
-
-				if (tagname.equals("element"))
+				if (xmlsource == null)
 				{
-					String filename = element.getAttribute("filename");
-					if (filename == null)
-						xmlsource = element.getElement(null).copy();
-					else
-						xmlsource = new XML(filename);
+					xmlsource = new XML();
+					xmlsource.add(name == null ? "root" : name);
 				}
-				else if (tagname.equals("function"))
-				{
-					Subscriber sub = new Subscriber(element);
 
-					Operation.ResultTypes resulttype = Operation.getResultType(element);
-					XML xmlresult = sub.run(xmlsource);
-					switch(resulttype)
+				XML[] elements = xml.getElements(null);
+				for(XML element:elements)
+				{
+					String tagname = element.getTagName();
+
+					if (tagname.equals("element"))
+						xmlsource.add(element);
+					else if (tagname.equals("function"))
 					{
-					case LAST:
-						xmlsource = xmlresult;
-						break;
-					case MERGE:
-						xmlsource.add(xmlresult);
-						break;
-					}
-				}
-				else if (tagname.equals("read"))
-					Read(element,xmlsource);
+						Subscriber sub = new Subscriber(element);
 
-				if (Misc.isLog(9)) Misc.log("XML Sync " + tagname + ": " +xmlsource);
+						Operation.ResultTypes resulttype = Operation.getResultType(element);
+						XML xmlresult = sub.run(xmlsource);
+						switch(resulttype)
+						{
+						case LAST:
+							xmlsource = xmlresult;
+							break;
+						case MERGE:
+							xmlsource.add(xmlresult);
+							break;
+						}
+					}
+					else if (tagname.equals("read"))
+						Read(element,xmlsource);
+
+					if (Misc.isLog(9)) Misc.log("XML Sync " + tagname + ": " +xmlsource);
+				}
 			}
+			else
+				xmlsource = new XML(filename);
 
 			reader = new ReaderXML(xml,xmlsource);
 
@@ -1442,9 +1440,17 @@ class DBSyncOper
 		if (Misc.isLog(2))
 		{
 			String sourcename = sourcesync.getXML().getAttribute("name");
-			String destinationname = destinationsync == null ? null : destinationsync.getXML().getAttribute("name");
-			if (sourcename != null && destinationname != null)
+			if (sourcename == null) sourcename = sourcesync.getXML().getAttribute("instance");
+			if (sourcename == null) sourcename = sourcesync.getXML().getAttribute("filename");
+			if (destinationsync == null)
+				Misc.log("Reading source " + sourcename + "...");
+			else
+			{
+				String destinationname = destinationsync.getXML().getAttribute("name");
+				if (destinationname == null) destinationname = destinationsync.getXML().getAttribute("instance");
+				if (destinationname == null) destinationname = destinationsync.getXML().getAttribute("filename");
 				Misc.log("Comparing source " + sourcename + " with destination " + destinationname + "...");
+			}
 		}
 
 		push("start");

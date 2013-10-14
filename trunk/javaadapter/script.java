@@ -5,13 +5,24 @@ import javax.script.*;
 
 class Script
 {
+	static ScriptEngine engine = null;
+
+	private static synchronized ScriptEngine getEngine()
+	{
+		if (engine != null) return engine;
+		
+		ScriptEngineManager sem = new ScriptEngineManager();
+		ScriptEngine engine = sem.getEngineByName("ECMAScript");
+		ScriptEngineFactory f = engine.getFactory();
+
+		return engine;
+	}
+
 	public static String execute(String program,Map<String,String> vars) throws Exception
 	{
 		if (program == null) return null;
 /* IFDEF JAVA6 */
-		ScriptEngineManager sem = new ScriptEngineManager();
-		ScriptEngine e = sem.getEngineByName("ECMAScript");
-		ScriptEngineFactory f = e.getFactory();
+		ScriptEngine e = getEngine();
 		Bindings bind = e.createBindings();
 		bind.putAll(XML.getDefaultVariables());
 		for(Map.Entry<String,String> var:vars.entrySet())

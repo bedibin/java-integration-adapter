@@ -339,10 +339,10 @@ class XML
 		return javaadapter.crypter.decrypt(value);
 	}
 
-	public HashMap<String,String> getAttributes() throws Exception
+	public LinkedHashMap<String,String> getAttributes() throws Exception
 	{
 		if (node == null) return null;
-		HashMap<String,String> row = new HashMap<String,String>();
+		LinkedHashMap<String,String> row = new LinkedHashMap<String,String>();
 
 		NamedNodeMap map = node.getAttributes();
 		for(int i = 0;i < map.getLength();i++)
