@@ -139,7 +139,7 @@ class CsvWriter
 	{
 		if (value == null) return "";
 		value = value.replace("" + enclosure,"" + enclosure + enclosure);
-		if (value.contains("" + delimiter) || value.contains("\n"))
+		if (value.contains("" + delimiter) || value.contains("\n") || value.contains("\""))
 			value = enclosure + value + enclosure;
 		return value;
 	}
@@ -285,6 +285,7 @@ class Misc
 {
 	public static final String DATEFORMAT = "yyyy-MM-dd HH:mm:ss";
 	public static SimpleDateFormat dateformat = new SimpleDateFormat(DATEFORMAT);
+	public static SimpleDateFormat gmtdateformat;
 	public static final String CR = System.getProperty("line.separator");
 	public static final Pattern substitutepattern = Pattern.compile("%([^%\n\\\\]*(?:\\\\.[^%\n\\\\]*)*)%");
 
@@ -298,6 +299,12 @@ class Misc
 	private static String[] env;
 
 	private Misc() {}
+
+	static
+	{
+		gmtdateformat = new SimpleDateFormat(DATEFORMAT);
+		gmtdateformat.setTimeZone(TimeZone.getTimeZone("GMT"));
+	}
 
 	static public String getHostName()
 	{
@@ -1170,6 +1177,39 @@ class Misc
 		return str.replace("\\\\","\\").replace("\\%","%");
 	}
 
+	public static String substituteGet(String param,String def) throws Exception
+	{
+		if (param.startsWith("$"))
+			return XML.getDefaultVariable(param);
+		else if (param.startsWith("<"))
+		{
+			String value = readFile(param.substring(1));
+			return value == null ? value : value.trim();
+		}
+		else if (param.startsWith("!"))
+		{
+			String value = exec(param.substring(1),"ISO-8859-1",null);
+			return value == null ? value : value.trim();
+		}
+		else if (def != null)
+			return def;
+		return null;
+	}
+
+	public static boolean isSubstituteDefault(String str)
+	{
+		if (str == null) return false;
+
+		Matcher matcher = substitutepattern.matcher(str);
+		while(matcher.find())
+		{
+			char prefix = matcher.group(1).charAt(0);
+			if (prefix != '$' && prefix != '!' && prefix != '<') return true;
+		}
+
+		return false;
+	}
+
 	public static String substitute(Pattern pattern,String str,Substituer sub) throws Exception
 	{
 		if (str == null) return null;
@@ -1204,7 +1244,7 @@ class Misc
 		return substitute(str,new Misc.Substituer() {
 			public String getValue(String param) throws Exception
 			{
-				return XML.getDefaultVariable(param);
+				return substituteGet(param,null);
 			}
 		});
 	}
@@ -1214,7 +1254,7 @@ class Misc
 		return substitute(str,new Misc.Substituer() {
 			public String getValue(String param) throws Exception
 			{
-				return param.startsWith("$") ? XML.getDefaultVariable(param) : map.get(param);
+				return substituteGet(param,map.get(param));
 			}
 		});
 	}
@@ -1224,7 +1264,7 @@ class Misc
 		return substitute(str,new Misc.Substituer() {
 			public String getValue(String param) throws Exception
 			{
-				return param.startsWith("$") ? XML.getDefaultVariable(param) : xml.getStringByPath(param);
+				return substituteGet(param,xml.getStringByPath(param));
 			}
 		});
 	}

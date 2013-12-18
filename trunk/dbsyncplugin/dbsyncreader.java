@@ -1,5 +1,6 @@
 import java.util.*;
 import java.io.*;
+import java.text.*;
 import java.util.regex.*;
 
 interface Reader
@@ -82,6 +83,21 @@ class ReaderCSV implements Reader
 	private BufferedReader in;
 	private String instance;
 
+	private void setValue(ArrayList<String> result,StringBuffer sb) throws Exception
+	{
+		String value = sb.toString();
+		if (value.matches("\\d{4}-\\d{2}-\\d{2}"))
+			value += " 00:00:00";
+		if (value.matches("\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}"))
+		{
+			// Dates in CSV files are local
+			Date date = Misc.dateformat.parse(value);
+			value = Misc.gmtdateformat.format(date);
+		}
+
+		result.add(value);
+	}
+
 	public ArrayList<String> readCSV() throws Exception
 	{
 		if (in == null) return null;
@@ -122,7 +138,7 @@ class ReaderCSV implements Reader
 
 				if (!inquote && c == delimiter)
 				{
-					result.add(sb.toString());
+					setValue(result,sb);
 					sb = new StringBuffer();
 					last = 0;
 					continue;
@@ -133,7 +149,7 @@ class ReaderCSV implements Reader
 			}
 		} while(inquote);
 
-		result.add(sb.toString());
+		setValue(result,sb);
 
 		return result;
 	}
@@ -213,13 +229,13 @@ class ReaderLDAP implements Reader
 	private LinkedHashMap<String,String> first;
 	private String instance;
 
-	private void init(String name,String url,String context,String username,String password,String basedn,String search,String[] attrs,String[] sortattrs) throws Exception
+	private void init(String name,String url,String context,String username,String password,String basedn,String search,String[] attrs,String[] sortattrs,String auth) throws Exception
 	{
 		instance = (name == null) ? "ldap" : name;
 
 		Misc.log(5,"Searching for " + search + " on " + url + " base " + basedn);
 
-		ld = context == null ? new ldap(url,username,password,sortattrs) : new directory(url,context,username,password);
+		ld = context == null ? new ldap(url,username,password,sortattrs,auth) : new directory(url,context,username,password,auth);
 		ld.search(basedn,search,attrs);
 
 		if (attrs != null)
@@ -244,6 +260,7 @@ class ReaderLDAP implements Reader
 		String url = xml.getAttribute("url");
 		String username = xml.getAttribute("username");
 		String password = xml.getAttributeCrypt("password");
+		String auth = xml.getAttribute("authentication");
 		String basedn = xml.getAttribute("basedn");
 		String search = xml.getAttribute("query");
 		String fields = xml.getAttribute("fields");
@@ -253,12 +270,12 @@ class ReaderLDAP implements Reader
 		String[] attrs = fields == null ? null :  fields.split("\\s*,\\s*");
 		String[] sortattrs = sortfields == null ? null :  sortfields.split("\\s*,\\s*");
 
-		init(name,url,context,username,password,basedn,search,attrs,sortattrs);
+		init(name,url,context,username,password,basedn,search,attrs,sortattrs,auth);
 	}
 
-	public ReaderLDAP(String name,String url,String username,String password,String basedn,String search,String[] attrs,String[] sortattrs) throws Exception
+	public ReaderLDAP(String name,String url,String username,String password,String basedn,String search,String[] attrs,String[] sortattrs,String auth) throws Exception
 	{
-		init(name,url,null,username,password,basedn,search,attrs,sortattrs);
+		init(name,url,null,username,password,basedn,search,attrs,sortattrs,auth);
 	}
 
 	public LinkedHashMap<String,String> next() throws Exception
@@ -439,7 +456,7 @@ class ReaderXML implements Reader
 
 	private void getSubXML(LinkedHashMap<String,String> row,String prefix,XML xml) throws Exception
 	{
-		XML[] elements = xml.getElements(null);
+		XML[] elements = xml.getElements();
 		for(XML element:elements)
 		{
 			String name = element.getTagName();
@@ -501,6 +518,9 @@ class ReaderXML implements Reader
 		String name = xml.getAttribute("name");
 		String fields = xml.getAttribute("fields");
 		String[] attrs = fields == null ? null :  fields.split("\\s*,\\s*");
+		String filename = xml.getAttribute("filename");
+		if (filename != null && (xmlsource == null || xml == xmlsource))
+			xmlsource = new XML(filename);
 
 		init(name,xmlsource,xml.getAttribute("resultpathrow"),xml.getAttribute("resultpathcolumn"),attrs);
 	}
