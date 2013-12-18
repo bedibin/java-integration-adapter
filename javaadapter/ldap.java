@@ -96,13 +96,14 @@ class directory
 		dirname = name;
 	}
 
-	public directory(String url,String context,String username,String password) throws Exception
+	public directory(String url,String context,String username,String password,String auth) throws Exception
 	{
 		Properties env = new Properties();
 		env.put(Context.INITIAL_CONTEXT_FACTORY,context);
 		env.put(Context.PROVIDER_URL,url);
 		if (username != null) env.put(Context.SECURITY_PRINCIPAL,username);
                 if (password != null) env.put(Context.SECURITY_CREDENTIALS,password);
+		if (auth != null) env.put(Context.SECURITY_AUTHENTICATION,auth);
 		ctx = new InitialDirContext(env);
 	}
 
@@ -349,7 +350,7 @@ class ldap extends directory
 	private int pageSize = 100;
 	private LdapContext ld;
 
-	public ldap(String url,String username,String password,String[] sortattrs) throws Exception
+	public ldap(String url,String username,String password,String[] sortattrs,String auth) throws Exception
 	{
 		super("LDAP");
 
@@ -358,6 +359,7 @@ class ldap extends directory
 		env.put(Context.PROVIDER_URL,url);
 		if (username != null) env.put(Context.SECURITY_PRINCIPAL,username);
     		if (password != null) env.put(Context.SECURITY_CREDENTIALS,password);
+    		if (auth != null) env.put(Context.SECURITY_AUTHENTICATION,auth);
 		env.put("java.naming.ldap.derefAliases","never");
 		env.put(Context.REFERRAL,"ignore");
 		ld = new InitialLdapContext(env,null);

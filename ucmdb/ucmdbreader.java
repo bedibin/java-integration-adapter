@@ -13,9 +13,11 @@ class Ucmdb
 	private static Ucmdb instance;
 	private UcmdbService service;
 	public static SimpleDateFormat dateformat;
+	private String adapterinfo;
 
 	private Ucmdb() throws Exception
 	{
+		adapterinfo = "javaadapter/" + javaadapter.getName();
 		dateformat = new SimpleDateFormat(Misc.DATEFORMAT);
 		dateformat.setTimeZone(TimeZone.getTimeZone("GMT"));
 
@@ -31,9 +33,21 @@ class Ucmdb
 		String password = xml.getValueCrypt("password");
 
 		UcmdbServiceProvider serviceProvider = UcmdbServiceFactory.getServiceProvider(protocol,host,port);
-		ClientContext clientContext = serviceProvider.createClientContext("uCMDBAdapter:"+javaadapter.getName());
+		ClientContext clientContext = serviceProvider.createClientContext(adapterinfo);
 		Credentials credentials = serviceProvider.createCredentials(username,password);
-		service = serviceProvider.connect(credentials,clientContext);
+		int retry = 0;
+		while(true)
+		{
+			try {
+				service = serviceProvider.connect(credentials,clientContext);
+				break;
+			} catch (Exception ex) {
+				retry++;
+				if (retry > 3)
+					Misc.rethrow(ex);
+				Thread.sleep(10000);
+			}
+		}
 		System.out.println("Done");
 	}
 
@@ -74,6 +88,11 @@ class Ucmdb
 
 		if (causes.size() == 0) return error;
 		return Misc.implode(causes);
+	}
+
+	public String getInfo()
+	{
+		return adapterinfo;
 	}
 }
 
@@ -257,6 +276,7 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 	private ClassModelService classmodel;
 	private HashMap<String,Type> attrtypes = new HashMap<String,Type>();
 	private Ucmdb ucmdb;
+	private String adapterinfo;
 
 	public UCMDBUpdateSubscriber() throws Exception
 	{
@@ -264,6 +284,7 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 		update = ucmdb.getUpdate();
 		factory = update.getFactory();
 		classmodel = ucmdb.getClassModel();
+		adapterinfo = ucmdb.getInfo();
 	}
 
 	private void FillUpdateData(TopologyModificationData data,XML xml,String prefix,boolean isdelete) throws Exception
@@ -285,8 +306,9 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 		for(XML field:fields)
 		{
 			String type = field.getAttribute("type");
-			if (type != null && type.equals("info")) continue;
-			if (type != null && isdelete && !type.equals("key")) continue;
+			if ("info".equals(type)) continue;
+			if ("infoapi".equals(type)) continue;
+			if (isdelete && !"key".equals(type)) continue;
 
 			XML old = field.getElement("oldvalue");
 			if (type != null && old != null)
@@ -309,7 +331,7 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 			if (suffix.equals("END1")) continue;
 			if (suffix.equals("END2")) continue;
 
-			if (suffix.equals(":INFO") && !isdelete)
+			if (suffix.equals(":INFO"))
 				FillUpdateData(data,xml,tagname.substring(0,tagname.length()-5),isdelete);
 			else if (suffix.indexOf(':') == -1)
 			{
@@ -332,7 +354,7 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 					try {
 					ci.setLongProperty(suffix,new Long(value));
 					} catch (NumberFormatException ex) {
-					Misc.log("ERROR: Cannot convert '" + value + "' for field '" + suffix + "' into a long: " + xml);
+					Misc.log("ERROR: [" + getKeyValue() + "] Cannot convert '" + value + "' for field '" + suffix + "' into a long: " + xml);
 					}
 					break;
 				case ENUM:
@@ -340,7 +362,7 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 					try {
 					ci.setIntProperty(suffix,new Integer(value));
 					} catch (NumberFormatException ex) {
-					Misc.log("ERROR: Cannot convert '" + value + "' for field '" + suffix + "' into an integer: " + xml);
+					Misc.log("ERROR: [" + getKeyValue() + "] Cannot convert '" + value + "' for field '" + suffix + "' into an integer: " + xml);
 					}
 					break;
 				case LIST:
@@ -365,14 +387,14 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 
 	private void add(XML xml) throws Exception
 	{
-		TopologyModificationData data = factory.createTopologyModificationData();
+		TopologyModificationData data = factory.createTopologyModificationData(adapterinfo + "/add");
 		FillUpdateData(data,xml,null,false);
 		update.create(data,CreateMode.UPDATE_EXISTING);
 	}
 
 	private void remove(XML xmldest,XML xml) throws Exception
 	{
-		TopologyModificationData data = factory.createTopologyModificationData();
+		TopologyModificationData data = factory.createTopologyModificationData(adapterinfo + "/remove");
 		XML[] customs = xmldest.getElements("customremove");
 		for(XML custom:customs)
 		{
@@ -382,7 +404,11 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 			if (value == null) value = "";
 			xml.add(name,value);
 			if (Misc.isLog(10)) Misc.log("Updating " + name + " with value " + value + " instead of deleting: " + xml);
-			FillUpdateData(data,xml,null,true);
+		}
+
+		if (customs.length > 0)
+		{
+			FillUpdateData(data,xml,null,false);
 			update.update(data);
 			return;
 		}
@@ -393,9 +419,54 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 
 	private void update(XML xml) throws Exception
 	{
-		TopologyModificationData data = factory.createTopologyModificationData();
+		XML end1 = xml.getElement("END1");
+		XML end2 = xml.getElement("END2");
+		if (end1 != null && end2 != null)
+		{
+			String old1 = end1.getValue("oldvalue",null);
+			String old2 = end2.getValue("oldvalue",null);
+			if (old1 != null || old2 != null)
+			{
+				if (old1 == null) old1 = end1.getValue();
+				if (old2 == null) old2 = end2.getValue();
+
+				String[] old1values = old1.split("\n");
+				String[] old2values = old2.split("\n");
+
+				if (Misc.isLog(10)) Misc.log("Update causing relationship recreation: " + xml);
+
+				for(String old1value:old1values) for(String old2value:old2values)
+				{
+					XML delete = new XML();
+					delete = delete.add("remove");
+					delete.add("END1",old1value);
+					delete.add("END2",old2value);
+					delete.add("INFO",xml.getValue("INFO",null));
+
+					TopologyModificationData data = factory.createTopologyModificationData(adapterinfo + "/replace");
+					FillUpdateData(data,delete,null,true);
+					update.delete(data,DeleteMode.IGNORE_NON_EXISTING);
+				}
+				add(xml);
+				return;
+			}
+		}
+
+		TopologyModificationData data = factory.createTopologyModificationData(adapterinfo + "/update");
 		FillUpdateData(data,xml,null,false);
 		update.update(data);
+	}
+
+	@Override
+	protected void setKeyValue(XML xml) throws Exception
+	{
+		String[] keys = {"END1","END2","ID","INFO"};
+		for(String key:keys)
+		{
+			XML xmlkey = xml.getElement(key);
+			if (xmlkey != null) xmlkey.setAttribute("type","key");
+		}
+		super.setKeyValue(xml);
 	}
 
 	@Override
@@ -407,11 +478,9 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 			if (oper.equals("add")) add(xmloper);
 			else if (oper.equals("remove")) remove(xmldest,xmloper);
 			else if (oper.equals("update")) update(xmloper);
-		} catch(ExecutionException ex) {
-			if (stoponerror) Misc.rethrow(ex);
-			Misc.log("ERROR: " + Ucmdb.cleanupException(ex) + ": " + xmloper);
 		} catch(Exception ex) {
-			Misc.rethrow(ex,"UCMDB API error while processing: " + xmloper);
+			if (stoponerror) Misc.rethrow(ex);
+			Misc.log("ERROR: [" + getKeyValue() + "] " + Ucmdb.cleanupException(ex) + ": " + xmloper);
 		}
 	}
 }

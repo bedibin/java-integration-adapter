@@ -331,6 +331,11 @@ class XML
 		return el.getTagName();
 	}
 
+	public void renameTag(String name) throws Exception
+	{
+		dom.renameNode(node,null,name);
+	}
+
 	public String getAttributeCrypt(String name) throws Exception
 	{
 		String value = getAttribute(name);
@@ -381,6 +386,15 @@ class XML
 			return false;
 		}
 		return true;
+	}
+
+	public String getAttributeDeprecated(String name) throws Exception
+	{
+		if (!isElement(node)) return null;
+		Element el = (Element)node;
+		Attr attr = el.getAttributeNode(name);
+		if (attr == null) return null;
+		return attr.getValue();
 	}
 
 	public String getAttribute(String name) throws Exception

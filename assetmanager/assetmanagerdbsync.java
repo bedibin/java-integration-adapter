@@ -25,11 +25,11 @@ class AMDB extends DB
 				int x = 0;
 				while(matcher.find())
 				{
-					if (x >= list.size()) throw new AdapterException("Too many replacement characters");
+					if (x >= list.size()) throw new AdapterException("Too many replacement characters " + list.size() + ": " + sql);
 					matcher.appendReplacement(sb,Matcher.quoteReplacement(getValue(list.get(x))));
 					x++;
 				}
-				if (x < list.size()) throw new AdapterException("Not enough replacement characters");
+				if (x < list.size()) throw new AdapterException("Not enough replacement characters " + list.size() + ": " + sql);
 				matcher.appendTail(sb);
 				init(name,sb.toString());
 			}
@@ -124,7 +124,7 @@ class AMDB extends DB
 	public String getDate(String value) throws Exception
 	{
 		// AM API requires local time and a special syntax
-		Date date = gmtdateformat.parse(value);
+		Date date = Misc.gmtdateformat.parse(value);
 		return "#" + Misc.dateformat.format(date) + "#";
 	}
 
@@ -177,14 +177,10 @@ class AMDB extends DB
 
 class AssetManagerUpdateSubscriber extends DatabaseUpdateSubscriber
 {
-	private UpdateSQL update;
-	private AMDB db;
-
 	public AssetManagerUpdateSubscriber() throws Exception
 	{
 		db = AMDB.getInstance();
-		update = new UpdateSQL(db);
-		update.setQuoteField("");
+		setQuoteField("");
 	}
 
 	@Override
@@ -192,7 +188,7 @@ class AssetManagerUpdateSubscriber extends DatabaseUpdateSubscriber
 	{
 		try
 		{
-			update.oper(xmldest,xmloper);
+			super.oper(xmldest,xmloper);
 		}
 		catch(AmException ex)
 		{

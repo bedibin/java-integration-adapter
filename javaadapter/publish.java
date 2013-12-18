@@ -361,7 +361,7 @@ class Publisher
 			else if (type.equals("ldap"))
 			{
 				String url = el.getAttribute("url");
-				pub = new PublisherObject(new ldap(url,el.getAttribute("username"),el.getAttributeCrypt("password"),null));
+				pub = new PublisherObject(new ldap(url,el.getAttribute("username"),el.getAttributeCrypt("password"),null,el.getAttribute("authentication")));
 			}
 
 			if (pub != null)

@@ -35,6 +35,7 @@ class DB
 		protected String[] columnnames;
 		private int[] columntypes;
 		private Connection conn;
+		private int resultcount = 0;
 
 		protected DBOper() { }
 
@@ -59,7 +60,10 @@ class DB
 					if (value == null)
 						stmt.setString(x,null);
 					else if (value.matches("\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}"))
-						stmt.setTime(x,Time.valueOf(getDate(value)));
+					{
+						java.util.Date date = Misc.gmtdateformat.parse(value);
+						stmt.setTimestamp(x,new Timestamp(date.getTime()));
+					}
 					else
 						stmt.setString(x,value);
 					x++;
@@ -83,8 +87,8 @@ class DB
 			}
 			else
 			{
-				int count = stmt.executeUpdate();
-				if (Misc.isLog(15)) Misc.log("" + count + " row updated");
+				resultcount = stmt.executeUpdate();
+				if (Misc.isLog(15)) Misc.log("" + resultcount + " row updated");
 				close();
 			}
 		}
@@ -98,9 +102,10 @@ class DB
 		{
 			if (javaadapter.isShuttingDown()) return;
 
-			conn = db.get(name).conn;
-			if (conn == null)
+			DBConnection dbc = db.get(name);
+			if (dbc == null)
 				throw new AdapterException("Connection " + name + " doesn't exist");
+			conn = dbc.conn;
 
 			if (conn.isClosed())
 			{
@@ -172,6 +177,11 @@ class DB
 			return headers;
 		}
 
+		public int getResultCount()
+		{
+			return resultcount;
+		}
+
 		public LinkedHashMap<String,String> next() throws Exception
 		{
 			LinkedHashMap<String,String> row = new LinkedHashMap<String,String>();
@@ -208,7 +218,7 @@ class DB
 					value = rset.getString(i+1);
 				}
 
-				if (date != null) value = gmtdateformat.format(date);
+				if (date != null) value = Misc.gmtdateformat.format(date);
 				if (value == null) value = "";
 
 				row.put(columnnames[i],value.trim());
@@ -240,9 +250,10 @@ class DB
 	private static final String ORACLEJDBCDRIVER = "oracle.jdbc.driver.OracleDriver";
 	private static final String SQLSERVERJDBCDRIVER = "com.microsoft.sqlserver.jdbc.SQLServerDriver";
 	private static final String MYSQLJDBCDRIVER = "com.mysql.jdbc.Driver";
-	enum dbtype { MYSQL, MSSQL, ORACLE, OTHER };
+	private static final String DB2JDBCDRIVER = "com.ibm.db2.jcc.DB2Driver";
+	private static final String SYBASEJDBCDRIVER = "com.sybase.jdbc4.jdbc.SybDriver";
+	enum dbtype { MYSQL, MSSQL, ORACLE, DB2, OTHER };
 	public ComparatorIgnoreCase<String> collator;
-	protected static SimpleDateFormat gmtdateformat = new SimpleDateFormat(Misc.DATEFORMAT);
 
 	private static DB instance;
 
@@ -271,9 +282,14 @@ class DB
 		return instance;
 	}
 
+	public String getDate(java.util.Date date) throws Exception
+	{
+		return "{ ts '" + Misc.dateformat.format(date) + "'}";
+	}
+
 	public String getDate(String value) throws Exception
 	{
-		return "{ ts '" + value + "+00:00'}";
+		return getDate(Misc.gmtdateformat.parse(value));
 	}
 
 	public String getFieldValue(String value) throws Exception
@@ -312,7 +328,11 @@ class DB
 
 		try
 		{
-			dbc.conn = DriverManager.getConnection(connstr,xml.getValue("username"),xml.getValueCrypt("password"));
+			String username = xml.getValue("username",null);
+			if (username == null)
+				dbc.conn = DriverManager.getConnection(connstr);
+			else
+				dbc.conn = DriverManager.getConnection(connstr,username,xml.getValueCrypt("password"));
 		}
 		catch(SQLException ex)
 		{
@@ -331,6 +351,8 @@ class DB
 		}
 		else if (driverstr != null && driverstr.equals(SQLSERVERJDBCDRIVER))
 		{
+			// TODO: Make setTransactionIsolation configurable, UNCOMMITED should not be default
+			dbc.conn.setTransactionIsolation(Connection.TRANSACTION_READ_UNCOMMITTED);
 			dbc.dbtype = dbtype.MSSQL;
 		}
 		else if (driverstr != null && driverstr.equals(MYSQLJDBCDRIVER))
@@ -338,6 +360,10 @@ class DB
 			execsql(name,"set names utf8 collate utf8_bin");
 			dbc.quote = "`";
 			dbc.dbtype = dbtype.MYSQL;
+		}
+		else if (driverstr != null && driverstr.equals(DB2JDBCDRIVER))
+		{
+			dbc.dbtype = dbtype.DB2;
 		}
 
 		XML[] xmlinit = xml.getElements("initsql");
@@ -386,8 +412,6 @@ class DB
 
 	private void init(XML xmlcfg) throws Exception
 	{
-		gmtdateformat.setTimeZone(TimeZone.getTimeZone("GMT"));
-
 		collator = new DBComparator();
 
 		db = new HashMap<String,DBConnection>();
@@ -434,6 +458,9 @@ class DB
 		case MYSQL:
 			sql.append("concat(");
 			break;
+		case DB2:
+			sql.append("collation_key_bit(");
+			break;
 		}
 
 		for(String keyfield:keys)
@@ -452,6 +479,7 @@ class DB
 				sql.append(keyfield + " + '!'");
 				break;
 			default:
+				// Oracle, DB2, Sybase
 				if (!first) sql.append(" || ");
 				sql.append(keyfield + " || '!'");
 			}
@@ -463,6 +491,9 @@ class DB
 		case MYSQL:
 			sql.append(")");
 			break;
+		case DB2:
+			sql.append(",'UCA400R1')");
+			break;
 		}
 		sql.append(")");
 		switch(dbc.dbtype)
@@ -471,7 +502,6 @@ class DB
 			sql.append(" collate latin1_general_bin2");
 			break;
 		case MYSQL:
-			//sql.append(" collate utf8_bin");
 			break;
 		}
 
@@ -487,6 +517,12 @@ class DB
 	{
 		String sql = xml.getValue();
 		return new DBOper(conn,sql);
+	}
+
+	public int execsqlresult(String conn,String sql) throws Exception
+	{
+		DBOper oper = new DBOper(conn,sql,null);
+		return oper.getResultCount();
 	}
 
 	public ArrayList<LinkedHashMap<String,String>> execsql(String conn,String sql) throws Exception
@@ -523,6 +559,12 @@ class DB
 		return execsql(conn,sql);
 	}
 
+	public String getQuote(String instance)
+	{
+		DBConnection dbc = db.get(instance);
+		return dbc.quote;
+	}
+
 	public void close()
 	{
 		try
@@ -549,7 +591,7 @@ class DB
 		DBOper oper = makesqloper(conn,Misc.substitute(sql,new Misc.Substituer() {
 			public String getValue(String param) throws Exception
 			{
-				String value = param.startsWith("$") ? XML.getDefaultVariable(param) : finalxml.getStringByPath(param);
+				String value = Misc.substituteGet(param,finalxml.getStringByPath(param));
 				return getFieldValue(value);
 			}
 		}));

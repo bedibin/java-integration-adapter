@@ -3,6 +3,9 @@ import java.sql.SQLException;
 
 class dbsyncplugin
 {
+	static public boolean preview_mode = false;
+	static public boolean dumpcsv_mode = false;
+
 	private dbsyncplugin() { }
 
 	public static void main(String[] args)
@@ -10,8 +13,16 @@ class dbsyncplugin
 		DBSyncOper sync;
 
 		String filename = javaadapter.DEFAULTCFGFILENAME;
-		if (args.length > 0)
-			filename = args[0];
+		for(String arg:args)
+		{
+			if (arg.equals("-preview"))
+				preview_mode = true;
+			else if (arg.equals("-dumpcsv"))
+				dumpcsv_mode = true;
+			else
+				filename = arg;
+		}
+
 		javaadapter.initShutdownHook();
 		try
 		{
@@ -79,17 +90,100 @@ class DBSyncPluginSubscriber extends Subscriber
 	}
 }
 
-class UpdateSQL
+class UpdateSubscriber extends Subscriber
+{
+	protected boolean stoponerror = false;
+	private String keyvalue;
+
+	protected String getKeyValue()
+	{
+		return keyvalue;
+	}
+
+	protected void setKeyValue(XML xml) throws Exception
+	{
+		XML[] fields = xml.getElements();
+		keyvalue = "";
+		for(XML field:fields)
+		{
+			String fieldtype = field.getAttribute("type");
+			if (!"key".equals(fieldtype)) continue;
+			String value = field.getValue();
+			if (value == null) continue;
+			if ("".equals(value)) continue;
+			keyvalue = keyvalue.isEmpty() ? value : keyvalue + "," + value;
+		}
+	}
+
+	@Override
+	public XML run(XML xml) throws Exception
+	{
+		String instance = xml.getAttribute("instance");
+		if (instance == null) return null;
+		String name = xml.getAttribute("name");
+		if (name == null) return null;
+		String type = xml.getAttribute("type");
+		if (type == null || !type.equals("db")) return null;
+		String table = xml.getAttribute("table");
+
+		String path = "/configuration/dbsync[@name='" + name + "']/destination[@type='" + type + "' and @instance='" + instance + "'";
+		if (table != null) path += " and @table='" + table + "'";
+		path += "]";
+
+		XML xmldest = javaadapter.getConfiguration().getElementByPath(path);
+		if (xmldest == null) return null;
+
+		String stop = xmldest.getAttribute("stop_on_error");
+		if (stop != null && stop.equals("true")) stoponerror = true;
+
+		XML[] xmloperlist = xml.getElements(null);
+		for(XML xmloper:xmloperlist)
+		{
+			if (javaadapter.isShuttingDown()) return null;
+			setKeyValue(xmloper);
+			oper(xmldest,xmloper);
+		}
+
+		XML result = new XML();
+		result.add("ok");
+
+		return result;
+	}
+
+	protected void oper(XML xmldest,XML xmloper) throws Exception
+	{
+		throw new AdapterException("Operation method must be overridden");
+	}
+}
+
+class DatabaseUpdateSubscriber extends UpdateSubscriber
 {
 	protected DB db;
 	private Rate rate;
 	private String quotefield = "\"";
 
-	public UpdateSQL() {};
-
-	public UpdateSQL(DB db) throws Exception
+	public DatabaseUpdateSubscriber() throws Exception
 	{
-		this.db = db;
+		db = DB.getInstance();
+	}
+
+	@Override
+	protected void oper(XML xmldest,XML xmloper) throws Exception
+	{
+		try
+		{
+			String oper = xmloper.getTagName();
+			if (oper.equals("update")) update(xmldest,xmloper);
+			else if (oper.equals("add")) add(xmldest,xmloper);
+			else if (oper.equals("remove")) remove(xmldest,xmloper);
+			else if (oper.equals("start")) start(xmldest,xmloper);
+			else if (oper.equals("end")) end(xmldest,xmloper);
+		}
+		catch(SQLException ex)
+		{
+			if (stoponerror) Misc.rethrow(ex);
+			Misc.log("ERROR: [" + getKeyValue() + "] " + ex.getMessage() + Misc.CR + "XML message was: " + xmloper);
+		}
 	}
 
 	public void setQuoteField(String field)
@@ -97,7 +191,7 @@ class UpdateSQL
 		quotefield = field;
 	}
 
-	private void start(XML xmldest,XML xml) throws Exception
+	protected void start(XML xmldest,XML xml) throws Exception
 	{
 		String instance = xmldest.getAttribute("instance");
 		XML[] xmlsqllist = xmldest.getElements("preinsertsql");
@@ -111,7 +205,7 @@ class UpdateSQL
 		rate = new Rate();
 	}
 
-	private void end(XML xmldest,XML xml) throws Exception
+	protected void end(XML xmldest,XML xml) throws Exception
 	{
 		String instance = xmldest.getAttribute("instance");
 		XML[] xmlsqllist = xmldest.getElements("postinsertsql");
@@ -240,14 +334,14 @@ class UpdateSQL
 			if (!isretry)
 			{
 				String ondups = xmldest.getAttribute("on_duplicates");
-				if (ondups == null || ondups.equals("recreate"))
+				if (ondups == null || ondups.equals("recreate") || ondups.equals("warning")) // recreate is for compatibility only
 				{
-					Misc.log(1,"WARNING: Record already present." + Misc.CR + "Record will be automatically recreated with XML message: " + xml);
+					Misc.log(1,"WARNING: [" + getKeyValue() + "] Record already present. Record will be automatically recreated with XML message: " + xml);
 					remove(xmldest,xml);
 					add(xmldest,xml,true);
 				}
 				else if (ondups.equals("error"))
-					Misc.log(1,"ERROR: Record already present. Error: " + message + Misc.CR + "Ignored XML message: " + xml);
+					Misc.log(1,"ERROR: [" + getKeyValue() + "] Record already present. Error: " + message + Misc.CR + "Ignored XML message: " + xml);
 				else if (ondups.equals("merge"))
 				{
 					String mergefields = xmldest.getAttribute("merge_fields");
@@ -291,7 +385,7 @@ class UpdateSQL
 		Misc.rethrow(ex);
 	}
 
-	private void add(XML xmldest,XML xml) throws Exception
+	protected void add(XML xmldest,XML xml) throws Exception
 	{
 		add(xmldest,xml,false);
 	}
@@ -348,7 +442,7 @@ class UpdateSQL
 		}
 	}
 
-	private void remove(XML xmldest,XML xml) throws Exception
+	protected void remove(XML xmldest,XML xml) throws Exception
 	{
 		String instance = xmldest.getAttribute("instance");
 		if (customsql("remove",xmldest,xml)) return;
@@ -356,19 +450,37 @@ class UpdateSQL
 		String table = xmldest.getAttribute("table");
 		if (table == null) throw new AdapterException(xmldest,"dbsync: destination 'table' attribute required");
 
+		ArrayList<String> list = new ArrayList<String>();
 		String sql = "delete from " + table + getWhereClause(xmldest,xml);
+		XML[] customs = xmldest.getElements("customremove");
+		if (customs.length > 0)
+		{
+			sql = "update " + table;
+			String sep = "set";
+			for(XML custom:customs)
+			{
+				String name = custom.getAttribute("name");
+				if (name == null) throw new AdapterException(custom,"Attribute 'name' required");
+				String value = custom.getAttribute("value");
+				if (value == null) value = "";
+				sql += " " + sep + " " + quotefield + name + quotefield + "=" + DB.replacement;
+				list.add(value);
+				sep = ",";
+			}
+			sql += getWhereClause(xmldest,xml);
+		}
 
 		rate.toString();
 		if (Misc.isLog(10)) Misc.log("remove SQL: " + sql);
-		db.execsql(instance,sql);
+		db.execsql(instance,sql,list);
 	}
 
-	private void update(XML xmldest,XML xml) throws Exception
+	protected void update(XML xmldest,XML xml) throws Exception
 	{
 		update(xmldest,xml,false);
 	}
 
-	private void update(XML xmldest,XML xml,boolean isretry) throws Exception
+	protected void update(XML xmldest,XML xml,boolean isretry) throws Exception
 	{
 		String instance = xmldest.getAttribute("instance");
 		if (customsql("update",xmldest,xml)) return;
@@ -387,7 +499,7 @@ class UpdateSQL
 
 			String oldvalue = old.getValue();
 			String type = field.getAttribute("type");
-			if (type != null && (type.equals("info") || type.equals("key") || (type.equals("initial") && old != null))) continue;
+			if (type != null && (type.equals("info") || type.equals("key") || (type.equals("initial") && oldvalue != null))) continue;
 
 			sql += " " + sep + " " + quotefield + field.getTagName() + quotefield + " = " + DB.replacement;
 			list.add(field.getValue());
@@ -409,90 +521,6 @@ class UpdateSQL
 		{
 			handleRetryException(ex,xmldest,xml,isretry);
 		}
-	}
-
-	public void oper(XML xmldest,XML xmloper) throws Exception
-	{
-		String oper = xmloper.getTagName();
-		if (oper.equals("update")) update(xmldest,xmloper);
-		else if (oper.equals("add")) add(xmldest,xmloper);
-		else if (oper.equals("remove")) remove(xmldest,xmloper);
-		else if (oper.equals("start")) start(xmldest,xmloper);
-		else if (oper.equals("end")) end(xmldest,xmloper);
-	}
-}
-
-class UpdateSubscriber extends Subscriber
-{
-	protected boolean stoponerror = false;
-
-	@Override
-	public XML run(XML xml) throws Exception
-	{
-		String instance = xml.getAttribute("instance");
-		if (instance == null) return null;
-		String name = xml.getAttribute("name");
-		if (name == null) return null;
-		String type = xml.getAttribute("type");
-		if (type == null || !type.equals("db")) return null;
-		String table = xml.getAttribute("table");
-
-		String path = "/configuration/dbsync[@name='" + name + "']/destination[@type='" + type + "' and @instance='" + instance + "'";
-		if (table != null) path += " and @table='" + table + "'";
-		path += "]";
-
-		XML xmldest = javaadapter.getConfiguration().getElementByPath(path);
-		if (xmldest == null) return null;
-
-		String stop = xmldest.getAttribute("stop_on_error");
-		if (stop != null && stop.equals("true")) stoponerror = true;
-
-		XML[] xmloperlist = xml.getElements(null);
-		for(XML xmloper:xmloperlist)
-		{
-			if (javaadapter.isShuttingDown()) return null;
-			oper(xmldest,xmloper);
-		}
-
-		XML result = new XML();
-		result.add("ok");
-
-		return result;
-	}
-
-	protected void oper(XML xmldest,XML xmloper) throws Exception
-	{
-	}
-}
-
-class DatabaseUpdateSubscriber extends UpdateSubscriber
-{
-	private UpdateSQL update;
-	protected DB db;
-
-	public DatabaseUpdateSubscriber() throws Exception
-	{
-		db = DB.getInstance();
-		update = new UpdateSQL(db);
-	}
-
-	@Override
-	protected void oper(XML xmldest,XML xmloper) throws Exception
-	{
-		try
-		{
-			update.oper(xmldest,xmloper);
-		}
-		catch(SQLException ex)
-		{
-			if (stoponerror) Misc.rethrow(ex);
-			Misc.log("ERROR: " + ex.getMessage() + Misc.CR + "XML message was: " + xmloper);
-		}
-	}
-
-	public void close()
-	{
-		db.close();
 	}
 }
 

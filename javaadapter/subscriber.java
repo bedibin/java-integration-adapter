@@ -126,15 +126,12 @@ class Operation extends SchedulerTask
 		String str = Misc.substitute(value,new Misc.Substituer() {
 			public String getValue(String param) throws Exception
 			{
-				String var = null;
 				if (param.startsWith("$"))
 				{
-					var = getVariable(param);
-					if (var == null) var = XML.getDefaultVariable(param);
+					String var = getVariable(param);
+					if (var != null) return var;
 				}
-				else
-					var = finalxml.getStringByPath(param);
-				return var;
+				return Misc.substituteGet(param,finalxml.getStringByPath(param));
 			}
 		});
 
