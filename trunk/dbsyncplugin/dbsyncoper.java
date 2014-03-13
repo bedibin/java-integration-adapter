@@ -3,22 +3,6 @@ import java.util.regex.*;
 import java.io.FileNotFoundException;
 import com.esotericsoftware.wildcard.Paths;
 
-class LookupAdapterException extends AdapterException
-{
-	private String key;
-
-	LookupAdapterException(String key)
-	{
-		super("LookupAdapterException on " + key);
-		this.key = key;
-	}
-
-	String getKey()
-	{
-		return key;
-	}
-}
-
 class DBSyncOper
 {
 	public enum Scope { SCOPE_GLOBAL, SCOPE_SOURCE, SCOPE_DESTINATION };
@@ -158,6 +142,7 @@ class DBSyncOper
 		protected Reader reader;
 		private CsvWriter csvout;
 		private String syncname;
+		private boolean dumplogfile = false;
 
 		public Sync(XML xml) throws Exception
 		{
@@ -168,6 +153,10 @@ class DBSyncOper
 				dumpcsvfilename = javaadapter.getName() + "_" + dbsyncname + "_" + getName() + "_" + Misc.implode(fields.getKeys(),"_") + ".csv";
 
 			if (dumpcsvfilename != null) csvout = new CsvWriter(dumpcsvfilename,xml);
+
+			String dumplogfilestr = xml.getAttribute("dumplogfile");
+			if (dumplogfilestr != null && dumplogfilestr.equals("true"))
+				dumplogfile = true;
 
 			// Important: reader must be set by extended constructor class
 		}
@@ -187,11 +176,6 @@ class DBSyncOper
 			return xml;
 		}
 
-		public CsvWriter getCsvWriter()
-		{
-			return csvout;
-		}
-
 		public Reader getReader()
 		{
 			return reader;
@@ -205,6 +189,17 @@ class DBSyncOper
 			if (syncname == null) syncname = xml.getAttribute("filename");
 			if (syncname == null) syncname = xml.getTagName();
 			return syncname;
+		}
+
+		public void makeDump(LinkedHashMap<String,String> result) throws Exception
+		{
+			if (csvout != null) csvout.write(result);
+			if (dumplogfile) Misc.log(Misc.implode(result));
+		}
+
+		public void closeDump() throws Exception
+		{
+			if (csvout != null) csvout.flush();
 		}
 	}
 
@@ -390,148 +385,8 @@ class DBSyncOper
 
 	class Field
 	{
-		class Preload
-		{
-			private HashMap<String,String> table;
-			private HashMap<String,String> datetable;
-			private Set<String> fields;
-			private String datefield;
-
-			Preload(XML xml) throws Exception
-			{
-				if (Misc.isLog(15)) Misc.log("Field: Doing preload for " + name);
-
-				datefield = xml.getAttribute("date_field");
-				if (datefield != null && !"merge_lookup".equals(xml.getTagName()))
-					throw new AdapterException(xml,"Invalid date_field attribute");
-				if (datefield == null && "merge_lookup".equals(xml.getTagName()))
-					throw new AdapterException(xml,"Attribute date_field mandatory for preload");
-
-				Reader reader = null;
-				try
-				{
-					reader = ReaderUtil.getReader(xml);
-				}
-				catch(FileNotFoundException ex)
-				{
-					String onnotfound = xml.getAttribute("on_file_not_found");
-					if (onnotfound == null) onnotfound = xml.getAttributeDeprecated("on_not_found");
-					if (onnotfound == null || onnotfound.equals("exception"))
-						Misc.rethrow(ex);
-					else if (onnotfound.equals("ignore"))
-						return;
-					else if (onnotfound.equals("warning"))
-					{
-						Misc.log("WARNING: Ignoring lookup operation since file not found: " + ex.getMessage());
-						return;
-					}
-					else if (onnotfound.equals("error"))
-					{
-						Misc.log("ERROR: Ignoring lookup operation since file not found: " + ex.getMessage());
-						return;
-				}
-				else
-						throw new AdapterException(xml,"Invalid on_file_not_found attribute");
-				}
-
-				LinkedHashMap<String,String> result;
-				if (reader != null) while((result = reader.next()) != null)
-				{
-					String value = result.get(name);
-					String datevalue = null;
-					if (value == null)
-						throw new AdapterException(xml,"Preload query doesn't return " + name + " field");
-
-					if (table == null) table = new HashMap<String,String>();
-					if (datetable == null) datetable = new HashMap<String,String>();
-
-					if (fields == null)
-					{
-						fields = result.keySet();
-						fields.remove(name);
-						if (datefield != null)
-						{
-							if (!result.containsKey(datefield))
-								throw new AdapterException(xml,"Preload must return date_field " + datefield);
-							datevalue = result.get(datefield);
-							fields.remove(datefield);
-						}
-						if (fields.isEmpty())
-							throw new AdapterException(xml,"Preload query must return more than just " + name + " field");
-					}
-
-					String keyvalue = Misc.getKeyValue(fields,result);
-					if (keyvalue == null) continue;
-
-					if (table.get(keyvalue) != null)
-					{
-						String duperror = xml.getAttribute("show_duplicates_error");
-						if (duperror == null || duperror.equals("true"))
-							Misc.log("ERROR: [" + keyvalue + "] Preload for " + name + " returned more than one entries");
-						value = null;
-					}
-
-					if (value == null || "".equals(value)) continue;
-
-					String[] keyvalues = keyvalue.split("\n"); // This won't work if multiple key fields are containing carriage return
-					for(String key:keyvalues)
-					{
-						table.put(key,value);
-						if (Misc.isLog(25)) Misc.log("Field: Storing preload for " + name + " key " + key + ": " + value);
-					}
-
-					if (datevalue != null) datetable.put(keyvalue,datevalue);
-				}
-
-				if (table == null)
-					Misc.log("WARNING: Preload for field '" + name + "' returned empty result");
-			}
-
-			public String getPreload(LinkedHashMap<String,String> values) throws Exception
-			{
-				if (fields == null) return null;
-				String keyvalue = Misc.getKeyValue(fields,values);
-				if (keyvalue == null) return null;
-
-				if (Misc.isLog(25)) Misc.log("Field: Preload key for " + name + " is " + keyvalue);
-
-				String result = null;
-				if (table != null)
-				{
-					result = table.get(keyvalue);
-					if (result == null && "use_key".equals(onlookuperror))
-						result = keyvalue;
-					if (result == null)
-						throw new LookupAdapterException(keyvalue);
-				}
-
-				if (Misc.isLog(25)) Misc.log("Field: Getting preload for " + name + " key " + keyvalue + ": " + result);
-
-				if (datefield == null) return result;
-
-				if (!values.containsKey(datefield))
-					throw new AdapterException("Extraction must return a value for date_field " + datefield);
-				String datevalue = values.get(datefield);
-				if (datevalue == null) return result;
-				String mergedatevalue = datetable.get(keyvalue);
-				if (mergedatevalue == null) return null;
-
-				Date date = Misc.dateformat.parse(datevalue);
-				Date mergedate = Misc.dateformat.parse(mergedatevalue);
-
-				if (date.after(mergedate)) return null;
-				return result;
-			}
-		}
-
-		private String defaultvalue;
-		private String defaultlookupvalue;
 		private XML xmlfield;
-		private XML xmllookup;
-		private XML xmllookupmerge;
-		private XML xmllookupinclude;
-		private XML xmllookupexclude;
-		private String script;
+		private SyncLookup lookup;
 		private String typeoverride;
 		private String name;
 		private String newname;
@@ -540,20 +395,11 @@ class DBSyncOper
 		private String filtername;
 		private String filterresult;
 		private boolean iskey = false;
-		private Preload preloadinfo;
-		private Preload preloadinfomerge;
-
-		private HashSet<String> excludetable;
-		private Set<String> excludefields;
-		private boolean excludefield;
-		private HashSet<String> includetable;
-		private Set<String> includefields;
-		private boolean includeexcludefield;
 
 		private String onempty;
+		private String forceemptyvalue;
 		private String onmultiple;
 		private String ifexists;
-		private String onlookuperror;
 		private String synclist[];
 		private Scope scope;
 
@@ -566,6 +412,7 @@ class DBSyncOper
 		{
 			this.iskey = iskey;
 			this.name = name;
+			lookup = new SyncLookup(this);
 		}
 
 		public void set(XML xml,Scope scope) throws Exception
@@ -585,6 +432,7 @@ class DBSyncOper
 				onempty = xml.getAttributeDeprecated("on_not_found");
 				if ("".equals(onempty)) onempty = null;
 			}
+			forceemptyvalue = xml.getAttribute("force_empty_value");
 			onmultiple = xml.getAttribute("on_multiple");
 			ifexists = null;
 			if (xml.isAttribute("if_exists"))
@@ -595,163 +443,14 @@ class DBSyncOper
 			String forsync = xml.getAttribute("for_sync");
 			if (forsync != null) synclist = forsync.split("\\s*,\\s*");
 
-			script = xml.getValue("script",null);
-			XML xmldefault = xml.getElement("default_lookup");
-			if (xmldefault != null)
-			{
-				Reader reader = ReaderUtil.getReader(xmldefault);
-				LinkedHashMap<String,String> result = reader.next();
-				if (result != null)
-					defaultlookupvalue = Misc.getFirstValue(result);
-
-				if (Misc.isLog(10)) Misc.log("Field: Default " + name + " value from lookup: " + defaultlookupvalue);
-			}
-
-			if (xml.isAttribute("default"))
-			{
-				defaultvalue = xml.getAttribute("default");
-				if (defaultvalue == null) defaultvalue = "";
-				if (Misc.isLog(10)) Misc.log("Field: Default " + name + " value: " + defaultvalue);
-			}
-
 			typeoverride = xml.getAttribute("type");
 
-			xmllookup = xml.getElement("lookup");
-			if (xmllookup != null)
-			{
-				onlookuperror = xmllookup.getAttribute("on_lookup_error");
-				if (onlookuperror == null)
-				{
-					String attr = xmllookup.getAttributeDeprecated("use_key_when_not_found");
-					if ("true".equals(attr)) onlookuperror = "use_key";
-				}
-			}
-
-			if (xmllookup != null && !Misc.isSubstituteDefault(xmllookup.getValue()))
-			{
-				preloadinfo = new Preload(xmllookup);
-				xmllookup = null;
-			}
-
-			xmllookupmerge = xml.getElement("merge_lookup");
-			if (xmllookupmerge != null && !Misc.isSubstituteDefault(xmllookupmerge.getValue()))
-			{
-				preloadinfomerge = new Preload(xmllookupmerge);
-				xmllookupmerge = null;
-			}
-
-			xmllookupinclude = xml.getElement("include_lookup");
-			if (xmllookupinclude != null && !Misc.isSubstituteDefault(xmllookupinclude.getValue()))
-			{
-				inLookupInit(xmllookupinclude,true);
-				xmllookupinclude = null;
-			}
-
-			xmllookupexclude = xml.getElement("exclude_lookup");
-			if (xmllookupexclude != null && !Misc.isSubstituteDefault(xmllookupexclude.getValue()))
-			{
-				inLookupInit(xmllookupexclude,false);
-				xmllookupexclude = null;
-			}
+			lookup = new SyncLookup(xml,this);
 		}
 
 		public XML getXML()
 		{
 			return xmlfield;
-		}
-
-		private void inLookupInit(XML xml,boolean def) throws Exception
-		{
-			if (xml == null) return;
-
-			String operstr = def ? "include" : "exclude";
-
-			HashSet<String> table = new HashSet<String>();
-			Set<String> fields = null;
-
-			if (Misc.isLog(15)) Misc.log("Field: Doing " + operstr + " for " + name);
-
-			Reader reader = ReaderUtil.getReader(xml);
-
-			LinkedHashMap<String,String> result;
-			while((result = reader.next()) != null)
-			{
-				if (fields == null) fields = result.keySet();
-
-				String keyvalue = Misc.getKeyValue(fields,result);
-				if (keyvalue == null) continue;
-
-				if (Misc.isLog(25)) Misc.log("Field: Storing " + operstr + " for " + name + " key " + keyvalue);
-
-				table.add(keyvalue);
-			}
-
-			String scope = xml.getAttribute("exclude_scope");
-			boolean onfield = false;
-			if (scope != null && scope.equals("field"))
-				onfield = true;
-
-			if (def)
-			{
-				includefields = fields;
-				includetable = table;
-				includeexcludefield = onfield;
-			}
-			else
-			{
-				excludefields = fields;
-				excludetable = table;
-				excludefield = onfield;
-			}
-		}
-
-		public boolean isIncludeRecord(LinkedHashMap<String,String> result) throws Exception
-		{
-			if (includeexcludefield) return true;
-			return isInLookup(result,includetable,includefields,true);
-		}
-
-		public boolean isExcludeRecord(LinkedHashMap<String,String> result) throws Exception
-		{
-			if (excludefield) return false;
-			return isInLookup(result,excludetable,excludefields,false);
-		}
-
-		public boolean isIncludeField(LinkedHashMap<String,String> result) throws Exception
-		{
-			if (!includeexcludefield) return true;
-			return isInLookup(result,includetable,includefields,true);
-		}
-
-		public boolean isExcludeField(LinkedHashMap<String,String> result) throws Exception
-		{
-			if (!excludefield) return false;
-			return isInLookup(result,excludetable,excludefields,false);
-		}
-
-		public boolean isInLookup(LinkedHashMap<String,String> result,HashSet<String> table,Set<String> fields,boolean def) throws Exception
-		{
-			if (fields == null) return def;
-
-			XML xml = def ? xmllookupinclude : xmllookupexclude;
-			if (xml != null)
-			{
-				try {
-					String value = lookupFor(xml,result);
-					return value != null;
-				} catch(LookupAdapterException ex) {
-					return false;
-				}
-			}
-
-			String keyvalue = Misc.getKeyValue(fields,result);
-			if (Misc.isLog(25)) Misc.log("Field: isInLookup key " + keyvalue + " and def " + def);
-			if (keyvalue == null) return def; // Empty keys are never excluded
-
-			boolean contains = table.contains(keyvalue);
-			if (Misc.isLog(25)) Misc.log("Field: Getting " + (def ? "include" : "exclude") + " for " + name + " key " + keyvalue + ": " + contains);
-
-			return contains;
 		}
 
 		public String getName()
@@ -774,78 +473,21 @@ class DBSyncOper
 			return copyname;
 		}
 
-		public String lookupMerge(LinkedHashMap<String,String> row) throws Exception
-		{
-			return lookupFor(xmllookupmerge,row);
-		}
-
-		public String lookup(LinkedHashMap<String,String> row) throws Exception
-		{
-			return lookupFor(xmllookup,row);
-		}
-
-		public String lookupFor(XML xml,final LinkedHashMap<String,String> row) throws Exception
-		{
-			if (xml == null) return null;
-
-			if (Misc.isLog(15)) Misc.log("Field: Doing lookup for " + name);
-
-			String type = xml.getAttribute("type");
-			if (!"db".equals(type)) throw new AdapterException(xml,"Unsupported on demand lookup type " + type);
-
-			String sql = xml.getValue();
-			String instance = xml.getAttribute("instance");
-
-			String str = Misc.substitute(sql,new Misc.Substituer() {
-				public String getValue(String param) throws Exception
-				{
-					String value = Misc.substituteGet(param,row.get(param));
-					return db.getValue(value);
-				}
-			});
-
-			DB.DBOper oper = db.makesqloper(instance,str);
-
-			LinkedHashMap<String,String> result = oper.next();
-			if (result == null) throw new LookupAdapterException(str);
-
-			return Misc.getFirstValue(result);
-		}
-
-/* IFDEF JAVA6 */
-		public String executeScript(Map<String,String> map) throws Exception
-		{
-			return Script.execute(script,map);
-		}
-/* */
-
-		public String getDefault(Map<String,String> map) throws Exception
-		{
-			if (defaultlookupvalue != null) return defaultlookupvalue;
-			return Misc.substitute(defaultvalue,map);
-		}
-
-		public String getDefault() throws Exception
-		{
-			if (defaultlookupvalue != null) return defaultlookupvalue;
-			return Misc.substitute(defaultvalue);
-		}
-
-		public Preload getPreload()
-		{
-			return preloadinfo;
-		}
-
-		public Preload getPreloadMerge()
-		{
-			return preloadinfomerge;
-		}
-
 		public String getType()
 		{
 			if (typeoverride != null) return typeoverride;
 			if (iskey) return "key";
 			return null;
+		}
+
+		public boolean isForceEmpty(String value)
+		{
+			return (forceemptyvalue != null && value.equals(forceemptyvalue));
+		}
+
+		public SyncLookup getLookup()
+		{
+			return lookup;
 		}
 
 		public boolean isKey()
@@ -864,7 +506,11 @@ class DBSyncOper
 
 		public boolean isValidFilter(LinkedHashMap<String,String> result,String name) throws Exception
 		{
-			if (ifexists != null && !result.containsKey(ifexists.isEmpty() ? name : ifexists)) return false;
+			if (ifexists != null)
+			{
+				String value = result.get(ifexists.isEmpty() ? name : ifexists);
+				if (value == null || value.isEmpty()) return false;
+			}
 			if (filtername == null && filterresult == null) return true;
 
 			XML xml = new XML();
@@ -994,7 +640,6 @@ class DBSyncOper
 		public LinkedHashMap<String,String> getNext(Sync sync) throws Exception
 		{
 			LinkedHashMap<String,String> result;
-			CsvWriter csvout = sync.getCsvWriter();
 
 			while((result = sync.next()) != null)
 			{
@@ -1009,11 +654,12 @@ class DBSyncOper
 				}
 
 				if (doprocessing) setDefaultFields(result);
-				if (doprocessing) for(Field field:fields.values())
+				if (doprocessing) fieldloop: for(Field field:fields.values())
 				{
 					String name = field.getName();
 					boolean iskey = keyset.contains(name);
 					String value = result.get(name);
+					SyncLookup lookup = field.getLookup();
 
 					if (Misc.isLog(30)) Misc.log("Field: [" + keys + "] Check " + name + ":" + value + ":" + sync.getXML().getTagName() + ":" + (sourcesync == null ? "NOSRC" : sourcesync.getName()) + ":" + (destinationsync == null ? "NODEST" : destinationsync.getName()) + ":" + result);
 					if (!field.isValid(sync)) continue;
@@ -1021,106 +667,53 @@ class DBSyncOper
 
 					if (Misc.isLog(30)) Misc.log("Field: " + name + " is valid");
 
-					if (field.isExcludeRecord(result) || !field.isIncludeRecord(result))
-					{
-						result = null;
-						break;
-					}
-					if (field.isExcludeField(result) || !field.isIncludeField(result))
-					{
+					try {
+						SyncLookupResultErrorOperationTypes erroroper = lookup.check(result,name);
+						switch(erroroper)
+						{
+						case NONE:
+							value = result.get(name);
+							break;
+						case ERROR:
+							Misc.log("ERROR: [" + sync.getName() + ":" + keys + "] Rejecting record since lookup for field " + field.getName() + " failed: " + result);
+						case REJECT_RECORD:
+							result = null;
+							break fieldloop;
+						case WARNING:
+							Misc.log("WARNING: [" + sync.getName() + ":" + keys + "] Rejecting field " + field.getName() + " since lookup failed: " + result);
+						case REJECT_FIELD:
+							if (iskey)
+								result.put(name,"");
+							else
+								result.remove(name);
+							continue;
+						case EXCEPTION:
+							throw new AdapterException("[" + sync.getName() + ":" + keys + "] Invalid lookup for field " + field.getName() + ": " + result);
+						}
+/* IFDEF JAVA6 */
+					} catch (javax.script.ScriptException ex) {
+						Misc.log("WARNING: [" + sync.getName() + ":" + keys + "] Script exception on field " + name + ": " + ex.getMessage());
 						if (iskey)
 							result.put(name,"");
 						else
 							result.remove(name);
 						continue;
+/* */
+					} catch (Exception ex) {
+						Misc.rethrow(ex);
 					}
 
-					if (Misc.isLog(30)) Misc.log("Field: " + name + " is not excluded");
+					if (value == null) value = "";
+					boolean emptyvalueforced = field.isForceEmpty(value);
+					if (emptyvalueforced) value = "";
 
-					try {
-						Field.Preload preloadmerge = field.getPreloadMerge();
-						String mergevalue = preloadmerge == null ? field.lookupMerge(result) : preloadmerge.getPreload(result);
-						if (mergevalue != null)
-						{
-							if (Misc.isLog(30)) Misc.log("Field: Using value " + mergevalue + " instead of " + value + " since more recent");
-							value = mergevalue;
-						}
-					} catch(LookupAdapterException ex) {}
-
-					if (value != null && !"".equals(value))
-					{
-						// We have a value, just use it
-						if (Misc.isLog(30)) Misc.log("Field: " + name + " set to: " + value);
-					}
-					else
-					{
-						try {
-							Field.Preload preload = field.getPreload();
-							value = preload == null ? field.lookup(result) : preload.getPreload(result);
-						} catch(LookupAdapterException ex) {
-							String onlookuperror = field.onlookuperror;
-							if (onlookuperror == null || onlookuperror.equals("ignore") || onlookuperror.equals("use_key"))
-								;
-							else if (onlookuperror.equals("error"))
-							{
-								Misc.log("ERROR: [" + sync.getName() + ":" + keys + "] Rejecting record since lookup on key '" + ex.getKey() + "' for field " + field.getName() + " failed: " + result);
-								result = null;
-								break;
-							}
-							else if (onlookuperror.equals("warning"))
-							{
-								Misc.log("WARNING: [" + sync.getName() + ":" + keys + "] Rejecting field " + field.getName() + " since lookup on key '" + ex.getKey() + "' failed: " + result);
-								if (iskey)
-									result.put(name,"");
-								else
-									result.remove(name);
-								continue;
-							}
-							else
-								throw new AdapterException("Invalid on_lookup_error attribute " + onlookuperror + " for field " + field.getName());
-						}
-
-						if (value != null && !"".equals(value))
-						{
-							// We have a value from a lookup, just use it
-							if (Misc.isLog(30)) Misc.log("Field: " + name + " set to after lookup: " + value);
-						}
-						else
-						{
-							value = field.getDefault(result);
-							if (value != null && !"".equals(value))
-							{
-								// We have a default value, just use it
-								if (Misc.isLog(30)) Misc.log("Field: " + name + " set to default: " + value);
-							}
-						}
-					}
-
-					if (value != null && field.isStrip())
+					if (field.isStrip())
 					{
 						String escape = "[\\s-/.,:;\\|]";
 						value = value.replaceAll(escape + "*$","").replaceAll("^" + escape + "*","");
 					}
 
-/* IFDEF JAVA6 */
-					try
-					{
-						String scriptresult = field.executeScript(result);
-						if (scriptresult != null)
-						{
-							if (Misc.isLog(30)) Misc.log("Field: " + name + " set after script to: " + value);
-							value = scriptresult;
-						}
-					}
-					catch(javax.script.ScriptException ex)
-					{
-						Misc.log("WARNING: [" + sync.getName() + ":" + keys + "] Script exception on field " + name + ": " + ex.getMessage());
-						value = null;
-						break;
-					}
-/* */
-
-					if (value == null) value = "";
+					if (Misc.isLog(30)) Misc.log("Field: " + name + " is finally set to: " + value);
 
 					if (value.contains("\n"))
 					{
@@ -1170,8 +763,7 @@ class DBSyncOper
 						name = newname;
 					}
 
-					if (Misc.isLog(30)) Misc.log("Field: " + name + " is finally set to: " + value);
-					if (!"".equals(value))
+					if (emptyvalueforced || !value.isEmpty())
 						continue;
 
 					// No value found...
@@ -1237,11 +829,11 @@ class DBSyncOper
 				}
 
 				if (Misc.isLog(30)) Misc.log("PASSED: " + result);
-				if (doprocessing && csvout != null) csvout.write(result);
+				if (doprocessing) sync.makeDump(result);
 				return result;
 			}
 
-			if (csvout != null) csvout.flush();
+			sync.closeDump();
 			return null;
 		}
 	}
@@ -1273,6 +865,7 @@ class DBSyncOper
 	private Sync sourcesync;
 	private Sync destinationsync;
 	private DatabaseUpdateSubscriber update;
+	private LinkedHashSet<String> displayfields;
 	private Fields fields;
 	private Fields fieldssource;
 	private Fields fieldsdestination;
@@ -1493,6 +1086,12 @@ class DBSyncOper
 			return;
 		}
 
+		if (displayfields != null)
+		{
+			String displaykeys = Misc.getKeyValue(displayfields,row);
+			if (displaykeys != null) prevkeys = displaykeys;
+		}
+
 		if ("update".equals(oper) && changes == null) return;
 		if (Misc.isLog(2)) Misc.log(oper + ": " + prevkeys + (changes == null ? "" : " " + changes));
 
@@ -1658,7 +1257,7 @@ class DBSyncOper
 			if (tobreak) break;
 			counter.total++;
 
-			if (Misc.isLog(5)) Misc.log("Key source: " + sourcekey + " dest: " + destkey);
+			if (Misc.isLog(11)) Misc.log("Key source: " + sourcekey + " dest: " + destkey);
 
 			if (rowdest != null && (row == null || (ignorecasekeys ? db.collator.compareIgnoreCase(sourcekey,destkey) : db.collator.compare(sourcekey,destkey)) > 0))
 			{
@@ -1905,6 +1504,8 @@ class DBSyncOper
 
 			String keyfield = xmlsync.getAttribute("keyfield");
 			if (keyfield == null) keyfield = xmlsync.getAttribute("keyfields");
+			String displaykeyfield = xmlsync.getAttribute("display_keyfield");
+			displayfields = displaykeyfield == null ? null : new LinkedHashSet<String>(Arrays.asList(displaykeyfield.split("\\s*,\\s*")));
 
 			XML[] sources = getFilenamePatterns(xmlsync.getElements("source"));
 			XML[] destinations = xmlsync.getElements("destination");

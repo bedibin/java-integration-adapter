@@ -1119,7 +1119,7 @@ class Misc
 		while(itr.hasNext())
 		{
 			String itrvalue = map.get(itr.next());
-			if (itrvalue == null || "".equals(itrvalue)) continue;
+			if (itrvalue == null || itrvalue.isEmpty()) continue;
 			keyvalue = keyvalue == null ? itrvalue : keyvalue + "," + itrvalue;
 		}
 		return keyvalue == null ? null : keyvalue.toLowerCase();

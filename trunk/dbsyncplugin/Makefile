@@ -7,7 +7,7 @@ CLASS = .:../javaadapter/javaadapter.jar:${JAR_DIR}/scheduling.jar:${JAR_DIR}/xe
 JAR =	dbsyncplugin.jar
 DIR =	classes
 
-FILES =	dbsyncplugin.java dbsql.java dbsyncreader.java dbsyncoper.java
+FILES =	dbsyncplugin.java dbsql.java dbsyncreader.java dbsyncoper.java dbsynclookup.java
 
 all:	${JAR}
 
