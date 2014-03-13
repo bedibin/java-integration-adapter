@@ -53,7 +53,7 @@ class ReaderRow implements Reader
 	{
 		rowpos = 0;
 		rows = xml.getElements("row");
-		if (rows.length > 0)headers = new ArrayList<String>(rows[0].getAttributes().keySet());
+		if (rows.length > 0) headers = new ArrayList<String>(rows[0].getAttributes().keySet());
 	}
 
 	public ArrayList<String> getHeader()
@@ -248,7 +248,7 @@ class ReaderLDAP implements Reader
 		{
 			first = next();
 			if (first == null)
-				throw new AdapterException("Processing empty LDAP content is not supported. Please set \"fields \"attribute");
+				throw new AdapterException("Processing empty LDAP content is not supported. Please set \"fields\" attribute");
 
 			headers = new ArrayList<String>(first.keySet());
 		}

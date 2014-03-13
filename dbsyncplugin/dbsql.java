@@ -297,6 +297,11 @@ class DB
 		return getValue(value);
 	}
 
+	public String getValue(String value,String name) throws Exception
+	{
+		return getValue(value);
+	}
+
 	public String getValue(String value) throws Exception
 	{
 		if (value == null) return "null";

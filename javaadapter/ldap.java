@@ -17,6 +17,7 @@ class directory
 		{
 			results = null;
 			this.basedn = basedn;
+			if (search == null) throw new AdapterException("Search string not provided");
 			this.search = search.trim();
 			this.attrs = attrs;
 			doSearch();

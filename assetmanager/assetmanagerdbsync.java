@@ -42,7 +42,7 @@ class AMDB extends DB
 
 		private void init(String name,String sql) throws Exception
 		{
-			if (Misc.isLog(10)) Misc.log("AQL: " + sql);
+			if (Misc.isLog(8)) Misc.log("AQL: " + sql);
 
 			if (sql.startsWith("select") || sql.startsWith("SELECT"))
 			{
@@ -126,6 +126,17 @@ class AMDB extends DB
 		// AM API requires local time and a special syntax
 		Date date = Misc.gmtdateformat.parse(value);
 		return "#" + Misc.dateformat.format(date) + "#";
+	}
+
+	@Override
+	public String getValue(String value,String name) throws Exception
+	{
+		if (value == null) return "null";
+		final Pattern pat = Pattern.compile("l\\w+id",Pattern.CASE_INSENSITIVE);
+		Matcher match = pat.matcher(name);
+		if (match.matches())
+			return value;
+		return getValue(value);
 	}
 
 	@Override

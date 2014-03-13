@@ -392,6 +392,28 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 		update.create(data,CreateMode.UPDATE_EXISTING);
 	}
 
+	private void updatemulti(String oper,XML xml) throws Exception
+	{
+		TopologyModificationData data = factory.createTopologyModificationData(adapterinfo + "/" + oper);
+		XML idxml = xml.getElement("ID");
+		String idlist = idxml == null ? null : idxml.getValue();
+		if (idlist != null)
+		{
+			String[] ids = idlist.split("\n");
+			for(String id:ids)
+			{
+				idxml.setValue(id);
+
+				FillUpdateData(data,xml,null,false);
+				update.update(data);
+			}
+			return;
+		}
+
+		FillUpdateData(data,xml,null,false);
+		update.update(data);
+	}
+
 	private void remove(XML xmldest,XML xml) throws Exception
 	{
 		TopologyModificationData data = factory.createTopologyModificationData(adapterinfo + "/remove");
@@ -408,11 +430,50 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 
 		if (customs.length > 0)
 		{
-			FillUpdateData(data,xml,null,false);
-			update.update(data);
+			updatemulti("remove",xml);
 			return;
 		}
 		
+		String end1 = xml.getValue("END1",null);
+		String end2 = xml.getValue("END2",null);
+		if (end1 != null && end2 != null)
+		{
+			String[] end1values = end1.split("\n");
+			String[] end2values = end2.split("\n");
+
+			if (Misc.isLog(10)) Misc.log("Removing multiple relationship ends: " + xml);
+
+			for(String end1value:end1values) for(String end2value:end2values)
+			{
+				XML delete = new XML();
+				delete = delete.add("remove");
+				delete.add("END1",end1value);
+				delete.add("END2",end2value);
+				delete.add("INFO",xml.getValue("INFO",null));
+
+				FillUpdateData(data,delete,null,true);
+				update.delete(data,DeleteMode.IGNORE_NON_EXISTING);
+			}
+			return;
+		}
+
+		String idlist = xml.getValue("ID",null);
+		if (idlist != null)
+		{
+			String[] ids = idlist.split("\n");
+			for(String id:ids)
+			{
+				XML delete = new XML();
+				delete = delete.add("remove");
+				delete.add("ID",id);
+				delete.add("INFO",xml.getValue("INFO",null));
+
+				FillUpdateData(data,delete,null,true);
+				update.delete(data,DeleteMode.IGNORE_NON_EXISTING);
+			}
+			return;
+		}
+
 		FillUpdateData(data,xml,null,true);
 		update.delete(data,DeleteMode.IGNORE_NON_EXISTING);
 	}
@@ -452,9 +513,7 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 			}
 		}
 
-		TopologyModificationData data = factory.createTopologyModificationData(adapterinfo + "/update");
-		FillUpdateData(data,xml,null,false);
-		update.update(data);
+		updatemulti("update",xml);
 	}
 
 	@Override

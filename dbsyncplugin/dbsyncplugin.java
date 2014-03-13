@@ -266,7 +266,8 @@ class DatabaseUpdateSubscriber extends UpdateSubscriber
 			String type = field.getAttribute("type");
 			if (type == null || !type.equals("key")) continue;
 
-			sql += " " + sep + " (" + quotefield + field.getTagName() + quotefield;
+			String name = field.getTagName();
+			sql += " " + sep + " (" + quotefield + name + quotefield;
 			String value = field.getValue();
 			if (value == null) value = field.getValue("oldvalue",null);
 			if (value == null)
@@ -275,13 +276,13 @@ class DatabaseUpdateSubscriber extends UpdateSubscriber
 			{
 				String[] valuesplit = value.split("\n");
 				if (valuesplit.length == 1)
-					sql += " = " + db.getValue(value);
+					sql += " = " + db.getValue(value,name);
 				else
 				{
 					for(int i = 0;i < valuesplit.length;i++)
 					{
-						if (i != 0) sql += " or " + quotefield + field.getTagName() + quotefield;
-						sql += " = " + db.getValue(valuesplit[i]);
+						if (i != 0) sql += " or " + quotefield + name + quotefield;
+						sql += " = " + db.getValue(valuesplit[i],name);
 					}
 				}
 			}
