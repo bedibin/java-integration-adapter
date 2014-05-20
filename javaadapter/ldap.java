@@ -351,7 +351,7 @@ class ldap extends directory
 	private int pageSize = 100;
 	private LdapContext ld;
 
-	public ldap(String url,String username,String password,String[] sortattrs,String auth) throws Exception
+	public ldap(String url,String username,String password,String[] sortattrs,String auth,String referral,String deref) throws Exception
 	{
 		super("LDAP");
 
@@ -361,8 +361,10 @@ class ldap extends directory
 		if (username != null) env.put(Context.SECURITY_PRINCIPAL,username);
     		if (password != null) env.put(Context.SECURITY_CREDENTIALS,password);
     		if (auth != null) env.put(Context.SECURITY_AUTHENTICATION,auth);
-		env.put("java.naming.ldap.derefAliases","never");
-		env.put(Context.REFERRAL,"ignore");
+		env.put("java.naming.ldap.derefAliases",deref == null ? "never" : deref);
+		env.put(Context.REFERRAL, referral == null ? "ignore" : referral);
+		// env.put("com.sun.jndi.ldap.trace.ber",System.err);
+
 		ld = new InitialLdapContext(env,null);
 
 		String str = System.getProperty("javaadapter.ldap.pagesize");

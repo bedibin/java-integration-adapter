@@ -75,9 +75,15 @@ class Ucmdb
 
 	static final Pattern causedbypattern = Pattern.compile("Caused by:\\s.*?:\\s+(\\S.+)$",Pattern.MULTILINE);
 
-	public static String cleanupException(Exception ex)
+	public static String cleanupException(Exception ex) throws Exception
 	{
 		String error = ex.getMessage();
+		if (error == null)
+		{
+			Misc.rethrow(ex);
+			return ex.getClass().getName();
+		}
+
 		Matcher matcher = causedbypattern.matcher(error);
 		HashSet<String> causes = new HashSet<String>();
 		while(matcher.find())
@@ -392,11 +398,29 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 		update.create(data,CreateMode.UPDATE_EXISTING);
 	}
 
+	private String getUpdateValue(XML xml) throws Exception
+	{
+		if (xml == null) return null;
+		XML oldxml = xml.getElement("oldvalue");
+		if (oldxml != null)
+		{
+			String result = oldxml.getValue();
+			if (result != null) return result;
+		}
+		return xml.getValue();
+	}
+
+	private String getUpdateValue(XML xml,String name) throws Exception
+	{
+		XML idxml = xml.getElement(name);
+		return getUpdateValue(idxml);
+	}
+
 	private void updatemulti(String oper,XML xml) throws Exception
 	{
 		TopologyModificationData data = factory.createTopologyModificationData(adapterinfo + "/" + oper);
 		XML idxml = xml.getElement("ID");
-		String idlist = idxml == null ? null : idxml.getValue();
+		String idlist = getUpdateValue(idxml);
 		if (idlist != null)
 		{
 			String[] ids = idlist.split("\n");
@@ -434,8 +458,8 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 			return;
 		}
 		
-		String end1 = xml.getValue("END1",null);
-		String end2 = xml.getValue("END2",null);
+		String end1 = getUpdateValue(xml,"END1");
+		String end2 = getUpdateValue(xml,"END2");
 		if (end1 != null && end2 != null)
 		{
 			String[] end1values = end1.split("\n");
@@ -457,7 +481,7 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 			return;
 		}
 
-		String idlist = xml.getValue("ID",null);
+		String idlist = getUpdateValue(xml,"ID");
 		if (idlist != null)
 		{
 			String[] ids = idlist.split("\n");
@@ -480,37 +504,29 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 
 	private void update(XML xml) throws Exception
 	{
-		XML end1 = xml.getElement("END1");
-		XML end2 = xml.getElement("END2");
-		if (end1 != null && end2 != null)
+		String old1 = getUpdateValue(xml,"END1");
+		String old2 = getUpdateValue(xml,"END2");
+		if (old1 != null && old2 != null)
 		{
-			String old1 = end1.getValue("oldvalue",null);
-			String old2 = end2.getValue("oldvalue",null);
-			if (old1 != null || old2 != null)
+			String[] old1values = old1.split("\n");
+			String[] old2values = old2.split("\n");
+
+			if (Misc.isLog(10)) Misc.log("Update causing relationship recreation: " + xml);
+
+			for(String old1value:old1values) for(String old2value:old2values)
 			{
-				if (old1 == null) old1 = end1.getValue();
-				if (old2 == null) old2 = end2.getValue();
+				XML delete = new XML();
+				delete = delete.add("remove");
+				delete.add("END1",old1value);
+				delete.add("END2",old2value);
+				delete.add("INFO",xml.getValue("INFO",null));
 
-				String[] old1values = old1.split("\n");
-				String[] old2values = old2.split("\n");
-
-				if (Misc.isLog(10)) Misc.log("Update causing relationship recreation: " + xml);
-
-				for(String old1value:old1values) for(String old2value:old2values)
-				{
-					XML delete = new XML();
-					delete = delete.add("remove");
-					delete.add("END1",old1value);
-					delete.add("END2",old2value);
-					delete.add("INFO",xml.getValue("INFO",null));
-
-					TopologyModificationData data = factory.createTopologyModificationData(adapterinfo + "/replace");
-					FillUpdateData(data,delete,null,true);
-					update.delete(data,DeleteMode.IGNORE_NON_EXISTING);
-				}
-				add(xml);
-				return;
+				TopologyModificationData data = factory.createTopologyModificationData(adapterinfo + "/replace");
+				FillUpdateData(data,delete,null,true);
+				update.delete(data,DeleteMode.IGNORE_NON_EXISTING);
 			}
+			add(xml);
+			return;
 		}
 
 		updatemulti("update",xml);

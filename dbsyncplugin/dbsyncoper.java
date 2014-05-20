@@ -62,6 +62,7 @@ class DBSyncOper
 		public void put(LinkedHashMap<String,String> row) throws Exception
 		{
 			String key = getKey(row);
+			if (ignorecasekeys) key = key.toUpperCase();
 			if (sortedmap != null)
 			{
 				sortedmap.put(key,row);
@@ -399,23 +400,12 @@ class DBSyncOper
 		private String onempty;
 		private String forceemptyvalue;
 		private String onmultiple;
+		private boolean onmultiple_present = false;
 		private String ifexists;
 		private String synclist[];
 		private Scope scope;
 
 		public Field(XML xml,Scope scope) throws Exception
-		{
-			set(xml,scope);
-		}
-
-		public Field(String name,boolean iskey) throws Exception
-		{
-			this.iskey = iskey;
-			this.name = name;
-			lookup = new SyncLookup(this);
-		}
-
-		public void set(XML xml,Scope scope) throws Exception
 		{
 			xmlfield = xml;
 			this.scope = scope;
@@ -434,6 +424,7 @@ class DBSyncOper
 			}
 			forceemptyvalue = xml.getAttribute("force_empty_value");
 			onmultiple = xml.getAttribute("on_multiple");
+			onmultiple_present = xml.isAttributeNoDefault("on_multiple");
 			ifexists = null;
 			if (xml.isAttribute("if_exists"))
 			{
@@ -446,6 +437,13 @@ class DBSyncOper
 			typeoverride = xml.getAttribute("type");
 
 			lookup = new SyncLookup(xml,this);
+		}
+
+		public Field(String name,boolean iskey) throws Exception
+		{
+			this.iskey = iskey;
+			this.name = name;
+			lookup = new SyncLookup(this);
 		}
 
 		public XML getXML()
@@ -525,16 +523,16 @@ class DBSyncOper
 	{
 		private LinkedHashSet<String> keyfields;
 		private LinkedHashSet<String> namefields;
-		private LinkedHashMap<String,Field> fields;
+		private ArrayList<Field> fields;
 		private boolean default_set = false;
 
 		public Fields(String[] keyfields) throws Exception
 		{
 			this.keyfields = new LinkedHashSet<String>(Arrays.asList(keyfields));
 			this.namefields = new LinkedHashSet<String>(Arrays.asList(keyfields));
-			fields = new LinkedHashMap<String,Field>();
+			fields = new ArrayList<Field>();
 			for(String keyfield:keyfields)
-				fields.put(keyfield,new Field(keyfield,true));
+				fields.add(new Field(keyfield,true));
 		}
 
 		private void setDefaultFields(LinkedHashMap<String,String> result) throws Exception
@@ -548,7 +546,7 @@ class DBSyncOper
 			{
 				if (namefields.contains(name)) continue;
 				xml.setAttribute("name",name);
-				fields.put(name,new Field(xml,Scope.SCOPE_GLOBAL));
+				fields.add(new Field(xml,Scope.SCOPE_GLOBAL));
 			}
 		}
 
@@ -564,27 +562,20 @@ class DBSyncOper
 
 		public void add(XML xml,Scope scope) throws Exception
 		{
-			String name = xml.getAttribute("name");
-			namefields.add(name);
+			namefields.add(xml.getAttribute("name"));
+			Field field = new Field(xml,scope);
 
-			String forsync = xml.getAttribute("for_sync");
-			if (forsync == null)
-			{
-				if (scope == Scope.SCOPE_SOURCE)
-					name += "-!SOURCE!";
-				else if (scope == Scope.SCOPE_DESTINATION)
-					name += "-!DESTINATION!";
-			}
-			else
-				name += "-" + forsync;
+			String default_onmultiple = null;
+			for(Field prevfield:fields)
+				if (prevfield.getName().equals(field.getName()) && prevfield.scope == Scope.SCOPE_GLOBAL && prevfield.onmultiple_present)
+				{
+					default_onmultiple = prevfield.onmultiple;
+					break;
+				}
+			if (!field.onmultiple_present && default_onmultiple != null)
+				field.onmultiple = default_onmultiple;
 
-			Field field = fields.get(name);
-			if (field == null)
-				field = new Field(xml,scope);
-			else
-				field.set(xml,scope);
-
-			fields.put(name,field);
+			fields.add(field);
 		}
 
 		public Set<String> getNames()
@@ -597,9 +588,9 @@ class DBSyncOper
 			return keyfields;
 		}
 
-		public Set<Map.Entry<String,Field>> entrySet()
+		public ArrayList<Field> getFields()
 		{
-			return fields.entrySet();
+			return fields;
 		}
 
 		private void doFunction(LinkedHashMap<String,String> result,XML function) throws Exception
@@ -644,7 +635,7 @@ class DBSyncOper
 			while((result = sync.next()) != null)
 			{
 				Set<String> keyset = getKeys();
-				String keys = Misc.getKeyValue(keyset,result);
+				String keys = getDisplayKey(keyset,result);
 
 				boolean doprocessing = true;
 				if (sync.getReader() instanceof SortTable)
@@ -654,7 +645,7 @@ class DBSyncOper
 				}
 
 				if (doprocessing) setDefaultFields(result);
-				if (doprocessing) fieldloop: for(Field field:fields.values())
+				if (doprocessing) fieldloop: for(Field field:fields)
 				{
 					String name = field.getName();
 					boolean iskey = keyset.contains(name);
@@ -884,6 +875,21 @@ class DBSyncOper
 		update = new DatabaseUpdateSubscriber();
 	}
 
+	private String getDisplayKey(Set<String> keys,Map<String,String> map)
+	{
+		String result = Misc.getKeyValue(keys,map);
+		if (result == null) return null;
+
+		if (displayfields == null) return result;
+
+		LinkedHashSet<String> set = new LinkedHashSet<String>(displayfields);
+		set.removeAll(keys);
+		String displaykeys = Misc.getKeyValue(set,map);
+		if (displaykeys == null) return result;
+
+		return displaykeys + "/" + result;
+	}
+
 	public boolean isValidSync(String[] synclist,Sync sync) throws Exception
 	{
 		if (sync == null) return false;
@@ -919,6 +925,8 @@ class DBSyncOper
 
 		XML xmlop = xml.add(rootname);
 		xmlop.setAttribute("name",dbsyncname);
+		if (displayfields != null)
+			xmlop.setAttribute("display_keyfield",Misc.implode(displayfields));
 
 		String[] attrs = {"instance","table","type","on_duplicates","merge_fields"};
 		for(String attr:attrs)
@@ -995,7 +1003,7 @@ class DBSyncOper
 				else if (ondupstr == null || ondupstr.equals("merge"));
 				else if (ondupstr.equals("error"))
 				{
-					Misc.log("ERROR: [" + Misc.getKeyValue(fields.getKeys(),row) + "] Rejecting record with a duplicated key on field " + key);
+					Misc.log("ERROR: [" + getDisplayKey(fields.getKeys(),row) + "] Rejecting record with a duplicated key on field " + key);
 					return;
 				}
 				else if (ondupstr.equals("ignore"))
@@ -1009,12 +1017,12 @@ class DBSyncOper
 			boolean isinfo = (sourcevalue == null || !destinationheader.contains(key));
 			if (isinfo) xmlrow.setAttribute("type","info");
 
-			for(Map.Entry<String,Field> map:fields.entrySet())
+			for(Field field:fields.getFields())
 			{
-				Field field = map.getValue();
-				if (key.equals(field.getName()) && (field.isValid(sourcesync) || field.isValid(destinationsync)))
+				String fieldname = field.getName();
+				if (key.equals(fieldname) && (field.isValid(sourcesync) || field.isValid(destinationsync)))
 				{
-					if (Misc.isLog(30)) Misc.log("Matched field " + map.getKey() + " with key " + key);
+					if (Misc.isLog(30)) Misc.log("Matched field " + fieldname + " with key " + key);
 					String type = field.getType();
 					if (type != null)
 					{
@@ -1079,17 +1087,11 @@ class DBSyncOper
 			
 		}
 
-		String prevkeys = Misc.getKeyValue(fields.getKeys(),row);
+		String prevkeys = getDisplayKey(fields.getKeys(),row);
 		if (prevkeys == null)
 		{
 			Misc.log("ERROR: Discarting record with null keys: " + row);
 			return;
-		}
-
-		if (displayfields != null)
-		{
-			String displaykeys = Misc.getKeyValue(displayfields,row);
-			if (displaykeys != null) prevkeys = displaykeys;
 		}
 
 		if ("update".equals(oper) && changes == null) return;
@@ -1114,7 +1116,7 @@ class DBSyncOper
 
 	private void remove(LinkedHashMap<String,String> row) throws Exception
 	{
-		if (doremove == doTypes.ERROR) Misc.log("ERROR: [" + Misc.getKeyValue(fields.getKeys(),row) + "] removing entry rejected: " + row);
+		if (doremove == doTypes.ERROR) Misc.log("ERROR: [" + getDisplayKey(fields.getKeys(),row) + "] removing entry rejected: " + row);
 		if (doremove != doTypes.TRUE) return;
 		if (Misc.isLog(4)) Misc.log("quick_remove: " + row);
 		push("remove",row,null);
@@ -1122,7 +1124,7 @@ class DBSyncOper
 
 	private void add(LinkedHashMap<String,String> row) throws Exception
 	{
-		if (doadd == doTypes.ERROR) Misc.log("ERROR: [" + Misc.getKeyValue(fields.getKeys(),row) + "] adding entry rejected: " + row);
+		if (doadd == doTypes.ERROR) Misc.log("ERROR: [" + getDisplayKey(fields.getKeys(),row) + "] adding entry rejected: " + row);
 		if (doadd != doTypes.TRUE) return;
 		if (destinationsync == null) return;
 		if (Misc.isLog(4)) Misc.log("quick_add: " + row);
@@ -1131,7 +1133,7 @@ class DBSyncOper
 
 	private void update(LinkedHashMap<String,String> rowold,LinkedHashMap<String,String> rownew) throws Exception
 	{
-		if (doupdate == doTypes.ERROR) Misc.log("ERROR: [" + Misc.getKeyValue(fields.getKeys(),rownew) + "] updating entry rejected: " + rownew);
+		if (doupdate == doTypes.ERROR) Misc.log("ERROR: [" + getDisplayKey(fields.getKeys(),rownew) + "] updating entry rejected: " + rownew);
 		if (doupdate != doTypes.TRUE) return;
 		if (Misc.isLog(4))
 		{
@@ -1150,7 +1152,7 @@ class DBSyncOper
 				}
 			}
 
-			Misc.log("quick_update: " + Misc.getKeyValue(fields.getKeys(),rownew) + " " + delta);
+			Misc.log("quick_update: " + getDisplayKey(fields.getKeys(),rownew) + " " + delta);
 		}
 		push("update",rownew,rowold);
 	}

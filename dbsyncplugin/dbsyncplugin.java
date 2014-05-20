@@ -94,6 +94,7 @@ class UpdateSubscriber extends Subscriber
 {
 	protected boolean stoponerror = false;
 	private String keyvalue;
+	private String[] displayfields;
 
 	protected String getKeyValue()
 	{
@@ -102,17 +103,31 @@ class UpdateSubscriber extends Subscriber
 
 	protected void setKeyValue(XML xml) throws Exception
 	{
-		XML[] fields = xml.getElements();
 		keyvalue = "";
+
+		LinkedHashMap<String,String> displayvalues = new LinkedHashMap<String,String>();
+		if (displayfields != null) for(String field:displayfields)
+			displayvalues.put(field,"");
+
+		XML[] fields = xml.getElements();
 		for(XML field:fields)
 		{
+			String name = field.getTagName();
+
 			String fieldtype = field.getAttribute("type");
-			if (!"key".equals(fieldtype)) continue;
+			if (!"key".equals(fieldtype))
+			{
+				if (displayvalues.containsKey(name)) displayvalues.put(name,field.getValue());
+				continue;
+			}
 			String value = field.getValue();
 			if (value == null) continue;
 			if ("".equals(value)) continue;
 			keyvalue = keyvalue.isEmpty() ? value : keyvalue + "," + value;
 		}
+
+		String displayvalue = Misc.implode(displayvalues.values());
+		if (!displayvalue.isEmpty()) keyvalue = displayvalue + "/" + keyvalue;
 	}
 
 	@Override
@@ -135,6 +150,9 @@ class UpdateSubscriber extends Subscriber
 
 		String stop = xmldest.getAttribute("stop_on_error");
 		if (stop != null && stop.equals("true")) stoponerror = true;
+
+		String displayfield = xml.getAttribute("display_keyfield");
+		if (displayfield != null) displayfields = displayfield.split("\\s*,\\s*");
 
 		XML[] xmloperlist = xml.getElements(null);
 		for(XML xmloper:xmloperlist)
@@ -335,15 +353,7 @@ class DatabaseUpdateSubscriber extends UpdateSubscriber
 			if (!isretry)
 			{
 				String ondups = xmldest.getAttribute("on_duplicates");
-				if (ondups == null || ondups.equals("recreate") || ondups.equals("warning")) // recreate is for compatibility only
-				{
-					Misc.log(1,"WARNING: [" + getKeyValue() + "] Record already present. Record will be automatically recreated with XML message: " + xml);
-					remove(xmldest,xml);
-					add(xmldest,xml,true);
-				}
-				else if (ondups.equals("error"))
-					Misc.log(1,"ERROR: [" + getKeyValue() + "] Record already present. Error: " + message + Misc.CR + "Ignored XML message: " + xml);
-				else if (ondups.equals("merge"))
+				if (ondups == null || ondups.equals("merge"))
 				{
 					String mergefields = xmldest.getAttribute("merge_fields");
 					String[] attrs = mergefields == null ? null : mergefields.split("\\s*,\\s*");
@@ -351,31 +361,30 @@ class DatabaseUpdateSubscriber extends UpdateSubscriber
 					XML xmlop = updxml.add("update");
 					for(XML field:fields)
 					{
+						String tagname = field.getTagName();
 						String type = field.getAttribute("type");
 						if (type != null && type.equals("key"))
 							xmlop.add(field);
-						if (type == null && attrs == null)
+						if (type == null && (attrs == null || Arrays.asList(attrs).contains(tagname)))
 						{
-							XML xmlel = xmlop.add(field);
-							xmlel.add("oldvalue","");
-						}
-					}
-					if (attrs != null) for(String attr:attrs)
-					{
-						XML field = xml.getElement(attr);
-						if (field != null)
-						{
-							String type = field.getAttribute("type");
-							if (type == null || !type.equals("info"))
-							{
-								XML xmlel = xmlop.add(field);
-								xmlel.add("oldvalue","");
-							}
+							XML xmlel = xmlop.add(tagname,field.getValue());
+							String oldvalue = field.getValue("oldvalue","");
+							xmlel.add("oldvalue",oldvalue);
 						}
 					}
 					Misc.log(1,"WARNING: Record already present." + Misc.CR + "Updating record information with XML message: " + updxml);
 					update(xmldest,updxml,true);
 				}
+				else if (ondups.equals("recreate"))
+				{
+					Misc.log(1,"WARNING: [" + getKeyValue() + "] Record already present. Record will be automatically recreated with XML message: " + xml);
+					remove(xmldest,xml);
+					add(xmldest,xml,true);
+				}
+				else if (ondups.equals("warning"))
+					Misc.log(1,"WARNING: [" + getKeyValue() + "] Record already present. Error: " + message + Misc.CR + "Ignored XML message: " + xml);
+				else if (ondups.equals("error"))
+					Misc.log(1,"ERROR: [" + getKeyValue() + "] Record already present. Error: " + message + Misc.CR + "Ignored XML message: " + xml);
 				else if (ondups.equals("ignore"));
 				else
 					throw new AdapterException(xmldest,"Invalid on_duplicates attribute " + ondups);

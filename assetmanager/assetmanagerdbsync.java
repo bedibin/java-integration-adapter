@@ -65,16 +65,24 @@ class AMDB extends DB
 
 			try
 			{
+				AmApi.AmStartTransaction(amconn);
 				AmApi.AmDbExecAql(amconn,sql);
+				AmApi.AmCommit(amconn);
 			}
 			catch(AmException ex)
 			{
+				AmApi.AmRollback(amconn);
 				String message = ex.getMessage();
 				if (message.indexOf("Impossible de changer de type de gestion") != -1) // TODO: Add English translation
 				{
 					throw new AdapterException(message + ": unique constraint");
 				}
 
+				Misc.rethrow(ex);
+			}
+			catch(Exception ex)
+			{
+				AmApi.AmRollback(amconn);
 				Misc.rethrow(ex);
 			}
 		}
