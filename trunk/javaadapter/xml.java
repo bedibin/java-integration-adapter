@@ -359,6 +359,14 @@ class XML
 		return row;
 	}
 
+	public synchronized boolean isAttributeNoDefault(String name) throws Exception
+	{
+		if (!isElement(node)) return false;
+		Element el = (Element)node;
+		Attr attr = el.getAttributeNode(name);
+		return attr != null;
+	}
+
 	public synchronized boolean isAttribute(String name) throws Exception
 	{
 		if (!isElement(node)) return false;

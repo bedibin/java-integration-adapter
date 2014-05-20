@@ -85,7 +85,7 @@ class ServiceManagerUpdateSubscriber extends UpdateSubscriber
 	private String getMessage(XML xml) throws Exception
 	{
 		if (xml == null)
-			throw new AdapterException("Service Manager returned not data");
+			throw new AdapterException("Service Manager returned no data");
 
 		String status = xml.getAttribute("status");
 		if ("SUCCESS".equals(status)) return null;

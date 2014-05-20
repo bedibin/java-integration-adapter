@@ -229,13 +229,13 @@ class ReaderLDAP implements Reader
 	private LinkedHashMap<String,String> first;
 	private String instance;
 
-	private void init(String name,String url,String context,String username,String password,String basedn,String search,String[] attrs,String[] sortattrs,String auth) throws Exception
+	private void init(String name,String url,String context,String username,String password,String basedn,String search,String[] attrs,String[] sortattrs,String auth,String referral,String deref) throws Exception
 	{
 		instance = (name == null) ? "ldap" : name;
 
 		Misc.log(5,"Searching for " + search + " on " + url + " base " + basedn);
 
-		ld = context == null ? new ldap(url,username,password,sortattrs,auth) : new directory(url,context,username,password,auth);
+		ld = context == null ? new ldap(url,username,password,sortattrs,auth,referral,deref) : new directory(url,context,username,password,auth);
 		ld.search(basedn,search,attrs);
 
 		if (attrs != null)
@@ -265,17 +265,19 @@ class ReaderLDAP implements Reader
 		String search = xml.getAttribute("query");
 		String fields = xml.getAttribute("fields");
 		String context = xml.getAttribute("context");
+		String referral = xml.getAttribute("referral");
+		String deref = xml.getAttribute("derefAliases");
 		String sortfields = xml.getAttribute("sort_fields");
 
 		String[] attrs = fields == null ? null :  fields.split("\\s*,\\s*");
 		String[] sortattrs = sortfields == null ? null :  sortfields.split("\\s*,\\s*");
 
-		init(name,url,context,username,password,basedn,search,attrs,sortattrs,auth);
+		init(name,url,context,username,password,basedn,search,attrs,sortattrs,auth,referral,deref);
 	}
 
-	public ReaderLDAP(String name,String url,String username,String password,String basedn,String search,String[] attrs,String[] sortattrs,String auth) throws Exception
+	public ReaderLDAP(String name,String url,String username,String password,String basedn,String search,String[] attrs,String[] sortattrs,String auth,String referral,String deref) throws Exception
 	{
-		init(name,url,null,username,password,basedn,search,attrs,sortattrs,auth);
+		init(name,url,null,username,password,basedn,search,attrs,sortattrs,auth,referral,deref);
 	}
 
 	public LinkedHashMap<String,String> next() throws Exception
