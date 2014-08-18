@@ -35,6 +35,7 @@ class DB
 		protected String[] columnnames;
 		private int[] columntypes;
 		private Connection conn;
+		private Calendar calendar;
 		private int resultcount = 0;
 
 		protected DBOper() { }
@@ -62,7 +63,7 @@ class DB
 					else if (value.matches("\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}"))
 					{
 						java.util.Date date = Misc.gmtdateformat.parse(value);
-						stmt.setTimestamp(x,new Timestamp(date.getTime()));
+						stmt.setTimestamp(x,new Timestamp(date.getTime()),calendar);
 					}
 					else
 						stmt.setString(x,value);
@@ -106,6 +107,7 @@ class DB
 			if (dbc == null)
 				throw new AdapterException("Connection " + name + " doesn't exist");
 			conn = dbc.conn;
+			calendar = dbc.calendar;
 
 			if (conn.isClosed())
 			{
@@ -201,13 +203,13 @@ class DB
 				switch(columntypes[i])
 				{
 				case Types.TIME:
-					date = rset.getTime(i+1);
+					date = rset.getTime(i+1,calendar);
 					break;
 				case Types.DATE:
-					date = rset.getDate(i+1);
+					date = rset.getDate(i+1,calendar);
 					break;
 				case Types.TIMESTAMP:
-					date = rset.getTimestamp(i+1);
+					date = rset.getTimestamp(i+1,calendar);
 					break;
 				case Types.BLOB:
 					long length = rset.getBlob(i+1).length();
@@ -242,6 +244,7 @@ class DB
 		Connection conn;
 		String quote = "\"";
 		dbtype dbtype;
+		Calendar calendar;
 	}
 
 	public static final String replacement = "*@?@!";
@@ -282,14 +285,9 @@ class DB
 		return instance;
 	}
 
-	public String getDate(java.util.Date date) throws Exception
+	protected String getDate(String value) throws Exception
 	{
-		return "{ ts '" + Misc.dateformat.format(date) + "'}";
-	}
-
-	public String getDate(String value) throws Exception
-	{
-		return getDate(Misc.gmtdateformat.parse(value));
+		return "{ ts '" + value + "'}";
 	}
 
 	public String getFieldValue(String value) throws Exception
@@ -345,6 +343,12 @@ class DB
 		}
 
 		dbc.dbtype = dbtype.OTHER;
+
+		dbc.calendar = Calendar.getInstance();
+		String timezone = xml.getValue("timezone","UTC");
+		if (!timezone.equals("local"))
+			dbc.calendar.setTimeZone(TimeZone.getTimeZone(timezone));
+
 		db.put(name,dbc);
 
 		if (urlstr == null || (driverstr != null && driverstr.equals(ORACLEJDBCDRIVER)))
@@ -614,6 +618,13 @@ class DB
 				xmlrow.add(key,value);
 			}
 		}
+	}
+
+	public dbtype getType(String instance)
+	{
+		DBConnection dbc = db.get(instance);
+		if (dbc == null) return null;
+		return dbc.dbtype;
 	}
 }
 

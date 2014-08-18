@@ -410,6 +410,7 @@ class DBSyncOper
 			xmlfield = xml;
 			this.scope = scope;
 			name = xml.getAttribute("name");
+			if (Misc.isLog(10)) Misc.log("Initializing field " + name);
 			newname = xml.getAttribute("rename");
 			String strip = xml.getAttributeDeprecated("strip");
 			if (strip != null && strip.equals("true")) dostrip = true;
@@ -749,6 +750,8 @@ class DBSyncOper
 					{
 						if (keyset.contains(newname)) iskey = true;
 						value = result.remove(name);
+						if (result.containsKey(newname))
+							throw new AdapterException("Renaming " + name + " to " + newname + " overwriting an existing field is not supported as it causes unexpected behaviors");
 						result.put(newname,value);
 						if (Misc.isLog(30)) Misc.log("Field: " + name + " renamed to " + newname + ": " + value);
 						name = newname;

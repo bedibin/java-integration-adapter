@@ -12,14 +12,11 @@ class Ucmdb
 {
 	private static Ucmdb instance;
 	private UcmdbService service;
-	public static SimpleDateFormat dateformat;
 	private String adapterinfo;
 
 	private Ucmdb() throws Exception
 	{
 		adapterinfo = "javaadapter/" + javaadapter.getName();
-		dateformat = new SimpleDateFormat(Misc.DATEFORMAT);
-		dateformat.setTimeZone(TimeZone.getTimeZone("GMT"));
 
 		System.out.print("Connection to UCMDB... ");
 		XML xml = javaadapter.getConfiguration().getElementByPath("/configuration/connection[@type='ucmdb']");
@@ -187,7 +184,7 @@ class ReaderUCMDB implements Reader
 			if (property.getType() == Type.DATE)
 			{
 				Date date = (Date)value;
-				row.put(post + property.getName(),ucmdb.dateformat.format(date));
+				row.put(post + property.getName(),Misc.gmtdateformat.format(date));
 			}
 			else
 				row.put(post + property.getName(),value == null ? "" : value.toString().trim());
@@ -382,7 +379,7 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 					ci.setStringListProperty(suffix,value.split("\n"));
 					break;
 				case DATE:
-					ci.setDateProperty(suffix,ucmdb.dateformat.parse(value));
+					ci.setDateProperty(suffix,Misc.gmtdateformat.parse(value));
 					break;
 				default:
 					throw new AdapterException("Unsupported uCMDB type " + attrtype + " for field " + suffix);
@@ -394,8 +391,40 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 	private void add(XML xml) throws Exception
 	{
 		TopologyModificationData data = factory.createTopologyModificationData(adapterinfo + "/add");
+
+		String end1 = getAddValue(xml,"END1");
+		String end2 = getAddValue(xml,"END2");
+		if (end1 != null && end2 != null)
+		{
+			String[] end1values = end1.split("\n");
+			String[] end2values = end2.split("\n");
+
+			if (Misc.isLog(10)) Misc.log("Adding multiple relationship ends: " + xml);
+
+			for(String end1value:end1values) for(String end2value:end2values)
+			{
+				xml.setValue("END1",end1value);
+				xml.setValue("END2",end2value);
+				FillUpdateData(data,xml,null,false);
+				update.create(data,CreateMode.UPDATE_EXISTING);
+			}
+			return;
+		}
+
 		FillUpdateData(data,xml,null,false);
 		update.create(data,CreateMode.UPDATE_EXISTING);
+	}
+
+	private String getAddValue(XML xml) throws Exception
+	{
+		if (xml == null) return null;
+		return xml.getValue();
+	}
+
+	private String getAddValue(XML xml,String name) throws Exception
+	{
+		XML idxml = xml.getElement(name);
+		return getAddValue(idxml);
 	}
 
 	private String getUpdateValue(XML xml) throws Exception
