@@ -90,19 +90,23 @@ class ServiceManagerUpdateSubscriber extends UpdateSubscriber
 		String status = xml.getAttribute("status");
 		if ("SUCCESS".equals(status)) return null;
 
-		XML messagexml = xml.getElement("messages");
-		if (messagexml == null) return null;
-
-		XML[] messages = messagexml.getElements("message");
 		StringBuffer sb = new StringBuffer();
-		for(XML message:messages)
+		String messageattr = xml.getAttribute("message");
+		if (messageattr != null) sb.append(messageattr);
+
+		XML messagexml = xml.getElement("messages");
+		if (messagexml != null)
 		{
-			if (sb.length() > 0)
-				sb.append(": ");
-			sb.append(message.getValue());
+			XML[] messages = messagexml.getElements("message");
+			for(XML message:messages)
+			{
+				if (sb.length() > 0)
+					sb.append(": ");
+				sb.append(message.getValue());
+			}
 		}
 
-		if (sb.length() == 0) return null;
+		if (sb.length() == 0) return status;
 		return sb.toString();
 	}
 
@@ -208,6 +212,24 @@ class ServiceManagerUpdateSubscriber extends UpdateSubscriber
 		{
 			soap.renameTag("Update" + object + "Request");
 			publisher.setAttribute("action","Update");
+
+			String keyfields = xmldest.getAttribute("merge_keys");
+			if (keyfields != null)
+			{
+				String[] newkeys = keyfields.split("\\s*,\\s*");
+				for(XML key:keys.getElements())
+					key.remove();
+				for(String key:newkeys)
+				{
+					XML field = xmloper.getElement(key);
+					if (field == null) throw new AdapterException(xmldest,"Invalid key '" + key + "' in merge_keys attribute: " + xmloper);
+					String value = field.getValue("oldvalue",null);
+					if (value == null) value = field.getValue();
+
+					keys.add(key,value);
+				}
+			}
+
 			result = soap.publish(publisher);
 			message = getMessage(result);
 		}

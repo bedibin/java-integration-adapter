@@ -123,17 +123,15 @@ class AMDB extends DB
 
 		amconn = AmApi.AmGetConnection(instance,username,password,"");
 		if (amconn == 0)
-			throw new AdapterException(xml,"AM connection paramaters are incorrect");
+			throw new AdapterException(xml,"AM connection parameters are incorrect");
 		AmApi.AmAuthenticateUser(amconn,username,password);
 		System.out.println("Done");
 	}
 
 	@Override
-	public String getDate(String value) throws Exception
+	protected String getDate(String value) throws Exception
 	{
-		// AM API requires local time and a special syntax
-		Date date = Misc.gmtdateformat.parse(value);
-		return "#" + Misc.dateformat.format(date) + "#";
+		return "#" + value + "#";
 	}
 
 	@Override
@@ -155,7 +153,7 @@ class AMDB extends DB
 			return getDate(value);
 		value = value.replace("'","''");
 		value = value.replace("\r","");
-		value = value.replace("\n","' + chr(13) + chr(10) + '");
+		value = value.replace("\n","' + char(13) + char(10) + '");
 		return "'" + value + "'";
 	}
 

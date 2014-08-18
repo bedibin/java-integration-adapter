@@ -357,13 +357,27 @@ class DatabaseUpdateSubscriber extends UpdateSubscriber
 				{
 					String mergefields = xmldest.getAttribute("merge_fields");
 					String[] attrs = mergefields == null ? null : mergefields.split("\\s*,\\s*");
+
+					String keyfields = xmldest.getAttribute("merge_keys");
+					String[] keys = keyfields == null ? null : keyfields.split("\\s*,\\s*");
+
 					XML updxml = new XML();
 					XML xmlop = updxml.add("update");
+					if (keys != null) for(String key:keys)
+					{
+						XML field = xml.getElement(key);
+						if (field == null) throw new AdapterException(xmldest,"Invalid key '" + key + "' in merge_keys attribute: " + xml);
+						String value = field.getValue("oldvalue");
+						if (value == null) value = field.getValue();
+
+						xmlop.add(key,value);
+					}
+
 					for(XML field:fields)
 					{
 						String tagname = field.getTagName();
 						String type = field.getAttribute("type");
-						if (type != null && type.equals("key"))
+						if (keys == null && type != null && type.equals("key"))
 							xmlop.add(field);
 						if (type == null && (attrs == null || Arrays.asList(attrs).contains(tagname)))
 						{

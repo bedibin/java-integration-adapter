@@ -86,9 +86,10 @@ class ReaderCSV implements Reader
 	private void setValue(ArrayList<String> result,StringBuffer sb) throws Exception
 	{
 		String value = sb.toString();
+		if (value.equals("\"")) value = "";
 		if (value.matches("\\d{4}-\\d{2}-\\d{2}"))
 			value += " 00:00:00";
-		if (value.matches("\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}"))
+		if (value.matches("\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}(\\.\\d+)?"))
 		{
 			// Dates in CSV files are local
 			Date date = Misc.dateformat.parse(value);
@@ -410,7 +411,7 @@ class ReaderSQL implements Reader
 			{
 				String value = current.get(key);
 				if (value == null) throw new AdapterException("Key '" + key + "' missing in SQL statement");
-				if (!value.equals(row.get(key)))
+				if (!value.equalsIgnoreCase(row.get(key)))
 				{
 					samekeys = false;
 					break;

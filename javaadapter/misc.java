@@ -303,7 +303,7 @@ class Misc
 	static
 	{
 		gmtdateformat = new SimpleDateFormat(DATEFORMAT);
-		gmtdateformat.setTimeZone(TimeZone.getTimeZone("GMT"));
+		gmtdateformat.setTimeZone(TimeZone.getTimeZone("UTC"));
 	}
 
 	static public String getHostName()
