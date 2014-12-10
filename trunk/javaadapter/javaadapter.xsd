@@ -58,6 +58,7 @@ elementFormDefault="qualified">
 	<xs:restriction base="xs:string">
 		<xs:enumeration value="key"/>
 		<xs:enumeration value="info"/>
+		<xs:enumeration value="infoapi"/>
 		<xs:enumeration value="initial"/>
 	</xs:restriction>
 </xs:simpleType>
@@ -92,8 +93,11 @@ elementFormDefault="qualified">
 	<xs:restriction base="xs:string">
 		<xs:enumeration value="ignore"/>
 		<xs:enumeration value="error"/>
-		<xs:enumeration value="recreate"/> <!-- Not supported for source element -->
+		<xs:enumeration value="warning"/>
 		<xs:enumeration value="merge"/>
+		<xs:enumeration value="recreate"/>
+		<xs:enumeration value="clear"/>
+		<xs:enumeration value="suffix"/>
 	</xs:restriction>
 </xs:simpleType>
 
@@ -103,15 +107,27 @@ elementFormDefault="qualified">
 		<xs:enumeration value="error"/>
 		<xs:enumeration value="ignore"/>
 		<xs:enumeration value="exception"/>
-		<xs:enumeration value="reject_record"/> <!-- Field element -->
-		<xs:enumeration value="reject_field"/> <!-- Field element -->
 	</xs:restriction>
 </xs:simpleType>
 
-<xs:simpleType name="excludescopetypes"> <!-- dbsynclugin -->
+<xs:simpleType name="onlookuperrortypes"> <!-- dbsynclugin -->
 	<xs:restriction base="xs:string">
-		<xs:enumeration value="field"/>
-		<xs:enumeration value="record"/>
+		<xs:enumeration value="warning"/>
+		<xs:enumeration value="error"/>
+		<xs:enumeration value="ignore"/>
+		<xs:enumeration value="exception"/>
+		<xs:enumeration value="use_key"/>
+	</xs:restriction>
+</xs:simpleType>
+
+<xs:simpleType name="onrejecttypes"> <!-- dbsynclugin -->
+	<xs:restriction base="xs:string">
+		<xs:enumeration value="warning"/>
+		<xs:enumeration value="error"/>
+		<xs:enumeration value="ignore"/>
+		<xs:enumeration value="exception"/>
+		<xs:enumeration value="reject_record"/> <!-- Field element -->
+		<xs:enumeration value="reject_field"/> <!-- Field element -->
 	</xs:restriction>
 </xs:simpleType>
 
@@ -132,12 +148,19 @@ elementFormDefault="qualified">
 	</xs:restriction>
 </xs:simpleType>
 
+<xs:simpleType name="dotypes"> <!-- dbsynclugin -->
+	<xs:restriction base="xs:string">
+		<xs:enumeration value="true"/>
+		<xs:enumeration value="false"/>
+		<xs:enumeration value="error"/>
+	</xs:restriction>
+</xs:simpleType>
+
 <xs:attributeGroup name="operation"> <!-- dbsynclugin -->
-	<xs:attribute name="do_add" type="xs:boolean" default="true"/>
-	<xs:attribute name="do_remove" type="xs:boolean" default="true"/>
-	<xs:attribute name="do_update" type="xs:boolean" default="true"/>
+	<xs:attribute name="do_add" type="dotypes" default="true"/>
+	<xs:attribute name="do_remove" type="dotypes" default="true"/>
+	<xs:attribute name="do_update" type="dotypes" default="true"/>
 	<xs:attribute name="ignore_case" type="ignorecasetypes" default="false"/>
-	<xs:attribute name="ignore_empty" type="xs:boolean" default="false"/>
 </xs:attributeGroup>
 
 <xs:attributeGroup name="result">
@@ -260,9 +283,14 @@ elementFormDefault="qualified">
 </xs:complexType>
 
 <xs:complexType name="read" mixed="true"> <!-- dbsyncplugin -->
-	<xs:sequence>
+	<xs:sequence><xs:choice minOccurs="0" maxOccurs="unbounded">
 		<xs:element name="extractsql" type="simplestringfile" minOccurs="0" maxOccurs="unbounded"/>
-	</xs:sequence>
+		<xs:element name="row">
+			<xs:complexType>
+				<xs:anyAttribute processContents="skip"/>
+			</xs:complexType>
+		</xs:element>
+	</xs:choice></xs:sequence>
 	<xs:attribute name="name" type="xs:string"/>
 	<xs:attribute name="type" type="readertypes"/>
 	<xs:attribute name="fields" type="xs:string"/>
@@ -435,45 +463,60 @@ elementFormDefault="qualified">
 </xs:complexType>
 
 <xs:complexType name="fieldclass">
-	<xs:all>
-		<xs:element name="lookup" minOccurs="0">
+	<xs:sequence><xs:choice minOccurs="0" maxOccurs="unbounded">
+		<xs:element name="lookup">
 			<xs:complexType>
 				<xs:complexContent>
 					<xs:extension base="simplelookup">
-						<xs:attribute name="use_key_when_not_found" type="xs:boolean" default="false"/>
-						<xs:attribute name="on_not_found" type="onnotfoundtypes" default="exception"/>
+						<xs:attribute name="show_duplicates_error" type="xs:boolean" default="true"/>
+						<xs:attribute name="on_lookup_error" type="onlookuperrortypes" default="ignore"/>
+						<xs:attribute name="on_file_not_found" type="onnotfoundtypes" default="exception"/>
 					</xs:extension>
 				</xs:complexContent>
 			</xs:complexType>
 		</xs:element>
-		<xs:element name="default_lookup" type="simplelookup" minOccurs="0"/>
-		<xs:element name="exclude_lookup" minOccurs="0">
+		<xs:element name="merge_lookup">
 			<xs:complexType>
 				<xs:complexContent>
 					<xs:extension base="simplelookup">
-						<xs:attribute name="exclude_scope" type="excludescopetypes" default="record"/>
+						<xs:attribute name="show_duplicates_error" type="xs:boolean" default="true"/>
+						<xs:attribute name="date_field" type="xs:string"/>
+						<xs:attribute name="on_file_not_found" type="onnotfoundtypes" default="exception"/>
 					</xs:extension>
 				</xs:complexContent>
 			</xs:complexType>
 		</xs:element>
-		<xs:element name="include_lookup" minOccurs="0">
+		<xs:element name="default_lookup" type="simplelookup"/>
+		<xs:element name="exclude_lookup">
 			<xs:complexType>
 				<xs:complexContent>
 					<xs:extension base="simplelookup">
-						<xs:attribute name="exclude_scope" type="excludescopetypes" default="record"/>
+						<xs:attribute name="on_exclude" type="onrejecttypes" default="reject_record"/>
 					</xs:extension>
 				</xs:complexContent>
 			</xs:complexType>
 		</xs:element>
-		<xs:element name="script" type="xs:string" minOccurs="0"/>
-	</xs:all>
+		<xs:element name="include_lookup">
+			<xs:complexType>
+				<xs:complexContent>
+					<xs:extension base="simplelookup">
+						<xs:attribute name="on_exclude" type="onrejecttypes" default="reject_record"/>
+					</xs:extension>
+				</xs:complexContent>
+			</xs:complexType>
+		</xs:element>
+		<xs:element name="script" type="simplestring"/>
+	</xs:choice></xs:sequence>
 	<xs:attribute name="name" type="xs:string" use="required"/>
 	<xs:attribute name="rename" type="xs:string"/>
 	<xs:attribute name="copy" type="xs:string"/>
 	<xs:attribute name="strip" type="xs:boolean" default="false"/>
 	<xs:attribute name="type" type="fieldtypes"/>
 	<xs:attribute name="default" type="xs:string"/>
-	<xs:attribute name="on_not_found" type="onnotfoundtypes" default="ignore"/>
+	<xs:attribute name="on_empty" type="onrejecttypes" default="ignore"/>
+	<xs:attribute name="force_empty_value" type="xs:string"/>
+	<xs:attribute name="on_multiple" type="ondupstypes" default="ignore"/>
+	<xs:attribute name="if_exists" type="xs:string"/>
 	<xs:attribute name="for_sync" type="xs:string"/>
 	<xs:attributeGroup ref="activate"/>
 	<xs:attributeGroup ref="filter"/>
@@ -548,6 +591,7 @@ elementFormDefault="qualified">
 						<xs:element name="initsql" type="simplestringfile"/>
 						<xs:element name="username" type="simplestring"/>
 						<xs:element name="instance" type="simplestring"/>
+						<xs:element name="timezone" type="simplestring" default="UTC"/>
 						<xs:element name="password" type="simplestringcrypted"/>
 						<xs:element name="server" type="simplestring"/>
 						<xs:element name="protocol" type="simplestring"/>
@@ -660,9 +704,10 @@ elementFormDefault="qualified">
 								</xs:choice></xs:sequence>
 								<xs:attribute name="filter" type="xs:string"/>
 								<xs:attribute name="dumpcsvfilename" type="xs:string"/>
+								<xs:attribute name="dumplogfile" type="xs:boolean"/>
 								<xs:attribute name="on_duplicates" type="ondupstypes" default="merge"/>
 								<xs:attribute name="on_duplicates_fields" type="xs:string"/>
-								<xs:attribute name="on_not_found" type="onnotfoundtypes" default="exception"/>
+								<xs:attribute name="on_file_not_found" type="onnotfoundtypes" default="exception"/>
 								<xs:attributeGroup ref="operation"/>
 							</xs:extension></xs:complexContent></xs:complexType>
 						</xs:element>
@@ -687,9 +732,13 @@ elementFormDefault="qualified">
 								<xs:attribute name="table" type="xs:string"/>
 								<xs:attribute name="filter" type="xs:string"/>
 								<xs:attribute name="dumpcsvfilename" type="xs:string"/>
+								<xs:attribute name="dumplogfile" type="xs:boolean"/>
 								<xs:attribute name="stop_on_error" type="xs:boolean" default="false"/>
-								<xs:attribute name="on_duplicates" type="ondupstypes" default="recreate"/>
+								<xs:attribute name="on_duplicates" type="ondupstypes" default="merge"/>
 								<xs:attribute name="merge_fields" type="xs:string"/>
+								<xs:attribute name="merge_keys" type="xs:string"/>
+								<xs:attribute name="clear_fields" type="xs:string"/>
+								<xs:attribute name="suffix_fields" type="xs:string"/>
 								<xs:attribute name="ignore_fields" type="xs:string"/>
 								<xs:attributeGroup ref="operation"/>
 								<!-- archivage -->
@@ -706,7 +755,8 @@ elementFormDefault="qualified">
 						<xs:element name="postexec" type="exec"/>
 					</xs:choice></xs:sequence>
 					<xs:attribute name="name" type="xs:string" use="required"/>
-					<xs:attribute name="keyfield" type="xs:string" use="required"/>
+					<xs:attribute name="keyfield" type="xs:string"/>
+					<xs:attribute name="display_keyfield" type="xs:string"/>
 					<xs:attribute name="root" type="xs:string" default="ISMDatabaseUpdate"/>
 					<xs:attribute name="maxqueuelength" type="xs:integer" default="100"/>
 					<xs:attributeGroup ref="operation"/>
