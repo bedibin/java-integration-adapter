@@ -47,7 +47,8 @@ class DB
 
 			if (sql.startsWith("select") || sql.startsWith("SELECT"))
 				isselect = true;
-			if (Misc.isLog(5)) Misc.log("SQL " + (isselect ? "SELECT " : "") + "query [" + name + "]: " + sql);
+			String liststr = list == null ? "" : "; " + Misc.implode(list);
+			if (Misc.isLog(5)) Misc.log("SQL " + (isselect ? "SELECT " : "") + "query [" + name + "]: " + sql + liststr);
 
 			stmt = conn.prepareStatement(sql);
 
@@ -125,12 +126,12 @@ class DB
 			{
 				int code = ex.getErrorCode();
 				String message = ex.getMessage().toLowerCase();
-				final String errors[] =  {"packet","shutdown","gone","closed","socket","state","pipe","timeout","timed out","connection","connexion"};
+				final String errors[] =  {"packet","shutdown","gone","closed","socket"," state","pipe","timeout","timed out","connection","connexion"};
 				for(int i = 0;i < errors.length;i++)
 				{
 					if (message.indexOf(errors[i]) != -1)
 					{
-						Misc.log(1,"Database connection " + name + " closed, statement retried");
+						Misc.log(1,"Database connection " + name + " closed, statement retried. Error: " + ex);
 						close();
 
 						try
@@ -155,13 +156,15 @@ class DB
 					}
 				}
 
-				Misc.log(1,"SQL error " + code + " [" + name + "]: " + sql);
+				String liststr = list == null ? "" : "; " + Misc.implode(list);
+				Misc.log(1,"SQL error " + code + " [" + name + "]: " + sql + liststr);
 				close();
 				Misc.rethrow(ex);
 			}
 			catch(Exception ex)
 			{
-				Misc.log(1,"SQL error [" + name + "]: " + sql);
+				String liststr = list == null ? "" : "; " + Misc.implode(list);
+				Misc.log(1,"SQL error [" + name + "]: " + sql + liststr);
 				close();
 				Misc.rethrow(ex);
 			}
@@ -367,6 +370,7 @@ class DB
 		else if (driverstr != null && driverstr.equals(MYSQLJDBCDRIVER))
 		{
 			execsql(name,"set names utf8 collate utf8_bin");
+			execsql(name,"set session sql_mode=''");
 			dbc.quote = "`";
 			dbc.dbtype = dbtype.MYSQL;
 		}
@@ -453,7 +457,23 @@ class DB
 		System.out.println("Done");
 	}
 
-	public String getorderby(String conn,String[] keys,boolean ignore_case) throws Exception
+	public String getConcat(String conn,String field,String addedfield) throws Exception
+	{
+		DBConnection dbc = db.get(conn);
+		if (dbc == null)
+			throw new AdapterException("Connection " + conn + " doesn't exist");
+
+		switch(dbc.dbtype)
+		{
+			case MYSQL:
+				return "concat(" + field + "," + addedfield + ")";
+			case MSSQL:
+				return field + " + " + addedfield;
+		}
+		return field + " || " + addedfield;
+	}
+
+	public String getOrderBy(String conn,String[] keys,boolean ignore_case) throws Exception
 	{
 		DBConnection dbc = db.get(conn);
 		if (dbc == null)
@@ -526,6 +546,12 @@ class DB
 	{
 		String sql = xml.getValue();
 		return new DBOper(conn,sql);
+	}
+
+	public int execsqlresult(String conn,String sql,List<String> list) throws Exception
+	{
+		DBOper oper = new DBOper(conn,sql,list);
+		return oper.getResultCount();
 	}
 
 	public int execsqlresult(String conn,String sql) throws Exception

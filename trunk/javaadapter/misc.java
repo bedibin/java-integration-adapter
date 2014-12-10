@@ -9,6 +9,11 @@ class AdapterException extends Exception
 {
 	private static final long serialVersionUID = -6121704205129410513L;
 
+	public AdapterException(String message)
+	{
+		super(message);
+	}
+
 	public AdapterException(String message,Object... args)
 	{
 		super(Misc.getMessage(message,args));
@@ -67,144 +72,6 @@ class Tuple
 	public Object get(int idx)
 	{
 		return this.list[idx];
-	}
-}
-
-class CsvWriter
-{
-	private Writer out;
-	private Collection<String> headers;
-	private char enclosure = '"';
-	private char delimiter = ',';
-	private boolean do_header = true;
-
-	public CsvWriter(String filename) throws Exception
-	{
-		out = new BufferedWriter(new OutputStreamWriter(new FileOutputStream(new File(javaadapter.getCurrentDir(),filename)),"ISO-8859-1"));
-	}
-
-	public CsvWriter(String filename,XML xml) throws Exception
-	{
-		setDelimiters(xml);
-		out = new BufferedWriter(new OutputStreamWriter(new FileOutputStream(new File(javaadapter.getCurrentDir(),filename)),"ISO-8859-1"));
-	}
-
-	public CsvWriter(String filename,Collection<String> headers) throws Exception
-	{
-		out = new BufferedWriter(new OutputStreamWriter(new FileOutputStream(new File(javaadapter.getCurrentDir(),filename)),"ISO-8859-1"));
-		this.headers = headers;
-		write(headers);
-	}
-
-	public CsvWriter(String filename,Collection<String> headers,XML xml) throws Exception
-	{
-		setDelimiters(xml);
-		out = new BufferedWriter(new OutputStreamWriter(new FileOutputStream(new File(javaadapter.getCurrentDir(),filename)),"ISO-8859-1"));
-		this.headers = headers;
-		write(headers);
-	}
-
-	public CsvWriter(Writer writer,Collection<String> headers) throws Exception
-	{
-		out = writer;
-		this.headers = headers;
-		write(headers);
-	}
-
-	public CsvWriter(Writer writer) throws Exception
-	{
-		out = writer;
-	}
-
-	public void setDelimiters(XML xml) throws Exception
-	{
-		String delimiter = Misc.unescape(xml.getAttribute("delimiter"));
-		if (delimiter != null) this.delimiter = delimiter.charAt(0);
-
-		String enclosure = Misc.unescape(xml.getAttribute("enclosure"));
-		if (enclosure != null) this.enclosure = enclosure.charAt(0);
-
-		String header = xml.getAttribute("header");
-		if (header != null && header.equals("false"))
-			do_header = false;
-	}
-
-	public void setDelimiters(char enclosure,char delimiter)
-	{
-		this.enclosure = enclosure;
-		this.delimiter = delimiter;
-	}
-
-	private String escape(String value)
-	{
-		if (value == null) return "";
-		value = value.replace("" + enclosure,"" + enclosure + enclosure);
-		if (value.contains("" + delimiter) || value.contains("\n") || value.contains("\""))
-			value = enclosure + value + enclosure;
-		return value;
-	}
-
-	public void write(Collection<String> row) throws Exception
-	{
-		if (row == null)
-		{
-			out.close();
-			return;
-		}
-
-		String line = null;
-
-		for(String value:row)
-		{
-			String entry = escape(value);
-			if (line == null)
-				line = entry;
-			else
-				line += delimiter + entry;
-		}
-
-		if (line == null) return;
-		line += Misc.CR;
-
-		out.write(line,0,line.length());
-	}
-
-	public void write(Map<String,String> row) throws Exception
-	{
-		if (row == null)
-		{
-			out.close();
-			return;
-		}
-
-		String line = null;
-		if (headers == null)
-		{
-			headers = row.keySet();
-			if (do_header) write(headers);
-		}
-
-		Iterator<String> it = headers.iterator();
-
-		while(it.hasNext())
-		{
-			String key = it.next();
-			String entry = escape(row.get(key));
-			if (line == null)
-				line = entry;
-			else
-				line += delimiter + entry;
-		}
-
-		if (line == null) return;
-		line += Misc.CR;
-
-		out.write(line,0,line.length());
-	}
-
-	public void flush() throws Exception
-	{
-		out.flush();
 	}
 }
 
@@ -355,14 +222,24 @@ class Misc
 		}
 	}
 
-	static public String getDate(java.util.Date date)
+	static public String getGMTDate(java.util.Date date)
+	{
+		return gmtdateformat.format(date);
+	}
+
+	static public String getGMTDate()
+	{
+		return getGMTDate(new java.util.Date());
+	}
+
+	static public String getLocalDate(java.util.Date date)
 	{
 		return dateformat.format(date);
 	}
 
-	static public String getDate()
+	static public String getLocalDate()
 	{
-		return getDate(new java.util.Date());
+		return getLocalDate(new java.util.Date());
 	}
 
 	static public void setLogTag(String tag)
@@ -405,7 +282,7 @@ class Misc
 		if (logtag != null)
 			taginfo = " [" + logtag + "]";
 
-		text = getDate() + threadinfo + taginfo + " " + text + CR;
+		text = getLocalDate() + threadinfo + taginfo + " " + text + CR;
 
 		try
 		{
@@ -1191,6 +1068,11 @@ class Misc
 			String value = exec(param.substring(1),"ISO-8859-1",null);
 			return value == null ? value : value.trim();
 		}
+		else if (param.startsWith("@"))
+		{
+			String value = strftime(param.substring(1),new Date());
+			return value;
+		}
 		else if (def != null)
 			return def;
 		return null;
@@ -1204,7 +1086,7 @@ class Misc
 		while(matcher.find())
 		{
 			char prefix = matcher.group(1).charAt(0);
-			if (prefix != '$' && prefix != '!' && prefix != '<') return true;
+			if (prefix != '@' && prefix != '$' && prefix != '!' && prefix != '<') return true;
 		}
 
 		return false;
@@ -1264,7 +1146,13 @@ class Misc
 		return substitute(str,new Misc.Substituer() {
 			public String getValue(String param) throws Exception
 			{
-				return substituteGet(param,xml.getStringByPath(param));
+				String def;
+				try {
+					def = xml.getStringByPath(param);
+				} catch (javax.xml.xpath.XPathExpressionException ex) {
+					def = null;
+				}
+				return substituteGet(param,def);
 			}
 		});
 	}

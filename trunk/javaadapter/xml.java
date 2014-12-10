@@ -1,5 +1,6 @@
 import java.io.*;
 import java.util.*;
+import java.text.*;
 import javax.xml.transform.*;
 import javax.xml.transform.stream.*;
 import javax.xml.transform.dom.*;
@@ -866,6 +867,27 @@ class XML
 
 	static public synchronized String getDefaultVariable(String name)
 	{
+		final String currentdatevar = "$ADAPTER_CURRENT_DATE_";
+		final String startdatevar = "$ADAPTER_START_DATE_";
+
+		if ("$ADAPTER_CURRENT_DATE".equals(name))
+			return Misc.getGMTDate();
+		else if (name.startsWith(currentdatevar))
+		{
+			SimpleDateFormat format = new SimpleDateFormat(name.substring(currentdatevar.length()));
+			format.setTimeZone(TimeZone.getTimeZone("UTC"));
+			return format.format(new Date());
+		}
+		else if ("$ADAPTER_START_DATE".equals(name))
+			return Misc.getGMTDate(javaadapter.startdate);
+		else if (name.startsWith(startdatevar))
+		{
+			SimpleDateFormat format = new SimpleDateFormat(name.substring(startdatevar.length()));
+			format.setTimeZone(TimeZone.getTimeZone("UTC"));
+			return format.format(javaadapter.startdate);
+		}
+		else if ("$ADAPTER_NAME".equals(name))
+			return javaadapter.getName();
 		return defaultvars.get(name);
 	}
 

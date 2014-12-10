@@ -316,15 +316,27 @@ class SyncLookup
 
 	class ExcludeLookup extends SimpleLookup
 	{
-		boolean onfield = false;
+		SyncLookupResultErrorOperationTypes onexclude = SyncLookupResultErrorOperationTypes.REJECT_RECORD;
 
 		public ExcludeLookup(XML xml) throws Exception
 		{
 			super(xml,null);
 
-			String scope = xml.getAttribute("exclude_scope");
-			if (scope != null && scope.equals("field"))
-				onfield = true;
+			String scope = xml.getAttribute("on_exclude");
+			if (scope == null || scope.equals("reject_record"))
+				;
+			else if (scope.equals("ignore"))
+				onexclude = SyncLookupResultErrorOperationTypes.NONE;
+			else if (scope.equals("reject_field"))
+				onexclude = SyncLookupResultErrorOperationTypes.REJECT_FIELD;
+			else if (scope.equals("error"))
+				onexclude = SyncLookupResultErrorOperationTypes.ERROR;
+			else if (scope.equals("warning"))
+				onexclude = SyncLookupResultErrorOperationTypes.WARNING;
+			else if (scope.equals("exception"))
+				onexclude = SyncLookupResultErrorOperationTypes.EXCEPTION;
+			else
+				throw new AdapterException(xml,"Invalid on_exclude attribute");
 		}
 
 		@Override
@@ -333,7 +345,7 @@ class SyncLookup
 			String value = lookup(row);
 			if (value == null || value.isEmpty())
 				return SyncLookupResultErrorOperationTypes.NONE;
-			return onfield ? SyncLookupResultErrorOperationTypes.REJECT_FIELD : SyncLookupResultErrorOperationTypes.REJECT_RECORD;
+			return onexclude;
 		}
 	}
 
@@ -349,7 +361,7 @@ class SyncLookup
 		{
 			String value = lookup(row);
 			if (value == null)
-				return onfield ? SyncLookupResultErrorOperationTypes.REJECT_FIELD : SyncLookupResultErrorOperationTypes.REJECT_RECORD;
+				return onexclude;
 			return SyncLookupResultErrorOperationTypes.NONE;
 		}
 	}
@@ -427,7 +439,7 @@ class SyncLookup
 		{
 			String value = row.get(name);
 			if  (value == null || value.isEmpty())
-				row.put(name,defaultvalue);
+				row.put(name,Misc.substitute(defaultvalue,row));
 		}
 
 		return SyncLookupResultErrorOperationTypes.NONE;

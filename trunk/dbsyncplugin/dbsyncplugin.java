@@ -389,6 +389,36 @@ class DatabaseUpdateSubscriber extends UpdateSubscriber
 					Misc.log(1,"WARNING: Record already present." + Misc.CR + "Updating record information with XML message: " + updxml);
 					update(xmldest,updxml,true);
 				}
+				else if (ondups.equals("clear"))
+				{
+					String clearfields = xmldest.getAttribute("clear_fields");
+					if (clearfields == null) throw new AdapterException(xmldest,"clear on_duplicates requires clear_fields attribute");
+					Misc.log(1,"WARNING: [" + getKeyValue() + "] Record already present. Clearing fields " + clearfields + ": " + xml);
+					String sql = "update " + table + " ";
+					String sep = "set ";
+					for(String field:clearfields.split("\\s*,\\s*"))
+					{
+						sql += sep + field + "=NULL";
+						sep = ",";
+					}
+					sql += " " + getWhereClause(xmldest,xml);
+					db.execsql(instance,sql);
+				}
+				else if (ondups.equals("suffix"))
+				{
+					String suffixfields = xmldest.getAttribute("suffix_fields");
+					if (suffixfields == null) throw new AdapterException(xmldest,"suffix on_duplicates requires suffix_fields attribute");
+					Misc.log(1,"WARNING: [" + getKeyValue() + "] Record already present. Adding suffix '_' to fields " + suffixfields + ": " + xml);
+					String sql = "update " + table + " ";
+					String sep = "set ";
+					for(String field:suffixfields.split("\\s*,\\s*"))
+					{
+						sql += sep + field + "=" + db.getConcat(instance,field,"'_'");
+						sep = ",";
+					}
+					sql += " " + getWhereClause(xmldest,xml);
+					db.execsql(instance,sql);
+				}
 				else if (ondups.equals("recreate"))
 				{
 					Misc.log(1,"WARNING: [" + getKeyValue() + "] Record already present. Record will be automatically recreated with XML message: " + xml);
@@ -488,7 +518,7 @@ class DatabaseUpdateSubscriber extends UpdateSubscriber
 				String value = custom.getAttribute("value");
 				if (value == null) value = "";
 				sql += " " + sep + " " + quotefield + name + quotefield + "=" + DB.replacement;
-				list.add(value);
+				list.add(Misc.substitute(value,xml));
 				sep = ",";
 			}
 			sql += getWhereClause(xmldest,xml);

@@ -1,6 +1,7 @@
 import java.util.*;
 import java.util.regex.*;
 import java.text.SimpleDateFormat;
+import java.io.StringReader;
 
 class ReaderServiceManager extends ReaderXML
 {
@@ -172,8 +173,27 @@ class ServiceManagerUpdateSubscriber extends UpdateSubscriber
 					if (namecust == null) throw new AdapterException(custom,"Attribute 'name' required");
 					String valuecust = custom.getAttribute("value");
 					if (valuecust == null) valuecust = "";
-					setValue(instance,namecust,valuecust);
+					setValue(instance,namecust,Misc.substitute(valuecust,xmloper));
 				}
+				continue;
+			}
+
+			if (name.startsWith("TABLE_"))
+			{
+				name = name.substring("TABLE_".length());
+				Reader reader = new ReaderCSV(new StringReader(value));
+				LinkedHashMap<String,String> row;
+				XML array = instance.add(name);
+				ArrayList<String> header = reader.getHeader();
+				while((row = reader.next()) != null)
+				{
+					XML structure = array.add(name);
+					for(String key:header)
+						setValue(structure,key,row.get(key));
+				}
+				XML structure = array.add(name);
+				for(String key:header)
+					setValue(structure,key,null);
 				continue;
 			}
 

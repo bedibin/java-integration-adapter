@@ -146,10 +146,18 @@ class AMDB extends DB
 	}
 
 	@Override
+	public String getConcat(String conn,String field,String addedfield) throws Exception
+	{
+		return field + " + " + addedfield;
+	}
+
+	@Override
 	public String getValue(String value) throws Exception
 	{
 		if (value == null) return "null";
 		if (value.matches("\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}"))
+			return getDate(value);
+		if (value.matches("\\d{4}-\\d{2}-\\d{2}"))
 			return getDate(value);
 		value = value.replace("'","''");
 		value = value.replace("\r","");

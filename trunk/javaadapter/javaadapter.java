@@ -68,6 +68,7 @@ public class javaadapter
 	static ArrayList<SoapServer> soapservers = new ArrayList<SoapServer>();
 	static crypt crypter = new crypt();
 	static boolean isstarted = false;
+	static Date startdate = new Date();
 	static boolean dohooks = true;
 	static String currentdir;
 	static String adaptername;
