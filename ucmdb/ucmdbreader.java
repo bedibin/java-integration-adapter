@@ -99,7 +99,7 @@ class Ucmdb
 	}
 }
 
-class ReaderUCMDB implements Reader
+class ReaderUCMDB extends ReaderUtil implements Reader
 {
 	private ArrayList<String> headers;
 	Iterator<TopologyCI> cis;
@@ -235,7 +235,13 @@ class ReaderUCMDB implements Reader
 		}
 	}
 
+	@Override
 	public LinkedHashMap<String,String> next() throws Exception
+	{
+		return super.next(this);
+	}
+
+	public LinkedHashMap<String,String> nextRaw() throws Exception
 	{
 		if (!cis.hasNext())
 		{
@@ -353,6 +359,13 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 					ci.setStringProperty(suffix,null);
 				else switch(attrtype)
 				{
+				case DOUBLE:
+					try {
+					ci.setDoubleProperty(suffix,new Double(value));
+					} catch (NumberFormatException ex) {
+					Misc.log("ERROR: [" + getKeyValue() + "] Cannot convert '" + value + "' for field '" + suffix + "' into a double: " + xml);
+					}
+					break;
 				case LONG:
 					try {
 					ci.setLongProperty(suffix,new Long(value));
@@ -477,6 +490,7 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 			if (name == null) throw new AdapterException(custom,"Attribute 'name' required");
 			String value = custom.getAttribute("value");
 			if (value == null) value = "";
+			value = Misc.substitute(value,xml);
 			xml.add(name,value);
 			if (Misc.isLog(10)) Misc.log("Updating " + name + " with value " + value + " instead of deleting: " + xml);
 		}

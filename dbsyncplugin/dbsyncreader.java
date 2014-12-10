@@ -6,12 +6,18 @@ import java.util.regex.*;
 interface Reader
 {
 	public LinkedHashMap<String,String> next() throws Exception;
+	public LinkedHashMap<String,String> nextRaw() throws Exception;
 	public ArrayList<String> getHeader();
 	public String getName();
 }
 
 class ReaderUtil
 {
+	private Set<String> keyfields;
+	private boolean issorted = false;
+	private LinkedHashMap<String,String> last;
+	protected DB db;
+
 	static public Reader getReader(XML xml) throws Exception
 	{
 		Reader reader = null;
@@ -41,9 +47,98 @@ class ReaderUtil
 
 		return reader;
 	}
+
+	public ReaderUtil() throws Exception
+	{
+ 		db = DB.getInstance();
+	}
+
+	public ReaderUtil(Set<String> keyfields,boolean issorted) throws Exception
+	{
+ 		db = DB.getInstance();
+		this.keyfields = keyfields;
+		this.issorted = issorted;
+	}
+
+	public ReaderUtil(XML xml) throws Exception
+	{
+ 		db = DB.getInstance();
+		String keyfield = xml.getAttribute("keyfield");
+		if (keyfield == null) xml.getAttribute("keyfields");
+		if (keyfield == null) xml.getParent().getAttribute("keyfield");
+		if (keyfield == null) xml.getParent().getAttribute("keyfields");
+		String sorted = xml.getAttribute("sorted");
+		keyfields = keyfield == null ? null : Misc.arrayToSet(keyfield.split("\\s*,\\s*"));
+		issorted = sorted != null && sorted.equals("true");
+	}
+
+	static public void pushCurrent(Map<String,String> row,Map<String,Set<String>> map,boolean issorted) throws Exception
+	{
+		for(String keyrow:row.keySet())
+		{
+			Set<String> set = map.get(keyrow);
+			if (set == null) set = issorted ? new LinkedHashSet<String>() : new TreeSet<String>(DB.getInstance().collator);
+			String rowvalue = row.get(keyrow);
+			rowvalue = XML.fixValue(rowvalue.replace("\r\n","\n"));
+			set.add(rowvalue);
+			map.put(keyrow,set);
+		}
+	}
+
+	public LinkedHashMap<String,String> next(Reader reader) throws Exception
+	{
+		if (keyfields == null)
+			return reader.nextRaw();
+
+		LinkedHashMap<String,String> row;
+		LinkedHashMap<String,String> current = last;
+		HashMap<String,Set<String>> currentmap = new HashMap<String,Set<String>>();
+		if (current != null) pushCurrent(current,currentmap,issorted);
+
+		while((row = reader.nextRaw()) != null)
+		{
+			if (!row.keySet().containsAll(keyfields))
+			{
+				if (Misc.isLog(3)) Misc.log("WARNING: Keys '" + Misc.implode(keyfields) + "' missing in extraction. Cannot merge multiple records sharing the same key: " + Misc.implode(row.keySet()));
+				keyfields = null;
+				return row;
+			}
+
+			if (current == null)
+			{
+				current = row;
+				pushCurrent(current,currentmap,issorted);
+				continue;
+			}
+
+			boolean samekeys = true;
+			for(String key:keyfields)
+			{
+				String value = current.get(key);
+				if (!value.equalsIgnoreCase(row.get(key)))
+				{
+					samekeys = false;
+					break;
+				}
+			}
+
+			if (!samekeys) break;
+
+			pushCurrent(row,currentmap,issorted);
+		}
+
+		last = row;
+		if (current == null) return null;
+		for(String keyrow:current.keySet())
+			current.put(keyrow,Misc.implode(currentmap.get(keyrow),"\n"));
+
+		if (Misc.isLog(18)) Misc.log("row [merge/" + reader.getName() + "]: " + current);
+
+		return current;
+	}
 }
 
-class ReaderRow implements Reader
+class ReaderRow extends ReaderUtil implements Reader
 {
 	XML[] rows;
 	int rowpos;
@@ -61,7 +156,13 @@ class ReaderRow implements Reader
 		return headers;
 	}
 
+	@Override
 	public LinkedHashMap<String,String> next() throws Exception
+	{
+		return super.next(this);
+	}
+
+	public LinkedHashMap<String,String> nextRaw() throws Exception
 	{
 		if (rowpos >= rows.length) return null;
 		LinkedHashMap<String,String> result = rows[rowpos].getAttributes();
@@ -75,11 +176,11 @@ class ReaderRow implements Reader
 	}
 }
 
-class ReaderCSV implements Reader
+class ReaderCSV extends ReaderUtil implements Reader
 {
 	private ArrayList<String> headers;
-	private char enclosure;
-	private char delimiter;
+	private char enclosure = '"';
+	private char delimiter = ',';
 	private BufferedReader in;
 	private String instance;
 
@@ -155,7 +256,13 @@ class ReaderCSV implements Reader
 		return result;
 	}
 
+	@Override
 	public LinkedHashMap<String,String> next() throws Exception
+	{
+		return super.next(this);
+	}
+
+	public LinkedHashMap<String,String> nextRaw() throws Exception
 	{
 		ArrayList<String> csv = readCSV();
 		if (csv == null) return null;
@@ -174,13 +281,10 @@ class ReaderCSV implements Reader
 		return row;
 	}
 
-	private void init(String name,String filename,char delimiter,char enclosure,String charset) throws Exception
+	private void initFile(String name,String filename,String charset) throws Exception
 	{
 		if (filename == null)
 			throw new AdapterException("Filename is mandatory");
-
-		this.delimiter = delimiter == 0 ? ',' : delimiter;
-		this.enclosure = enclosure == 0 ? '"' : enclosure;
 
 		File file = new File(javaadapter.getCurrentDir(),filename);
 		in = new BufferedReader(new InputStreamReader(new FileInputStream(file),charset == null ? "ISO-8859-1" : charset));
@@ -191,25 +295,41 @@ class ReaderCSV implements Reader
 		instance = (name == null) ? file.getName() : name;
 	}
 
+	public ReaderCSV(java.io.Reader reader) throws Exception
+	{
+		in = new BufferedReader(reader);
+		headers = readCSV();
+		if (headers == null)
+			throw new AdapterException("CSV reader requires at least one header line");
+		instance = reader.getClass().getName();
+	}
+
 	public ReaderCSV(XML xml) throws Exception
 	{
+		super(xml);
+
 		String name = xml.getAttribute("name");
 		String filename = xml.getAttribute("filename");
-		String delimiter = Misc.unescape(xml.getAttribute("delimiter"));
-		String enclosure = Misc.unescape(xml.getAttribute("enclosure"));
-		String charset = xml.getAttribute("charset");
 
-		init(name,filename,delimiter == null ? 0 : delimiter.charAt(0),enclosure == null ? 0 : enclosure.charAt(0),charset);
+		String delimiter = Misc.unescape(xml.getAttribute("delimiter"));
+		if (delimiter != null) this.delimiter = delimiter.charAt(0);
+		String enclosure = Misc.unescape(xml.getAttribute("enclosure"));
+		if (enclosure != null) this.enclosure = enclosure.charAt(0);
+
+		String charset = xml.getAttribute("charset");
+		initFile(name,filename,charset);
 	}
 
 	public ReaderCSV(String name,String filename,char delimiter,char enclosure) throws Exception
 	{
-		init(name,filename,delimiter,enclosure,null);
+		if (delimiter != 0) this.delimiter = delimiter;
+		if (enclosure != 0) this.enclosure = enclosure;
+		initFile(name,filename,null);
 	}
 
 	public ReaderCSV(String filename) throws Exception
 	{
-		init(null,filename,(char)0,(char)0,null);
+		initFile(null,filename,null);
 	}
 
 	public ArrayList<String> getHeader()
@@ -223,7 +343,7 @@ class ReaderCSV implements Reader
 	}
 }
 
-class ReaderLDAP implements Reader
+class ReaderLDAP extends ReaderUtil implements Reader
 {
 	private ArrayList<String> headers;
 	private directory ld;
@@ -281,7 +401,13 @@ class ReaderLDAP implements Reader
 		init(name,url,null,username,password,basedn,search,attrs,sortattrs,auth,referral,deref);
 	}
 
+	@Override
 	public LinkedHashMap<String,String> next() throws Exception
+	{
+		return super.next(this);
+	}
+
+	public LinkedHashMap<String,String> nextRaw() throws Exception
 	{
 		LinkedHashMap<String,String> row;
 
@@ -315,127 +441,60 @@ class ReaderLDAP implements Reader
 	}
 }
 
-class ReaderSQL implements Reader
+class ReaderSQL extends ReaderUtil implements Reader
 {
 	private ArrayList<String> headers;
 	private DB.DBOper oper = null;
-	private LinkedHashMap<String,String> last;
-	private Set<String> keyfields;
-	private DB db;
 	private String instance;
-	private boolean issorted;
-	private static final Pattern listPattern = Pattern.compile("LIST_.+-.+");
 
-	private void init(String name,String conn,String sql,Set<String> keyfields,boolean issorted) throws Exception
+	private void init(String name,String conn,String sql) throws Exception
 	{
-		db = DB.getInstance();
-		this.keyfields = keyfields;
 		String sqlsub = Misc.substitute(sql);
 		oper = db.makesqloper(conn,sqlsub);
 		headers = oper.getHeader();
 		instance = (name == null) ? conn : name;
-		this.issorted = issorted;
 	}
 
 	public ReaderSQL(XML xml) throws Exception
 	{
+		super(xml);
 		String name = xml.getAttribute("name");
 		String conn = xml.getAttribute("instance");
 		XML sqlxml = xml.getElement("extractsql");
 		String sql = sqlxml == null ? xml.getValue() : sqlxml.getValue();
-		String keyfield = xml.getAttribute("keyfield");
-		String sorted = xml.getAttribute("sorted");
-
-		init(name,conn,sql,keyfield == null ? null : Misc.arrayToSet(keyfield.split("\\s*,\\s*")),sorted != null && sorted.equals("true"));
+		init(name,conn,sql);
 	}
 
 	public ReaderSQL(String conn,String sql) throws Exception
 	{
-		init(null,conn,sql,null,false);
+		init(null,conn,sql);
 	}
 
 	public ReaderSQL(String conn,String sql,Set<String> keyfields,boolean issorted) throws Exception
 	{
-		init(null,conn,sql,keyfields,issorted);
+		super(keyfields,issorted);
+		init(null,conn,sql);
 	}
 
 	public ReaderSQL(String name,String conn,String sql,Set<String> keyfields,boolean issorted) throws Exception
 	{
-		init(name,conn,sql,keyfields,issorted);
+		super(keyfields,issorted);
+		init(name,conn,sql);
 	}
 
-	private void pushCurrent(LinkedHashMap<String,String> row,HashMap<String,List<String>> set)
-	{
-		for(String keyrow:row.keySet())
-		{
-			List<String> list = set.get(keyrow);
-			if (list == null) list = new ArrayList<String>();
-
-			String rowvalue = row.get(keyrow);
-			rowvalue = XML.fixValue(rowvalue.replace("\r\n","\n"));
-			if (issorted && listPattern.matcher(keyrow).matches())
-				list.add(rowvalue);
-			else if (rowvalue.length() != 0 && !list.contains(rowvalue))
-				list.add(rowvalue);
-
-			set.put(keyrow,list);
-		}
-	}
-
-	private void sort(List<String> list)
-	{
-		Collections.sort(list,db.collator);
-	}
-
+	@Override
 	public LinkedHashMap<String,String> next() throws Exception
 	{
-		if (keyfields == null)
-			return oper.next();
+		return super.next(this);
+	}
 
-		LinkedHashMap<String,String> row;
-		LinkedHashMap<String,String> current = last;
-		HashMap<String,List<String>> currentlist = new HashMap<String,List<String>>();
-		if (current != null) pushCurrent(current,currentlist);
+	public LinkedHashMap<String,String> nextRaw() throws Exception
+	{
+		LinkedHashMap<String,String> row = oper.next();
+		if (row == null) return null;
 
-		while((row = oper.next()) != null)
-		{
-			if (current == null)
-			{
-				current = row;
-				pushCurrent(current,currentlist);
-				continue;
-			}
-
-			boolean samekeys = true;
-			for(String key:keyfields)
-			{
-				String value = current.get(key);
-				if (value == null) throw new AdapterException("Key '" + key + "' missing in SQL statement");
-				if (!value.equalsIgnoreCase(row.get(key)))
-				{
-					samekeys = false;
-					break;
-				}
-			}
-
-			if (!samekeys) break;
-
-			pushCurrent(row,currentlist);
-		}
-
-		last = row;
-		if (current == null) return null;
-
-		for(String keyrow:current.keySet())
-		{
-			List<String> list = currentlist.get(keyrow);
-			if (!issorted) sort(list);
-			current.put(keyrow,Misc.implode(list,"\n"));
-		}
-
-		if (Misc.isLog(18)) Misc.log("row [sql]: " + current);
-
-		return current;
+		if (Misc.isLog(15)) Misc.log("row [sql]: " + row);
+		return row;
 	}
 
 	public ArrayList<String> getHeader()
@@ -449,7 +508,7 @@ class ReaderSQL implements Reader
 	}
 }
 
-class ReaderXML implements Reader
+class ReaderXML extends ReaderUtil implements Reader
 {
 	protected ArrayList<String> headers;
 	protected XML[] xmltable;
@@ -502,7 +561,7 @@ class ReaderXML implements Reader
 		return row;
 	}
 
-	public ReaderXML()
+	public ReaderXML() throws Exception
 	{
 	}
 
@@ -549,7 +608,13 @@ class ReaderXML implements Reader
 		headers = new ArrayList<String>(first.keySet());
 	}
 
+	@Override
 	public LinkedHashMap<String,String> next() throws Exception
+	{
+		return super.next(this);
+	}
+
+	public LinkedHashMap<String,String> nextRaw() throws Exception
 	{
 		LinkedHashMap<String,String> row = getXML(position);
 		if (row == null) return null;

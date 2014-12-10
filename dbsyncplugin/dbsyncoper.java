@@ -12,20 +12,15 @@ class DBSyncOper
 		private String tablename;
 		private String conn;
 		private DB.DBOper oper;
-		private TreeMap<String,LinkedHashMap<String,String>> sortedmap;
+		private TreeMap<String,LinkedHashMap<String,Set<String>>> sortedmap;
 		private Iterator<?> iterator;
 		private String instance;
 		private ArrayList<String> header;
 
-		private TreeMap<String,LinkedHashMap<String,String>> getMap()
+		public SortTable(XML xml,Sync sync) throws Exception
 		{
-			return new TreeMap<String,LinkedHashMap<String,String>>(db.collator);
-		}
-
-		public SortTable(XML xml,Sync sync,String name,ArrayList<String> header) throws Exception
-		{
-			instance = "SORT:" + name;
-			this.header = header;
+			Reader reader = sync.getReader();
+			this.header = reader.getHeader();
 
 			XML sortxml = xml.getElement("dbsyncsorttable");
 			if (sortxml == null)
@@ -43,11 +38,15 @@ class DBSyncOper
 
 			if (tablename == null || conn == null)
 			{
-				sortedmap = getMap();
+				instance = "memsort/" + reader.getName();
+				sortedmap = new TreeMap<String,LinkedHashMap<String,Set<String>>>(db.collator);
 				Misc.log(7,"Initializing memory sort");
 			}
 			else
+			{
+				instance = "dbsort/" + reader.getName();
 				Misc.log(7,"Initializing temporary DB table sort");
+			}
 
 			put(sync);
 		}
@@ -56,16 +55,28 @@ class DBSyncOper
 		{
 			LinkedHashMap<String,String> row;
 			while((row = fields.getNext(sync)) != null)
+			{
+				if (!row.keySet().containsAll(fields.getKeys()))
+					throw new AdapterException("Sort operation requires all keys [" + Misc.implode(fields.getKeys()) + "]: " + Misc.implode(row));
 				put(row);
+			}
 		}
 
 		public void put(LinkedHashMap<String,String> row) throws Exception
 		{
 			String key = getKey(row);
+			if (key.length() == fields.getKeys().size()) return; // An empty key contains one ! per element
+
 			if (ignorecasekeys) key = key.toUpperCase();
 			if (sortedmap != null)
 			{
-				sortedmap.put(key,row);
+				LinkedHashMap<String,Set<String>> prevmap = sortedmap.get(key);
+				if (prevmap == null)
+				{
+					prevmap = new LinkedHashMap<String,Set<String>>();
+					sortedmap.put(key,prevmap);
+				}
+				ReaderUtil.pushCurrent(row,prevmap,false);
 				return;
 			}
 
@@ -82,9 +93,16 @@ class DBSyncOper
 			db.execsql(conn,sql,list);
 		}
 
+		@Override
+		public LinkedHashMap<String,String> nextRaw() throws Exception
+		{
+			throw new AdapterException("nextRaw not supported for SortTable class");
+		}
+
+		@Override
 		public LinkedHashMap<String,String> next() throws Exception
 		{
-			LinkedHashMap<String,String> row;
+			LinkedHashMap<String,String> row = new LinkedHashMap<String,String>();
 
 			if (sortedmap != null)
 			{
@@ -92,15 +110,17 @@ class DBSyncOper
 					iterator = sortedmap.keySet().iterator();
 				if (!iterator.hasNext()) return null;
 				Object key = iterator.next();
-				row = sortedmap.get(key);
+				LinkedHashMap<String,Set<String>> map = sortedmap.get(key);
+				for(String keyrow:map.keySet())
+					row.put(keyrow,Misc.implode(map.get(keyrow),"\n"));
 
-				if (Misc.isLog(15)) Misc.log("row [memsort]: " + row);
+				if (Misc.isLog(15)) Misc.log("row [" + instance + "]: " + row);
 				return row;
 			}
 
 			if (oper == null)
 			{
-				String sql = "select key,value from " + tablename + db.getorderby(conn,new String[]{"key"},ignorecasekeys);
+				String sql = "select key,value from " + tablename + db.getOrderBy(conn,new String[]{"key"},ignorecasekeys);
 				oper = db.makesqloper(conn,sql);
 			}
 
@@ -114,7 +134,6 @@ class DBSyncOper
 			XML xml = new XML(new StringBuffer(result.get("VALUE")));
 			XML[] elements = xml.getElements(null);
 
-			row = new LinkedHashMap<String,String>();
 			for(XML el:elements)
 			{
 				String value = el.getValue();
@@ -122,7 +141,7 @@ class DBSyncOper
 				row.put(el.getTagName(),value);
 			}
 
-			if (Misc.isLog(15)) Misc.log("row [dbsort]: " + row);
+			if (Misc.isLog(15)) Misc.log("row [" + instance + "]: " + row);
 			return row;
 		}
 
@@ -215,7 +234,7 @@ class DBSyncOper
 			String sorted = xml.getAttribute("sorted");
 			if (sorted != null && sorted.equals("true")) return;
 
-			reader = new SortTable(xml,this,reader.getName(),reader.getHeader());
+			reader = new SortTable(xml,this);
 		}
 	}
 
@@ -230,7 +249,7 @@ class DBSyncOper
 			String sorted = xml.getAttribute("sorted");
 			if (sorted != null && sorted.equals("true")) return;
 
-			reader = new SortTable(xml,this,reader.getName(),reader.getHeader());
+			reader = new SortTable(xml,this);
 		}
 	}
 
@@ -278,7 +297,7 @@ class DBSyncOper
 			{
 				sql = "select * from (" + sql + ") d1";
 				Set<String> keys = fields.getKeys();
-				sql += db.getorderby(conn,keys.toArray(new String[keys.size()]),ignorecasekeys);
+				sql += db.getOrderBy(conn,keys.toArray(new String[keys.size()]),ignorecasekeys);
 			}
 
 
@@ -308,7 +327,7 @@ class DBSyncOper
 			XML result = sub.run(request.getElement(null).copy());
 			reader = new ReaderXML(xml,result);
 
-			reader = new SortTable(xml,this,reader.getName(),reader.getHeader());
+			reader = new SortTable(xml,this);
 		}
 	}
 
@@ -380,7 +399,7 @@ class DBSyncOper
 			String sorted = xml.getAttribute("sorted");
 			if (sorted != null && sorted.equals("true")) return;
 
-			reader = new SortTable(xml,this,reader.getName(),reader.getHeader());
+			reader = new SortTable(xml,this);
 		}
 	}
 
@@ -507,8 +526,13 @@ class DBSyncOper
 		{
 			if (ifexists != null)
 			{
-				String value = result.get(ifexists.isEmpty() ? name : ifexists);
-				if (value == null || value.isEmpty()) return false;
+				if (ifexists.isEmpty()) ifexists = name;
+				String[] keys = ifexists.split("\\s*,\\s*");
+				for(String key:keys)
+				{
+					String value = result.get(key);
+					if (value == null || value.isEmpty()) return false;
+				}
 			}
 			if (filtername == null && filterresult == null) return true;
 
@@ -631,6 +655,16 @@ class DBSyncOper
 
 		public LinkedHashMap<String,String> getNext(Sync sync) throws Exception
 		{
+			try {
+				return getNextSub(sync);
+			} catch(Exception ex) {
+				Misc.rethrow(ex,"ERROR: Exception generated while reading " + sync.getName());
+			}
+			return null;
+		}
+
+		public LinkedHashMap<String,String> getNextSub(Sync sync) throws Exception
+		{
 			LinkedHashMap<String,String> result;
 
 			while((result = sync.next()) != null)
@@ -682,15 +716,13 @@ class DBSyncOper
 						case EXCEPTION:
 							throw new AdapterException("[" + sync.getName() + ":" + keys + "] Invalid lookup for field " + field.getName() + ": " + result);
 						}
-/* IFDEF JAVA6 */
-					} catch (javax.script.ScriptException ex) {
+					} catch (AdapterScriptException ex) {
 						Misc.log("WARNING: [" + sync.getName() + ":" + keys + "] Script exception on field " + name + ": " + ex.getMessage());
 						if (iskey)
 							result.put(name,"");
 						else
 							result.remove(name);
 						continue;
-/* */
 					} catch (Exception ex) {
 						Misc.rethrow(ex);
 					}
@@ -1168,7 +1200,7 @@ class DBSyncOper
 		for(String keyfield:fields.getKeys())
 		{
 			/* Use exclamation mark since it is the lowest ASCII character */
-			/* This code must match db.getorderby logic */
+			/* This code must match db.getOrderBy logic */
 			String keyvalue = row.get(keyfield);
 			if (keyvalue != null) key.append(keyvalue.replace(' ','!').replace('_','!'));
 			key.append("!");
@@ -1430,11 +1462,14 @@ class DBSyncOper
 			else
 			{
 				String fileescape = filename.replaceAll("\\.","\\.").replaceAll("\\*","\\*");
-				Matcher matcher = Misc.substitutepattern.matcher(fileescape);
-				String fileglob = matcher.replaceAll("*");
+				Matcher matcherglob = Misc.substitutepattern.matcher(fileescape);
+				String fileglob = matcherglob.replaceAll("*");
 				if (Misc.isLog(10)) Misc.log("File glob: " + fileglob);
 
-				String fileextract = matcher.replaceAll("(.*)");
+				fileescape = filename.replaceAll("[\\\\/]","[\\\\\\\\/]").replaceAll("\\.","\\.").replaceAll("\\*","\\.\\*");
+				Matcher matchervar = Misc.substitutepattern.matcher(fileescape);
+				String fileextract = matchervar.replaceAll("(.*)");
+				if (Misc.isLog(10)) Misc.log("File extract: " + fileextract);
 				Pattern patternextract = Pattern.compile(fileextract);
 
 				Paths paths = new Paths(".",fileglob);
@@ -1449,16 +1484,23 @@ class DBSyncOper
 					newsync.setAttribute("filename",file);
 
 					Matcher matcherextract = patternextract.matcher(file);
-					matcher.reset();
+					matchervar.reset();
+					matchervar.find();
+					int y = 0;
 					while(matcherextract.find())
 					{
-						matcher.find();
 						int count = matcherextract.groupCount();
 						for(int x = 0;x < count;x++)
 						{
-							if (Misc.isLog(10)) Misc.log("Variable from file name: " + matcher.group(x + 1) + "=" + matcherextract.group(x + 1));
+							y++;
+							if (y > matchervar.groupCount())
+							{
+								matchervar.find();
+								y = 1;
+							}
+							if (Misc.isLog(10)) Misc.log("Variable from file name: " + matchervar.group(y) + "=" + matcherextract.group(x + 1));
 							XML varxml = newsync.add("variable");
-							varxml.setAttribute("name",matcher.group(x + 1));
+							varxml.setAttribute("name",matchervar.group(y));
 							varxml.setAttribute("value",matcherextract.group(x + 1));
 						}
 					}
