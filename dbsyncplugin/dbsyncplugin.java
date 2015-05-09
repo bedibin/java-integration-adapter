@@ -459,7 +459,7 @@ class DatabaseUpdateSubscriber extends UpdateSubscriber
 		for(XML field:fields)
 		{
 			String type = field.getAttribute("type");
-			if (type != null && type.equals("info")) continue;
+			if (type != null && (type.equals("info") || type.equals("infoapi"))) continue;
 
 			if (fieldnames == null)
 				fieldnames = "";
@@ -475,7 +475,7 @@ class DatabaseUpdateSubscriber extends UpdateSubscriber
 		for(XML field:fields)
 		{
 			String type = field.getAttribute("type");
-			if (type != null && type.equals("info")) continue;
+			if (type != null && (type.equals("info") || type.equals("infoapi"))) continue;
 
 			sql += sep + DB.replacement;
 			list.add(field.getValue());
@@ -553,7 +553,7 @@ class DatabaseUpdateSubscriber extends UpdateSubscriber
 
 			String oldvalue = old.getValue();
 			String type = field.getAttribute("type");
-			if (type != null && (type.equals("info") || type.equals("key") || (type.equals("initial") && oldvalue != null))) continue;
+			if (type != null && (type.equals("info") || type.equals("infoapi") || type.equals("key") || (type.equals("initial") && oldvalue != null))) continue;
 
 			sql += " " + sep + " " + quotefield + field.getTagName() + quotefield + " = " + DB.replacement;
 			list.add(field.getValue());

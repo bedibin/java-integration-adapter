@@ -1,6 +1,6 @@
 include ../Makefile.def
 
-CLASS = .:../javaadapter/javaadapter.jar:${JAR_DIR}/scheduling.jar:${JAR_DIR}/xercesImpl.jar:${JAR_DIR}/wljmsclient.jar:${JAR_DIR}/webserviceclient.jar
+CLASS = .:../javaadapter/javaadapter.jar:${JAR_DIR}/scheduling.jar:${JAR_DIR}/wljmsclient.jar:${JAR_DIR}/webserviceclient.jar
 JAR =	queuedirplugin.jar
 DIR =	classes
 

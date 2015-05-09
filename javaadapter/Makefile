@@ -2,7 +2,7 @@ include ../Makefile.def
 
 envl = LANG=fr_CA.iso88591 NLS_LANG=FRENCH_CANADA.WE8ISO8859P1
 
-CLASS = ${JAR_DIR}/scheduling.jar:${JAR_DIR}/xercesImpl.jar:${JAR_DIR}/wljmsclient.jar:${JAR_DIR}/webserviceclient.jar:${JAR_DIR}/js.jar
+CLASS = ${JAR_DIR}/scheduling.jar:${JAR_DIR}/wljmsclient.jar:${JAR_DIR}/webserviceclient.jar:${JAR_DIR}/js.jar
 
 JAR =	javaadapter.jar
 DIR =	classes

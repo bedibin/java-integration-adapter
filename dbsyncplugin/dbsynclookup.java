@@ -3,6 +3,25 @@ import java.io.FileNotFoundException;
 
 enum SyncLookupResultErrorOperationTypes { ERROR, WARNING, EXCEPTION, REJECT_FIELD, REJECT_RECORD, NONE };
 
+class SyncLookupResultErrorOperation
+{
+	public SyncLookupResultErrorOperationTypes type = SyncLookupResultErrorOperationTypes.NONE;
+	public String msg;
+
+	public SyncLookupResultErrorOperation() {}
+
+	public SyncLookupResultErrorOperation(SyncLookupResultErrorOperationTypes type)
+	{
+		this.type = type;
+	}
+
+	public SyncLookupResultErrorOperation(SyncLookupResultErrorOperationTypes type,String msg)
+	{
+		this.type = type;
+		this.msg = msg;
+	}
+}
+
 class SyncLookup
 {
 	class SimpleLookup
@@ -87,7 +106,8 @@ class SyncLookup
 					String keyvalue = Misc.getKeyValue(fields,result);
 					if (keyvalue == null) continue;
 
-					if (table.get(keyvalue) != null)
+					String keyvaluelower = keyvalue.toLowerCase();
+					if (table.get(keyvaluelower) != null)
 					{
 						String duperror = xml.getAttribute("show_duplicates_error");
 						if (duperror == null || duperror.equals("true"))
@@ -97,14 +117,14 @@ class SyncLookup
 
 					if (value == null || "".equals(value)) continue;
 
-					String[] keyvalues = keyvalue.split("\n"); // This won't work if multiple key fields are containing carriage return
+					String[] keyvalues = keyvaluelower.split("\n"); // This won't work if multiple key fields are containing carriage return
 					for(String key:keyvalues)
 					{
 						table.put(key,value);
 						if (Misc.isLog(25)) Misc.log("Lookup: Storing preload for " + fieldname + " key " + key + ": " + value);
 					}
 
-					if (datevalue != null) datetable.put(keyvalue,datevalue);
+					if (datevalue != null) datetable.put(keyvaluelower,datevalue);
 				}
 
 				if (table == null)
@@ -126,14 +146,15 @@ class SyncLookup
 
 				if (Misc.isLog(25)) Misc.log("Lookup: Preload key for " + fieldname + " is " + keyvalue);
 
+				String keyvaluelower = keyvalue.toLowerCase();
 				String result = null;
 				if (table != null)
 				{
-					result = table.get(keyvalue);
+					result = table.get(keyvaluelower);
 					if (result == null)
 					{
 						// Work for simple key only
-						String[] keysplit = keyvalue.split("\n");
+						String[] keysplit = keyvaluelower.split("\n");
 						if (keysplit.length > 1)
 						{
 							ArrayList<String> resultlist = new ArrayList<String>();
@@ -170,7 +191,7 @@ class SyncLookup
 					throw new AdapterException("Extraction must return a value for date_field " + datefield);
 				String datevalue = values.get(datefield);
 				if (datevalue == null) return result;
-				String mergedatevalue = datetable.get(keyvalue);
+				String mergedatevalue = datetable.get(keyvaluelower);
 				if (mergedatevalue == null) return null;
 
 				Date date = Misc.dateformat.parse(datevalue);
@@ -183,7 +204,7 @@ class SyncLookup
 
 		private Preload preloadinfo;
 		protected XML xmllookup;
-		protected SyncLookupResultErrorOperationTypes erroroperation = SyncLookupResultErrorOperationTypes.NONE;;
+		protected SyncLookupResultErrorOperationTypes erroroperation = SyncLookupResultErrorOperationTypes.NONE;
 		private boolean onlookupusekey = false;
 		private DB db;
 		protected String opername;
@@ -258,17 +279,17 @@ class SyncLookup
 			return Misc.getFirstValue(result);
 		}
 
-		public SyncLookupResultErrorOperationTypes oper(LinkedHashMap<String,String> row,String name) throws Exception
+		public SyncLookupResultErrorOperation oper(LinkedHashMap<String,String> row,String name) throws Exception
 		{
 			String previous = row.get(name);
-			if (previous != null && !previous.isEmpty()) return SyncLookupResultErrorOperationTypes.NONE;
+			if (previous != null && !previous.isEmpty()) return new SyncLookupResultErrorOperation();
 
 			String value = lookup(row);
 			if (value == null)
-				return erroroperation;
+				return new SyncLookupResultErrorOperation(erroroperation);
 
 			row.put(name,value);
-			return SyncLookupResultErrorOperationTypes.NONE;
+			return new SyncLookupResultErrorOperation();
 		}
 
 		public String getName()
@@ -285,14 +306,14 @@ class SyncLookup
 		}
 
 		@Override
-		public SyncLookupResultErrorOperationTypes oper(LinkedHashMap<String,String> row,String name) throws Exception
+		public SyncLookupResultErrorOperation oper(LinkedHashMap<String,String> row,String name) throws Exception
 		{
 			String value = lookup(row);
 			if (value == null)
-				return erroroperation;
+				return new SyncLookupResultErrorOperation(erroroperation);
 
 			row.put(name,value);
-			return SyncLookupResultErrorOperationTypes.NONE;
+			return new SyncLookupResultErrorOperation();
 		}
 	}
 
@@ -304,13 +325,13 @@ class SyncLookup
 		}
 
 		@Override
-		public SyncLookupResultErrorOperationTypes oper(LinkedHashMap<String,String> row,String name) throws Exception
+		public SyncLookupResultErrorOperation oper(LinkedHashMap<String,String> row,String name) throws Exception
 		{
 			String previous = row.get(name);
-			if (previous != null && !previous.isEmpty()) return SyncLookupResultErrorOperationTypes.NONE;
+			if (previous != null && !previous.isEmpty()) return new SyncLookupResultErrorOperation();
 
 			row.put(name,lookup(null));
-			return SyncLookupResultErrorOperationTypes.NONE;
+			return new SyncLookupResultErrorOperation();
 		}
 	}
 
@@ -340,12 +361,12 @@ class SyncLookup
 		}
 
 		@Override
-		public SyncLookupResultErrorOperationTypes oper(LinkedHashMap<String,String> row,String name) throws Exception
+		public SyncLookupResultErrorOperation oper(LinkedHashMap<String,String> row,String name) throws Exception
 		{
 			String value = lookup(row);
 			if (value == null || value.isEmpty())
-				return SyncLookupResultErrorOperationTypes.NONE;
-			return onexclude;
+				return new SyncLookupResultErrorOperation();
+			return new SyncLookupResultErrorOperation(onexclude);
 		}
 	}
 
@@ -357,31 +378,53 @@ class SyncLookup
 		}
 
 		@Override
-		public SyncLookupResultErrorOperationTypes oper(LinkedHashMap<String,String> row,String name) throws Exception
+		public SyncLookupResultErrorOperation oper(LinkedHashMap<String,String> row,String name) throws Exception
 		{
 			String value = lookup(row);
 			if (value == null)
-				return onexclude;
-			return SyncLookupResultErrorOperationTypes.NONE;
+				return new SyncLookupResultErrorOperation(onexclude);
+			return new SyncLookupResultErrorOperation();
 		}
 	}
 
 	class ScriptLookup extends SimpleLookup
 	{
+		SyncLookupResultErrorOperationTypes onexception = SyncLookupResultErrorOperationTypes.WARNING;
+
 		public ScriptLookup(XML xml) throws Exception
 		{
 			opername = xml.getTagName();
 			xmllookup = xml;
+
+			String scope = xml.getAttribute("on_exception");
+			if (scope == null || scope.equals("warning"))
+				;
+			else if (scope.equals("ignore"))
+				onexception = SyncLookupResultErrorOperationTypes.NONE;
+			else if (scope.equals("reject_field"))
+				onexception = SyncLookupResultErrorOperationTypes.REJECT_FIELD;
+			else if (scope.equals("error"))
+				onexception = SyncLookupResultErrorOperationTypes.ERROR;
+			else if (scope.equals("reject_record"))
+				onexception = SyncLookupResultErrorOperationTypes.REJECT_RECORD;
+			else if (scope.equals("exception"))
+				onexception = SyncLookupResultErrorOperationTypes.EXCEPTION;
+			else
+				throw new AdapterException(xml,"Invalid on_exception attribute");
 		}
 
 		@Override
-		public SyncLookupResultErrorOperationTypes oper(LinkedHashMap<String,String> row,String name) throws Exception
+		public SyncLookupResultErrorOperation oper(LinkedHashMap<String,String> row,String name) throws Exception
 		{
-			String value = Script.execute(xmllookup.getValue(),row);
+			try {
+				String value = Script.execute(xmllookup.getValue(),row);
 			if (value != null)
 				row.put(name,value);
+			} catch (AdapterScriptException ex) {
+				return new SyncLookupResultErrorOperation(onexception,"SCRIPT EXCEPTION: " + ex.getMessage());
+			}
 
-			return SyncLookupResultErrorOperationTypes.NONE;
+			return new SyncLookupResultErrorOperation();
 		}
 	}
 
@@ -425,13 +468,13 @@ class SyncLookup
 		}
 	}
 
-	public SyncLookupResultErrorOperationTypes check(LinkedHashMap<String,String> row,String name) throws Exception
+	public SyncLookupResultErrorOperation check(LinkedHashMap<String,String> row,String name) throws Exception
 	{
 		for(SimpleLookup lookup:lookups)
 		{
-			SyncLookupResultErrorOperationTypes erroroperation = lookup.oper(row,name);
+			SyncLookupResultErrorOperation erroroperation = lookup.oper(row,name);
 			if (Misc.isLog(25)) Misc.log("Lookup operation " + lookup.getName() + " returning " + erroroperation);
-			if (erroroperation != SyncLookupResultErrorOperationTypes.NONE)
+			if (erroroperation.type != SyncLookupResultErrorOperationTypes.NONE)
 				return erroroperation;
 		}
 
@@ -442,6 +485,6 @@ class SyncLookup
 				row.put(name,Misc.substitute(defaultvalue,row));
 		}
 
-		return SyncLookupResultErrorOperationTypes.NONE;
+		return new SyncLookupResultErrorOperation();
 	}
 }

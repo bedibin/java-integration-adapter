@@ -56,10 +56,10 @@ elementFormDefault="qualified">
 
 <xs:simpleType name="fieldtypes"> <!-- dbsynclugin -->
 	<xs:restriction base="xs:string">
-		<xs:enumeration value="key"/>
-		<xs:enumeration value="info"/>
-		<xs:enumeration value="infoapi"/>
-		<xs:enumeration value="initial"/>
+		<xs:enumeration value="key"/> <!-- Field is a key -->
+		<xs:enumeration value="info"/> <!-- Field won't be used by comparison or API -->
+		<xs:enumeration value="infoapi"/> <!-- Field will be used by comparison but not the API -->
+		<xs:enumeration value="initial"/> <!-- Field use on add or if empty in destination -->
 	</xs:restriction>
 </xs:simpleType>
 
@@ -216,7 +216,7 @@ elementFormDefault="qualified">
 
 <xs:complexType name="anyxml">
 	<xs:sequence>
-		<xs:any processContents="skip"/>
+		<xs:any minOccurs="0" processContents="skip"/>
 	</xs:sequence>
 	<xs:attribute name="filename" type="xs:string"/>
 	<xs:attributeGroup ref="activate"/>
@@ -297,6 +297,7 @@ elementFormDefault="qualified">
 	<xs:attribute name="sort_fields" type="xs:string"/>
 	<xs:attribute name="instance" type="xs:string"/>
 	<xs:attribute name="keyfield" type="xs:string"/>
+	<xs:attribute name="field" type="xs:string"/>
 	<xs:attribute name="sorted" type="xs:boolean" default="false"/>
 	<xs:attribute name="enclosure" type="xs:string" default='"'/>
 	<xs:attribute name="delimiter" type="xs:string" default=","/>
@@ -388,6 +389,14 @@ elementFormDefault="qualified">
 				<xs:attribute name="path" type="xpath"/>
 				<xs:attribute name="value" type="xs:string"/>
 				<xs:attribute name="name" type="xs:string" use="required"/>
+				<xs:attributeGroup ref="activate"/>
+				<xs:attributeGroup ref="filter"/>
+				<xs:attributeGroup ref="result"/>
+			</xs:complexType>
+		</xs:element>
+		<xs:element name="setpath">
+			<xs:complexType>
+				<xs:attribute name="path" type="xpath" use="required"/>
 				<xs:attributeGroup ref="activate"/>
 				<xs:attributeGroup ref="filter"/>
 				<xs:attributeGroup ref="result"/>
@@ -505,7 +514,15 @@ elementFormDefault="qualified">
 				</xs:complexContent>
 			</xs:complexType>
 		</xs:element>
-		<xs:element name="script" type="simplestring"/>
+		<xs:element name="script">
+			<xs:complexType>
+				<xs:complexContent>
+					<xs:extension base="simplestring">
+						<xs:attribute name="on_exception" type="onrejecttypes" default="warning"/>
+					</xs:extension>
+				</xs:complexContent>
+			</xs:complexType>
+		</xs:element>
 	</xs:choice></xs:sequence>
 	<xs:attribute name="name" type="xs:string" use="required"/>
 	<xs:attribute name="rename" type="xs:string"/>
@@ -708,6 +725,7 @@ elementFormDefault="qualified">
 								<xs:attribute name="on_duplicates" type="ondupstypes" default="merge"/>
 								<xs:attribute name="on_duplicates_fields" type="xs:string"/>
 								<xs:attribute name="on_file_not_found" type="onnotfoundtypes" default="exception"/>
+								<xs:attribute name="ignore_fields" type="xs:string"/>
 								<xs:attributeGroup ref="operation"/>
 							</xs:extension></xs:complexContent></xs:complexType>
 						</xs:element>

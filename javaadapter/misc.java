@@ -999,7 +999,7 @@ class Misc
 			if (itrvalue == null || itrvalue.isEmpty()) continue;
 			keyvalue = keyvalue == null ? itrvalue : keyvalue + "," + itrvalue;
 		}
-		return keyvalue == null ? null : keyvalue.toLowerCase();
+		return keyvalue == null ? null : keyvalue;
 	}
 
 	public static String getStringValue(String text)

@@ -36,7 +36,7 @@ class DB
 		private int[] columntypes;
 		private Connection conn;
 		private Calendar calendar;
-		private int resultcount = 0;
+		protected int resultcount = 0;
 
 		protected DBOper() { }
 
@@ -556,8 +556,7 @@ class DB
 
 	public int execsqlresult(String conn,String sql) throws Exception
 	{
-		DBOper oper = new DBOper(conn,sql,null);
-		return oper.getResultCount();
+		return execsqlresult(conn,sql,null);
 	}
 
 	public ArrayList<LinkedHashMap<String,String>> execsql(String conn,String sql) throws Exception

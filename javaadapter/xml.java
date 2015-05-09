@@ -10,7 +10,6 @@ import javax.jms.*;
 import org.w3c.dom.*;
 import org.xml.sax.*;
 import org.xml.sax.helpers.DefaultHandler;
-import org.apache.xml.serialize.*;
 import java.util.regex.*;
 
 class XML
@@ -197,23 +196,23 @@ class XML
 		xformer.transform(source,result);
 	}
 
-	@SuppressWarnings("deprecation")
 	public String toString(Node node)
 	{
 		try
 		{
-			OutputFormat format = new OutputFormat(dom);
-			StringWriter out = new StringWriter();
-			XMLSerializer serial = new XMLSerializer(out,format);
+			TransformerFactory tf = TransformerFactory.newInstance();
+			Transformer transformer = tf.newTransformer();
+			//transformer.setOutputProperty(OutputKeys.OMIT_XML_DECLARATION,"yes");
+			StringWriter writer = new StringWriter();
 			if (node == null || node == dom)
-				serial.serialize(dom);
+				transformer.transform(new DOMSource(dom),new StreamResult(writer));
 			else
 			{
 				if (!isElement(node)) return "";
 				Element el = (Element)node;
-				serial.serialize(el);
+				transformer.transform(new DOMSource(el),new StreamResult(writer));
 			}
-			return out.toString();
+			return writer.getBuffer().toString();
 		}
 		catch(Exception ex)
 		{
@@ -683,14 +682,20 @@ class XML
 		Node firstchild = node.getFirstChild();
 		if (firstchild == null)
 		{
-			if (value != null)
-			{
-				Text text = dom.createTextNode(fixValue(value));
-				node.appendChild(text);
-			}
+			if (value == null) return;
+			Text text = dom.createTextNode(fixValue(value));
+			node.appendChild(text);
 			return;
 		}
-		firstchild.setNodeValue(value);
+		if (firstchild.getNodeType() != Node.TEXT_NODE)
+		{
+			if (value == null) return;
+			Text text = dom.createTextNode(fixValue(value));
+			node.insertBefore(text,node.getFirstChild());
+			return;
+		}
+
+		firstchild.setNodeValue(fixValue(value));
 	}
 
 	public void remove() throws Exception
@@ -708,6 +713,30 @@ class XML
 			parent.removeChild(node);
 			node = parent;
 		}
+	}
+
+	public XML addBefore(XML xml) throws Exception
+	{
+		if (xml.node == null) return xml; // Nothing to add
+		if (node == null || node == dom.getDocumentElement()) throw new AdapterException(xml,"Cannot insert before on root");
+
+		Node newnode = dom.importNode(xml.node,true);
+		newnode = node.getParentNode().insertBefore(newnode,node);
+		return new XML(dom,newnode);
+	}
+
+	public XML addAfter(XML xml) throws Exception
+	{
+		if (xml.node == null) return xml; // Nothing to add
+		if (node == null || node == dom.getDocumentElement()) throw new AdapterException(xml,"Cannot insert after on root");
+
+		Node newnode = dom.importNode(xml.node,true);
+		Node nextnode = node.getNextSibling();
+		if (nextnode == null)
+			newnode = node.appendChild(newnode);
+		else
+			newnode = node.getParentNode().insertBefore(newnode,nextnode);
+		return new XML(dom,newnode);
 	}
 
 	public XML add(XML xml) throws Exception
@@ -922,6 +951,7 @@ class XML
 
 	static public String fixValue(String str)
 	{
+		if (str == null) return null;
 		return xmlvaluepattern.matcher(str).replaceAll("");
 	} 
 }

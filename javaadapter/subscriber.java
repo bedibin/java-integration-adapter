@@ -362,6 +362,8 @@ class Operation extends SchedulerTask
 			addByPath(xml,element.getAttribute("path"),element.getAttribute("name"),element.getAttribute("value"));
 		else if (tagname.equals("removepath"))
 			removeByPath(xml,element.getAttribute("path"));
+		else if (tagname.equals("setpath"))
+			xml = xml.getElementByPath(element.getAttribute("path"));
 		else if (tagname.equals("variablepath"))
 			setVariable(xml,element.getAttribute("path"),element.getAttribute("name"));
 		else if (tagname.equals("log"))

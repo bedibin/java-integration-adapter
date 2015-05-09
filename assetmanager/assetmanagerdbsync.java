@@ -2,12 +2,14 @@ import com.peregrine.ac.api.*;
 import com.peregrine.ac.AmException;
 import java.util.*;
 import java.util.regex.*;
+import java.text.*;
 
 class AMDB extends DB
 {
 	private long amconn = 0;
 	private String username;
 	private static AMDB instance;
+	private SimpleDateFormat dateformat;
 
 	class DBOper extends DB.DBOper
 	{
@@ -59,7 +61,8 @@ class AMDB extends DB
 				}
 
 				rowresult = xml.getElement("Result").getElements("Row");
-				if (Misc.isLog(15)) Misc.log("Number of entries returned: " + rowresult.length);
+				resultcount = rowresult.length;
+				if (Misc.isLog(15)) Misc.log("Number of entries returned: " + resultcount);
 				return;
 			}
 
@@ -98,6 +101,11 @@ class AMDB extends DB
 			{
 				String value = rowresult[pos].getValueByPath("Column[@Index='"+i+"']");
 				if (value == null) value = "";
+				if (value.matches("\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}"))
+				{
+					Date date = dateformat.parse(value);
+					value = Misc.gmtdateformat.format(value);
+				}
 				row.put(columnnames[i],value);
 			}
 
@@ -125,13 +133,20 @@ class AMDB extends DB
 		if (amconn == 0)
 			throw new AdapterException(xml,"AM connection parameters are incorrect");
 		AmApi.AmAuthenticateUser(amconn,username,password);
+
+		dateformat = new SimpleDateFormat(Misc.DATEFORMAT);
+		String timezone = xml.getValue("timezone","UTC");
+		if (!timezone.equals("local"))
+			dateformat.setTimeZone(TimeZone.getTimeZone(timezone));
+
 		System.out.println("Done");
 	}
 
 	@Override
 	protected String getDate(String value) throws Exception
 	{
-		return "#" + value + "#";
+		Date date = Misc.gmtdateformat.parse(value);
+		return "#" + dateformat.format(date) + "#";
 	}
 
 	@Override
@@ -158,7 +173,7 @@ class AMDB extends DB
 		if (value.matches("\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}"))
 			return getDate(value);
 		if (value.matches("\\d{4}-\\d{2}-\\d{2}"))
-			return getDate(value);
+			return getDate(value + " 00:00:00");
 		value = value.replace("'","''");
 		value = value.replace("\r","");
 		value = value.replace("\n","' + char(13) + char(10) + '");
@@ -173,6 +188,19 @@ class AMDB extends DB
 			javaadapter.setForShutdown(instance);
 		}
 		return instance;
+	}
+
+	@Override
+	public int execsqlresult(String conn,String sql,List<String> list) throws Exception
+	{
+		DBOper oper = new DBOper(conn,sql,list);
+		return oper.getResultCount();
+	}
+
+	@Override
+	public int execsqlresult(String conn,String sql) throws Exception
+	{
+		return execsqlresult(conn,sql,null);
 	}
 
 	@Override

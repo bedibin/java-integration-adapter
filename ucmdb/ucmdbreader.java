@@ -601,4 +601,26 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 			Misc.log("ERROR: [" + getKeyValue() + "] " + Ucmdb.cleanupException(ex) + ": " + xmloper);
 		}
 	}
+
+	public static void main(String[] args) throws Exception
+	{
+		String filename = javaadapter.DEFAULTCFGFILENAME;
+		if (args.length > 0) filename = args[0];
+		javaadapter.init(filename);
+
+		Ucmdb ucmdb = Ucmdb.getInstance();
+		TopologyQueryService queryService = ucmdb.getQuery();
+		TopologyQueryFactory queryFactory = queryService.getFactory();
+
+		ExecutableQuery executableQuery = queryService.createExecutableQuery("Test Query List");
+		ArrayList<String> parameterValue = new ArrayList<String>();
+		parameterValue.add("B521200");
+		//executableQuery.setStringListParameter("ValueList",parameterValue);
+		executableQuery.queryParameters().addValue("ValueList",parameterValue);
+		//executableQuery.queryParameters().addValue("ValueName","B521200");
+		//executableQuery.setStringParameter("ValueList","B521200");
+		Topology topology = queryService.executeQuery(executableQuery);
+		Collection<TopologyCI> allcis = topology.getAllCIs();
+		System.out.println(allcis.size());
+	}
 }

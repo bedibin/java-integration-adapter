@@ -2,7 +2,7 @@ include ../Makefile.def
 
 envl = LANG=fr_CA.iso88591 NLS_LANG=FRENCH_CANADA.WE8ISO8859P1
 
-CLASS = /app/bea/xng/v6.3.0/Xng_config:../javaadapter/javaadapter.jar:../dbsyncplugin/dbsyncplugin.jar:${JAR_DIR}/scheduling.jar:${JAR_DIR}/xercesImpl.jar:${JAR_DIR}/wljmsclient.jar:${JAR_DIR}/webserviceclient.jar:${JAR_DIR}/ojdbc14.jar:${JAR_DIR}/asi.jar:${JAR_DIR}/core-services-client-stubs.jar
+CLASS = /app/bea/xng/v6.3.0/Xng_config:../javaadapter/javaadapter.jar:../dbsyncplugin/dbsyncplugin.jar:${JAR_DIR}/scheduling.jar:${JAR_DIR}/wljmsclient.jar:${JAR_DIR}/webserviceclient.jar:${JAR_DIR}/ojdbc14.jar:${JAR_DIR}/asi.jar:${JAR_DIR}/core-services-client-stubs.jar
 
 JAR =	graniteadapter.jar
 DIR =	classes
