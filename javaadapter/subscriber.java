@@ -192,8 +192,6 @@ class Operation extends SchedulerTask
 		String name = xml.getTagName();
 		if (name != null && name.equals("javaadapter:multi"))
 		{
-			HashMap<String,String> attrs = xml.getAttributes();
-
 			XML[] xmllist = xml.getElements(null);
 			XML resultxml = null;
 
@@ -202,14 +200,7 @@ class Operation extends SchedulerTask
 				if (javaadapter.isShuttingDown()) return null;
 
 				XML xmlmulti = xmllist[i].copy();
-
-				// Copy root attributes to new root
-				Iterator<String> itr = attrs.keySet().iterator();
-				while(itr.hasNext())
-				{
-					String key = itr.next();
-					xmlmulti.setAttribute(key,attrs.get(key));
-				}
+				xml.copyAttributes(xmlmulti);
 
 				XML currentxml = runElementResult(xmlmulti,element,ResultTypes.LAST);
 				if (currentxml == null && resulttype == ResultTypes.LAST) break;

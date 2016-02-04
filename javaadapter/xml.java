@@ -359,6 +359,13 @@ class XML
 		return row;
 	}
 
+	public void copyAttributes(XML xml) throws Exception
+	{
+		HashMap<String,String> map = getAttributes();
+		for (Map.Entry<String,String> entry:map.entrySet())
+			xml.setAttribute(entry.getKey(),entry.getValue());
+	}
+
 	public synchronized boolean isAttributeNoDefault(String name) throws Exception
 	{
 		if (!isElement(node)) return false;
@@ -715,20 +722,47 @@ class XML
 		}
 	}
 
+	public XML addBefore(String name) throws Exception
+	{
+		if (node == null || node == dom.getDocumentElement()) throw new AdapterException("Cannot insert before on an empty node");
+
+		Element element = dom.createElement(fixName(name));
+		Node newnode = node.getParentNode().insertBefore(element,node);
+		return new XML(dom,newnode);
+	}
+
 	public XML addBefore(XML xml) throws Exception
 	{
-		if (xml.node == null) return xml; // Nothing to add
-		if (node == null || node == dom.getDocumentElement()) throw new AdapterException(xml,"Cannot insert before on root");
+		if (xml == null || xml.node == null) return xml; // Nothing to add
+		if (node == null || node == dom.getDocumentElement()) throw new AdapterException(xml,"Cannot insert before on an empty node");
 
 		Node newnode = dom.importNode(xml.node,true);
 		newnode = node.getParentNode().insertBefore(newnode,node);
 		return new XML(dom,newnode);
 	}
 
+	public XML addAfter(String name) throws Exception
+	{
+		if (node == null || node == dom.getDocumentElement()) throw new AdapterException("Cannot insert after on an empty node");
+		Element element = dom.createElement(fixName(name));
+
+		Node newnode;
+		Node nextnode = node.getNextSibling();
+		if (nextnode == null)
+		{
+			newnode = dom.appendChild(element);
+			node = newnode;
+		}
+		else
+			newnode = node.getParentNode().insertBefore(element,nextnode);
+
+		return new XML(dom,newnode);
+	}
+
 	public XML addAfter(XML xml) throws Exception
 	{
-		if (xml.node == null) return xml; // Nothing to add
-		if (node == null || node == dom.getDocumentElement()) throw new AdapterException(xml,"Cannot insert after on root");
+		if (xml == null || xml.node == null) return xml; // Nothing to add
+		if (node == null || node == dom.getDocumentElement()) throw new AdapterException(xml,"Cannot insert after on an empty node");
 
 		Node newnode = dom.importNode(xml.node,true);
 		Node nextnode = node.getNextSibling();
@@ -856,6 +890,16 @@ class XML
 		newnode.appendChild(cdata);
 
 		return new XML(dom,newnode);
+	}
+
+	public boolean matchXPath(String string) throws Exception
+	{
+		XPathFactory factory = XPathFactory.newInstance();
+		XPath xpath = factory.newXPath();
+		XPathExpression expr = xpath.compile(string);
+
+		Boolean result = (Boolean)expr.evaluate(node,XPathConstants.BOOLEAN);
+		return result.booleanValue();
 	}
 
 	static public synchronized void setDefaults(XML xmlconfig) throws Exception

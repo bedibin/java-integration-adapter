@@ -278,8 +278,8 @@ class DBSyncOper
 					sql = "select * from (" + sql + ") d3 where " + restrictsql;
 			}
 
-			sql = sql.replace("%LASTDATE%",lastdate == null ? "" : Misc.dateformat.format(lastdate));
-			sql = sql.replace("%STARTDATE%",startdate == null ? "" : Misc.dateformat.format(startdate));
+			sql = sql.replace("%LASTDATE%",lastdate == null ? "" : Misc.gmtdateformat.format(lastdate));
+			sql = sql.replace("%STARTDATE%",startdate == null ? "" : Misc.gmtdateformat.format(startdate));
 			sql = sql.replace("%NAME%",dbsyncname);
 
 			String filtersql = xml.getAttribute("filter");
@@ -299,7 +299,6 @@ class DBSyncOper
 				Set<String> keys = fields.getKeys();
 				sql += db.getOrderBy(conn,keys.toArray(new String[keys.size()]),ignorecasekeys);
 			}
-
 
 			String presql = xml.getValue("preextractsql",null);
 			if (presql != null)
@@ -342,6 +341,7 @@ class DBSyncOper
 			LinkedHashMap<String,String> row;
 
 			XML xmltable = xmlsource.add(reader.getName());
+			xml.copyAttributes(xmltable);
 
 			while((row = reader.next()) != null)
 				xmltable.add("row",row);
@@ -423,6 +423,7 @@ class DBSyncOper
 		private String ifexists;
 		private String synclist[];
 		private Scope scope;
+		private boolean ignorecase = false;
 
 		public Field(XML xml,Scope scope) throws Exception
 		{
@@ -442,6 +443,9 @@ class DBSyncOper
 				onempty = xml.getAttributeDeprecated("on_not_found");
 				if ("".equals(onempty)) onempty = null;
 			}
+			String ignorecasestr = xml.getAttribute("ignore_case");
+			if (ignorecasestr != null && ignorecasestr.equals("true"))
+				ignorecase = true;
 			forceemptyvalue = xml.getAttribute("force_empty_value");
 			onmultiple = xml.getAttribute("on_multiple");
 			onmultiple_present = xml.isAttributeNoDefault("on_multiple");
@@ -496,6 +500,11 @@ class DBSyncOper
 			if (typeoverride != null) return typeoverride;
 			if (iskey) return "key";
 			return null;
+		}
+
+		public boolean isIgnoreCase()
+		{
+			return ignorecase;
 		}
 
 		public boolean isForceEmpty(String value)
@@ -669,9 +678,6 @@ class DBSyncOper
 
 			while((result = sync.next()) != null)
 			{
-				Set<String> keyset = getKeys();
-				String keys = getDisplayKey(keyset,result);
-
 				boolean doprocessing = true;
 				if (sync.getReader() instanceof SortTable)
 				{
@@ -682,6 +688,9 @@ class DBSyncOper
 				if (doprocessing) setDefaultFields(result);
 				if (doprocessing) fieldloop: for(Field field:fields)
 				{
+					Set<String> keyset = getKeys();
+					String keys = getDisplayKey(keyset,result);
+
 					String name = field.getName();
 					boolean iskey = keyset.contains(name);
 					String value = result.get(name);
@@ -907,16 +916,14 @@ class DBSyncOper
 	private String getDisplayKey(Set<String> keys,Map<String,String> map)
 	{
 		String result = Misc.getKeyValue(keys,map);
-		if (result == null) return null;
-
-		if (displayfields == null) return result;
+		if (displayfields == null) return result; // result can be null here
 
 		LinkedHashSet<String> set = new LinkedHashSet<String>(displayfields);
 		set.removeAll(keys);
 		String displaykeys = Misc.getKeyValue(set,map);
 		if (displaykeys == null) return result;
 
-		return displaykeys + "/" + result;
+		return result == null ? displaykeys : displaykeys + "/" + result;
 	}
 
 	public boolean isValidSync(String[] synclist,Sync sync) throws Exception
@@ -1000,13 +1007,16 @@ class DBSyncOper
 	{
 		if (destinationsync == null) return;
 
+		XML sourcexml = sourcesync.getXML();
+		XML destinationxml = destinationsync.getXML();
+
 		XML xml = new XML();
 		XML xmlop = xml.add(oper);
 
 		ArrayList<String> destinationheader = destinationsync.getHeader();
 		Set<String> keyset = new HashSet<String>(destinationheader);
 		keyset.addAll(fields.getNames());
-		String ignorestr = destinationsync.getXML().getAttribute("ignore_fields");
+		String ignorestr = destinationxml.getAttribute("ignore_fields");
 		if (ignorestr != null) keyset.removeAll(Arrays.asList(ignorestr.split("\\s*,\\s*")));
 
 		for(String key:keyset)
@@ -1021,11 +1031,13 @@ class DBSyncOper
 				xmlrow  = xmlop.add(key,newvalue);
 			else
 			{
+				newvalue = Misc.trimLines(newvalue);
+
 				// This option is deprecated, use on_multiple on fields instead
-				String ondupstr = sourcesync.getXML().getAttribute("on_duplicates");
+				String ondupstr = sourcexml.getAttribute("on_duplicates");
 
 				String[] duplist = null;
-				String dupfields = sourcesync.getXML().getAttribute("on_duplicates_fields");
+				String dupfields = sourcexml.getAttribute("on_duplicates_fields");
 				if (dupfields != null) duplist = dupfields.split("\\s*,\\s*");
 
 				if (duplist != null && Misc.indexOf(duplist,key) == -1);
@@ -1038,13 +1050,15 @@ class DBSyncOper
 				else if (ondupstr.equals("ignore"))
 					return;
 				else
-					throw new AdapterException(sourcesync.getXML(),"Invalid on_duplicates attribute");
+					throw new AdapterException(sourcexml,"Invalid on_duplicates attribute");
 				xmlrow  = xmlop.addCDATA(key,newvalue);
 			}
 
 			if (Misc.isLog(30)) Misc.log("Is info check " + sourcevalue + ":" + key + ":" + destinationheader);
 			boolean isinfo = (sourcevalue == null || !destinationheader.contains(key));
 			if (isinfo) xmlrow.setAttribute("type","info");
+
+			boolean ignorecase = false;
 
 			for(Field field:fields.getFields())
 			{
@@ -1064,6 +1078,7 @@ class DBSyncOper
 						if (!isinfo || !type.equals("infoapi"))
 							xmlrow.setAttribute("type",type);
 					}
+					ignorecase = field.isIgnoreCase();
 				}
 			}
 
@@ -1071,13 +1086,16 @@ class DBSyncOper
 			{
 				String oldvalue = rowold.get(key);
 				if (oldvalue == null) oldvalue = "";
-				boolean issame = ignorecasefields ? oldvalue.equalsIgnoreCase(newvalue) : oldvalue.equals(newvalue);
+				boolean oldmulti = oldvalue.indexOf("\n") != -1;
+				if (oldmulti) oldvalue = Misc.trimLines(oldvalue);
+
+				boolean issame = ignorecasefields || ignorecase ? oldvalue.equalsIgnoreCase(newvalue) : oldvalue.equals(newvalue);
 				if (!issame && (!isinfo || oldvalue.length() > 0))
 				{
-					if (oldvalue.indexOf("\n") == -1)
-						xmlrow.add("oldvalue",oldvalue);
-					else
+					if (oldmulti)
 						xmlrow.addCDATA("oldvalue",oldvalue);
+					else
+						xmlrow.add("oldvalue",oldvalue);
 				}
 			}
 		}
@@ -1095,6 +1113,7 @@ class DBSyncOper
 				;
 			else if ("update".equals(oper))
 			{
+				if (ignorefields != null && ignorefields.contains(tag)) continue;
 				XML old = entry.getElement("oldvalue");
 				if (old != null)
 				{
@@ -1133,7 +1152,7 @@ class DBSyncOper
 
 		if (directmode)
 		{
-			if (!dbsyncplugin.preview_mode && destinationsync != null) update.oper(destinationsync.getXML(),xml);
+			if (!dbsyncplugin.preview_mode && destinationsync != null) update.oper(destinationxml,xml);
 			return;
 		}
 
@@ -1204,6 +1223,27 @@ class DBSyncOper
 	}
 
 	private Sync getSync(XML xml,XML xmlextra,XML xmlsource) throws Exception
+	{
+		try {
+			return getSyncSub(xml,xmlextra,xmlsource);
+		} catch(FileNotFoundException ex) {
+			String onnotfound = xml.getAttribute("on_file_not_found");
+			if (onnotfound == null) onnotfound = xml.getAttributeDeprecated("on_not_found");
+			if (onnotfound == null || onnotfound.equals("exception"))
+				Misc.rethrow(ex);
+			else if (onnotfound.equals("ignore"))
+				;
+			else if (onnotfound.equals("warning"))
+				Misc.log("WARNING: Ignoring sync operation since file not found: " + ex.getMessage());
+			else if (onnotfound.equals("error"))
+				Misc.log("ERROR: Ignoring sync operation since file not found: " + ex.getMessage());
+			else
+				throw new AdapterException(xml,"Invalid on_file_not_found attribute");
+		}
+		return null;
+	}
+
+	private Sync getSyncSub(XML xml,XML xmlextra,XML xmlsource) throws Exception
 	{
 		String type = xml.getAttribute("type");
 		if (type == null) type = "db";
@@ -1588,32 +1628,10 @@ class DBSyncOper
 					setOperationFlags(source);
 					setOperationFlags(destinations[k]);
 
-					try
-					{
-						sourcesync = getSync(source,destinations[k],xmlsource);
-					}
-					catch(FileNotFoundException ex)
-					{
-						String onnotfound = source.getAttribute("on_file_not_found");
-						if (onnotfound == null) onnotfound = source.getAttributeDeprecated("on_not_found");
-						if (onnotfound == null || onnotfound.equals("exception"))
-							Misc.rethrow(ex);
-						else if (onnotfound.equals("ignore"))
-							continue;
-						else if (onnotfound.equals("warning"))
-						{
-							Misc.log("WARNING: Ignoring sync operation since file not found: " + ex.getMessage());
-							continue;
-						}
-						else if (onnotfound.equals("error"))
-						{
-							Misc.log("ERROR: Ignoring sync operation since file not found: " + ex.getMessage());
-							continue;
-						}
-						else
-							throw new AdapterException(source,"Invalid on_file_not_found attribute");
-					}
+					sourcesync = getSync(source,destinations[k],xmlsource);
+					if (sourcesync == null) continue;
 					destinationsync = getSync(destinations[k],source,xmlsource);
+					if (destinationsync == null) continue;
 
 					compare();
 
@@ -1634,6 +1652,7 @@ class DBSyncOper
 					for(XML field:fieldsxml) fields.add(field,Scope.SCOPE_SOURCE);
 
 					sourcesync = getSync(source,null,xmlsource);
+					if (sourcesync == null) continue;
 					destinationsync = null;
 					try
 					{

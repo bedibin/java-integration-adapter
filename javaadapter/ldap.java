@@ -205,6 +205,13 @@ class directory
 			String fields = xml.getAttribute("fields");
 			String[] attrs = fields == null ? null :  fields.split("\\s*,\\s*");
 
+			String dn = xml.getAttribute("dn");
+			if (dn != null)
+			{
+				Object obj = ctx.lookup(dn);
+				return read(dn,xml);
+			}
+
 			Search search = new Search(basedn,xml.getValue(),attrs);
 			XML result = new XML();
 			XML rootresult = result.add("result");
@@ -214,7 +221,10 @@ class directory
 
 			LinkedHashMap<String,String> row;
 			while((row = search.next()) != null)
+			{
+				if (Misc.isLog(25)) Misc.log("[search] " + Misc.implode(row));
 				rootresult.add("row",row);
+			}
 
 			return result;
 		}

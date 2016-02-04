@@ -1,8 +1,67 @@
 import java.io.*;
 import java.util.*;
 import java.net.*;
+import javax.net.ssl.*;
+import java.security.Principal;
+import java.security.PrivateKey;
+import java.security.cert.X509Certificate;
+import java.security.KeyStore;
 import javax.xml.rpc.*;
 import javax.xml.namespace.*;
+
+class AliasSelectorKeyManager implements X509KeyManager
+{
+	private X509KeyManager sourceKeyManager;
+	private String alias;
+ 
+	public AliasSelectorKeyManager(X509KeyManager keyManager,String alias)
+	{
+		this.sourceKeyManager = keyManager;        
+		this.alias = alias;
+	}
+ 
+	public String chooseClientAlias(String[] keyType,Principal[] issuers,Socket socket)
+	{   
+		boolean aliasFound = false;
+ 
+		for (int i=0; i<keyType.length && !aliasFound; i++)
+		{
+			String[] validAliases = sourceKeyManager.getClientAliases(keyType[i],issuers);
+			if (validAliases != null)
+				for (int j=0;j < validAliases.length && !aliasFound;j++)
+					if (validAliases[j].equals(alias))
+						aliasFound=true;
+		}
+ 
+		if (aliasFound) return alias;
+		return null;
+	}
+ 
+	public String chooseServerAlias(String keyType,Principal[] issuers,Socket socket)
+	{
+		return sourceKeyManager.chooseServerAlias(keyType,issuers,socket);
+	}
+ 
+	public X509Certificate[] getCertificateChain(String alias)
+	{
+		return sourceKeyManager.getCertificateChain(alias);
+	}
+ 
+	public String[] getClientAliases(String keyType,Principal[] issuers)
+	{
+		return sourceKeyManager.getClientAliases(keyType,issuers);
+	}
+ 
+	public PrivateKey getPrivateKey(String alias)
+	{
+		return sourceKeyManager.getPrivateKey(alias);
+	}
+ 
+	public String[] getServerAliases(String keyType,Principal[] issuers)
+	{
+		return sourceKeyManager.getServerAliases(keyType,issuers);
+	}
+}
 
 class Publisher
 {
@@ -60,6 +119,38 @@ class Publisher
 		public String sendHttpRequest(String request,XML node) throws Exception
 		{
 			HttpURLConnection rc = (HttpURLConnection)url.openConnection();
+			if (rc instanceof HttpsURLConnection)
+			{
+				String clientkeystore = node.getAttribute("clientkeystore");
+				if (clientkeystore != null)
+				{
+					SSLContext sc = clientsslcontexts.get(url.toString());
+					if (sc == null)
+					{
+						KeyStore ks = KeyStore.getInstance("jks");
+						FileInputStream fis = new FileInputStream(clientkeystore);
+						String clientkeystorepassword = node.getAttributeCrypt("clientkeystorepassword");
+						if (clientkeystorepassword == null) clientkeystorepassword = "changeit";
+						ks.load(fis,clientkeystorepassword.toCharArray());
+						fis.close();
+
+						KeyManagerFactory kmf = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
+						kmf.init(ks,clientkeystorepassword.toCharArray());
+
+						KeyManager[] kms = kmf.getKeyManagers();
+						String alias = node.getAttributeCrypt("clientkeystorealias");
+						if (alias != null)
+							for (int i = 0;i < kms.length;i++)
+            							if (kms[i] instanceof X509KeyManager)
+                							kms[i]=new AliasSelectorKeyManager((X509KeyManager)kms[i],alias);
+
+						sc = SSLContext.getInstance("TLS");
+						sc.init(kms,null,null);
+						clientsslcontexts.put(url.toString(),sc);
+					}
+					((HttpsURLConnection)rc).setSSLSocketFactory(sc.getSocketFactory());
+				}
+			}
 
 			String jsessionid = getSessionID(url.toString());
 
@@ -252,6 +343,7 @@ class Publisher
 
 	private static Publisher instance;
 	private HashMap<String,String> sessionids = new HashMap<String,String>();
+	private HashMap<String,SSLContext> clientsslcontexts = new HashMap<String,SSLContext>();
 
 	static public HashMap<String,PublisherObject> publishers = new HashMap<String,PublisherObject>();
 

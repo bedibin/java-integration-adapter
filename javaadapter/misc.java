@@ -453,6 +453,19 @@ class Misc
 		return out;
 	}
 
+	public static String toHexString(String text) throws Exception
+	{
+		StringBuilder str = new StringBuilder();
+		for(char ch:text.toCharArray())
+		{
+			byte[] ba = (""+ch).getBytes("ISO-8859-1");
+			for(int i = 0; i < ba.length; i++)
+				str.append(String.format("%x",ba[i]));
+			str.append(":" + ch + " ");
+		}
+		return str.toString();
+	}
+
 	static public int indexOf(Object[] list,Object value)
 	{
 		for(int i = 0;i < list.length;i++)
@@ -597,11 +610,9 @@ class Misc
 		if (filter == null) return true;
 
 		String filterresult = xmlelement.getAttribute("filter_result");
-		boolean result = filterresult == null ? true : !filterresult.equals("false");
-		XML[] xmlresults = xml.getElementsByPath(filter);
-		if (result) return xmlresults.length > 0;
-
-		return xmlresults.length == 0;
+		boolean expectedresult = filterresult == null ? true : !filterresult.equals("false");
+		boolean result = xml.matchXPath(filter);
+		return result == expectedresult;
 	}
 
 	static public boolean isFilterPass(XML xmlelement,String value) throws Exception
@@ -1163,5 +1174,16 @@ class Misc
 		Iterator<String> it = map.values().iterator();
 		if (!it.hasNext()) return null;
 		return it.next();
+	}
+
+	public static String trimLines(String str)
+	{
+		return trimLines(str,"\\s+");
+	}
+
+	public static String trimLines(String str,String trimexpr)
+	{
+		if (str == null) return null;
+		return str.replaceAll(trimexpr + "\n","\n").replaceAll("\n" + trimexpr,"\n").replaceAll(trimexpr + "$|^" + trimexpr,"");
 	}
 }

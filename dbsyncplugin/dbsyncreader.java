@@ -142,13 +142,16 @@ class ReaderRow extends ReaderUtil implements Reader
 {
 	XML[] rows;
 	int rowpos;
-	private ArrayList<String> headers;
+	private ArrayList<String> headers = new ArrayList<String>();
+	private String default_name;
 
 	public ReaderRow(XML xml) throws Exception
 	{
 		rowpos = 0;
+		default_name = xml.getAttribute("default_field_name");
+		if (default_name != null) headers.add(default_name);
 		rows = xml.getElements("row");
-		if (rows.length > 0) headers = new ArrayList<String>(rows[0].getAttributes().keySet());
+		if (rows.length > 0) headers.addAll(rows[0].getAttributes().keySet());
 	}
 
 	public ArrayList<String> getHeader()
@@ -166,6 +169,12 @@ class ReaderRow extends ReaderUtil implements Reader
 	{
 		if (rowpos >= rows.length) return null;
 		LinkedHashMap<String,String> result = rows[rowpos].getAttributes();
+		if (default_name != null && !result.containsKey(default_name))
+		{
+			String default_value = rows[rowpos].getValue();
+			result.put(default_name,default_value == null ? "" : default_value);
+		}
+
 		rowpos++;
 		return result;
 	}
@@ -383,7 +392,7 @@ class ReaderLDAP extends ReaderUtil implements Reader
 		String password = xml.getAttributeCrypt("password");
 		String auth = xml.getAttribute("authentication");
 		String basedn = xml.getAttribute("basedn");
-		String search = xml.getAttribute("query");
+		String search = Misc.substitute(xml.getAttribute("query"));
 		String fields = xml.getAttribute("fields");
 		String context = xml.getAttribute("context");
 		String referral = xml.getAttribute("referral");

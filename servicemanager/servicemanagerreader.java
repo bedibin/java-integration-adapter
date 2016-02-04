@@ -77,7 +77,7 @@ class ServiceManagerUpdateSubscriber extends UpdateSubscriber
 			value = value.replace(' ','T') + "Z";
 		if ("".equals(value)) value = " ";
 		char first = value.charAt(0);
-		if (first == '#' || first == '~' || first == '>')
+		if (first == '~' || first == '>')
 			value = "" + first + value;
 
 		xml.add(name).setValue(value);
@@ -227,8 +227,13 @@ class ServiceManagerUpdateSubscriber extends UpdateSubscriber
 		}
 
 		XML result = soap.publish(publisher);
+
+		Pattern ondupspattern = null;
+		String ondupsmatch = xmldest.getAttribute("on_duplicates_match");
+		if (ondupsmatch != null) ondupspattern = Pattern.compile(ondupsmatch);
+
 		String message = getMessage(result);
-		if (message != null && oper.equals("add") && (message.contains("duplicate key") || message.contains("already associated") || message.contains("déjà associé")))
+		if (message != null && oper.equals("add") && ((ondupspattern != null && ondupspattern.matcher(message).find()) || (ondupspattern == null && (message.contains("duplicate key") || message.contains("already associated") || message.contains("déjà associé")))))
 		{
 			soap.renameTag("Update" + object + "Request");
 			publisher.setAttribute("action","Update");

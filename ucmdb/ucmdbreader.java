@@ -366,6 +366,13 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 					Misc.log("ERROR: [" + getKeyValue() + "] Cannot convert '" + value + "' for field '" + suffix + "' into a double: " + xml);
 					}
 					break;
+				case FLOAT:
+					try {
+					ci.setFloatProperty(suffix,new Float(value));
+					} catch (NumberFormatException ex) {
+					Misc.log("ERROR: [" + getKeyValue() + "] Cannot convert '" + value + "' for field '" + suffix + "' into a float: " + xml);
+					}
+					break;
 				case LONG:
 					try {
 					ci.setLongProperty(suffix,new Long(value));

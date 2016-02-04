@@ -1,4 +1,5 @@
 import java.util.*;
+import java.util.regex.*;
 import java.sql.SQLException;
 
 class dbsyncplugin
@@ -256,18 +257,24 @@ class DatabaseUpdateSubscriber extends UpdateSubscriber
 	private boolean customsql(String oper,XML xmldest,XML xml) throws Exception
 	{
 		String instance = xmldest.getAttribute("instance");
-		XML sqlxml = xmldest.getElement("custom" + oper + "sql");
-		if (sqlxml == null) return false;
-		String sql = sqlxml.getValue();
-		if (sql == null) return false;
-
-		XML[] fields = xml.getElements();
-		for(XML field:fields)
-			sql = sql.replace("%" + field.getTagName() + "%",db.getValue(field));
+		XML[] sqlxmllist = xmldest.getElements("custom" + oper + "sql");
+		if (sqlxmllist.length == 0) return false;
 
 		rate.toString();
-		if (Misc.isLog(10)) Misc.log(oper + ": " + sql);
-		db.execsql(instance,sql);
+		for(XML sqlxml:sqlxmllist)
+		{
+			if (!Misc.isFilterPass(sqlxml,xml)) continue;
+
+			String sql = sqlxml.getValue();
+			if (sql == null) return false;
+
+			XML[] fields = xml.getElements();
+			for(XML field:fields)
+				sql = sql.replace("%" + field.getTagName() + "%",db.getValue(field));
+
+			if (Misc.isLog(10)) Misc.log(oper + ": " + sql);
+			db.execsql(instance,sql);
+		}
 
 		return true;
 	}
@@ -341,7 +348,11 @@ class DatabaseUpdateSubscriber extends UpdateSubscriber
 		if (message == null) message = "";
 		if (Misc.isLog(20)) Misc.log("Retry exception: " + message);
 
-		if (message.indexOf("unique constraint") != -1 || message.indexOf("contrainte unique") != -1 || message.indexOf("ORA-00001:") != -1 || message.indexOf("duplicate key") != -1 || message.indexOf("NoDupIndexTriggered") != -1)
+		Pattern ondupspattern = null;
+		String ondupsmatch = xmldest.getAttribute("on_duplicates_match");
+		if (ondupsmatch != null) ondupspattern = Pattern.compile(ondupsmatch);
+
+		if ((ondupspattern != null && ondupspattern.matcher(message).find()) || (ondupspattern == null && (message.contains("unique constraint") || message.contains("contrainte unique") || message.contains("ORA-00001:") || message.contains("duplicate key") || message.contains("NoDupIndexTriggered"))))
 		{
 			if (Misc.isLog(15))
 			{

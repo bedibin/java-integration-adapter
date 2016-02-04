@@ -32,10 +32,19 @@ class SyncLookup
 			private HashMap<String,String> datetable;
 			private Set<String> fields;
 			private String datefield;
+			private XML xml;
+			private Reader reader;
+			private String resultname;
+			private boolean loadingdone;
 
 			Preload(XML xml,String resultname) throws Exception
 			{
+				this.xml = xml;
+				this.resultname = resultname;
+				loadingdone = false;
+
 				if (Misc.isLog(15)) Misc.log("Lookup: Doing preload for " + fieldname);
+				xml.setAttribute("default_field_name",fieldname);
 
 				datefield = xml.getAttribute("date_field");
 				if (datefield != null && !"merge_lookup".equals(xml.getTagName()))
@@ -43,7 +52,7 @@ class SyncLookup
 				if (datefield == null && "merge_lookup".equals(xml.getTagName()))
 					throw new AdapterException(xml,"Attribute date_field mandatory for merge preload");
 
-				Reader reader = null;
+				reader = null;
 				try
 				{
 					reader = ReaderUtil.getReader(xml);
@@ -69,7 +78,10 @@ class SyncLookup
 					else
 						throw new AdapterException(xml,"Invalid on_file_not_found attribute");
 				}
+			}
 
+			void doInitialLoading(LinkedHashMap<String,String> values) throws Exception
+			{
 				LinkedHashMap<String,String> result;
 				if (reader != null) while((result = reader.next()) != null)
 				{
@@ -90,7 +102,7 @@ class SyncLookup
 
 					if (fields == null)
 					{
-						fields = result.keySet();
+						fields = new TreeSet<String>(result.keySet());
 						if (resultname != null) fields.remove(resultname);
 						if (datefield != null)
 						{
@@ -99,8 +111,19 @@ class SyncLookup
 							datevalue = result.get(datefield);
 							fields.remove(datefield);
 						}
-						if (resultname != null && fields.isEmpty())
-							throw new AdapterException(xml,"Preload query must return more than just " + resultname + " field");
+						if (values != null) fields.retainAll(values.keySet()); // Lookup only on common fields
+						if (Misc.isLog(15))
+						{
+							Misc.log("Lookup fields are: " + result.keySet());
+							if (values != null) Misc.log("Available fields are: " + values.keySet());
+							Misc.log("Common lookup fields are: " + fields);
+						}
+						if (fields.isEmpty())
+						{
+							if (Misc.isLog(15)) Misc.log("WARNING: Preload for field '" + fieldname + "' empty since no fields are in common");
+							loadingdone = true;
+							return;
+						}
 					}
 
 					String keyvalue = Misc.getKeyValue(fields,result);
@@ -129,10 +152,14 @@ class SyncLookup
 
 				if (table == null)
 					Misc.log("WARNING: Preload for field '" + fieldname + "' returned empty result");
+				loadingdone = true;
 			}
 
 			public String getPreload(LinkedHashMap<String,String> values) throws Exception
 			{
+				// Delay preloading until first use
+				if (!loadingdone) doInitialLoading(values);
+
 				if (values == null)
 				{
 					if (table == null) return null;

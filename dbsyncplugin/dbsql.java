@@ -9,6 +9,52 @@ interface ComparatorIgnoreCase<T> extends Comparator<T>
 	public int compareIgnoreCase(T a,T b);
 }
 
+class ConnectionTimeout extends Thread
+{
+	private Connection conn;
+	private boolean sleep = true;
+	private SQLException exception;
+	private String username;
+	private String password;
+	private String url;
+
+	public ConnectionTimeout(String url,String username,String password)
+	{
+		this.url = url;
+		this.username = username;
+		this.password = password;
+	}
+
+	@Override
+	public void run()
+	{
+		try {
+			if (username == null)
+				conn = DriverManager.getConnection(url);
+			else
+				conn = DriverManager.getConnection(url,username,password);
+			sleep = false;
+		} catch (SQLException e) {
+			exception = e;
+		}
+	}
+
+	static public Connection getConnection(String name,String url,String username,String password) throws Exception
+	{
+		ConnectionTimeout ct = new ConnectionTimeout(url,username,password);
+		ct.start();
+		try {
+			for(int i=1;i<=60;i++)
+				if (ct.sleep)
+					 Thread.sleep(1000);  
+		} catch (InterruptedException e) {}
+
+		if (ct.exception != null) Misc.rethrow(ct.exception,"Exception connecting to database " + name);
+		if (ct.conn == null) throw new AdapterException("Timeout connecting to database " + name);
+		return ct.conn ;
+	}
+}
+
 class DB
 {
 	class DBComparator implements ComparatorIgnoreCase<String>
@@ -334,11 +380,10 @@ class DB
 
 		try
 		{
+			DriverManager.setLoginTimeout(30);
 			String username = xml.getValue("username",null);
-			if (username == null)
-				dbc.conn = DriverManager.getConnection(connstr);
-			else
-				dbc.conn = DriverManager.getConnection(connstr,username,xml.getValueCrypt("password"));
+			String password = username == null ? null : xml.getValueCrypt("password");
+			dbc.conn = ConnectionTimeout.getConnection(name,connstr,username,password);
 		}
 		catch(SQLException ex)
 		{

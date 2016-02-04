@@ -210,6 +210,7 @@ elementFormDefault="qualified">
 		<xs:extension base="xs:string">
 			<xs:attribute name="filename" type="xs:string"/>
 			<xs:attributeGroup ref="activate"/>
+			<xs:attributeGroup ref="filter"/>
 		</xs:extension>
 	</xs:simpleContent>  
 </xs:complexType>
@@ -304,10 +305,14 @@ elementFormDefault="qualified">
 	<xs:attribute name="header" type="xs:boolean" default="true"/>
 	<xs:attribute name="charset" type="xs:string"/>
 	<xs:attribute name="filename" type="xs:string"/>
+	<xs:attribute name="worksheet" type="xs:string"/>
 	<xs:attribute name="class" type="xs:string"/>
 	<xs:attribute name="url" type="xs:anyURI"/>
 	<xs:attribute name="username" type="xs:string"/>
 	<xs:attribute name="password" type="xs:string"/>
+	<xs:attribute name="clientkeystore" type="xs:string"/>
+	<xs:attribute name="clientkeystorepassword" type="xs:string"/>
+	<xs:attribute name="clientkeystorealias" type="xs:string"/>
 	<xs:attribute name="basedn" type="xs:string"/>
 	<xs:attribute name="query" type="xs:string"/>
 	<xs:attribute name="root" type="xs:string"/>
@@ -340,6 +345,58 @@ elementFormDefault="qualified">
 	<xs:attribute name="name" type="xs:string" use="required"/>
 	<xs:attribute name="instance" type="xs:string" use="required"/>
 	<xs:attributeGroup ref="activate"/>
+</xs:complexType>
+
+<xs:simpleType name="matchtype"> <!-- loganalyser -->
+	<xs:restriction base="xs:string">
+		<xs:enumeration value="throw"/>
+		<xs:enumeration value="filename"/>
+		<xs:enumeration value="keymatch"/>
+		<xs:enumeration value="keep"/>
+		<xs:enumeration value="value"/>
+	</xs:restriction>
+</xs:simpleType>
+
+<xs:complexType name="match"> <!-- loganalyser -->
+	<xs:simpleContent>
+		<xs:extension base="xs:string">
+			<xs:attribute name="name" type="xs:string" use="required"/>
+			<xs:attribute name="type" type="matchtype"/>
+			<xs:attribute name="maxsize" type="xs:integer"/>
+			<xs:attribute name="value" type="xs:string"/>
+			<xs:attribute name="clear_fields" type="xs:string"/>
+			<xs:attribute name="clear_fields_after_throw" type="xs:string"/>
+			<xs:attributeGroup ref="activate"/>
+		</xs:extension>
+	</xs:simpleContent>
+</xs:complexType>
+
+<xs:complexType name="log"> <!-- loganalyser -->
+	<xs:sequence>
+		<xs:element name="match" minOccurs="1" maxOccurs="unbounded" type="match"/>
+	</xs:sequence>
+	<xs:attribute name="multiline_pattern" type="xs:string"/>
+	<xs:attribute name="filename" type="xs:string"/>
+	<xs:attribute name="path" type="xs:string"/>
+	<xs:attributeGroup ref="activate"/>
+</xs:complexType>
+
+<xs:complexType name="readlog" mixed="true"> <!-- loganalyser -->
+	<xs:complexContent>
+		<xs:extension base="read">
+			<xs:sequence>
+				<xs:element name="match" minOccurs="1" maxOccurs="unbounded">
+					<xs:complexType>
+						<xs:complexContent>
+							<xs:extension base="match">
+								<xs:attribute name="field" type="xs:string"/>
+							</xs:extension>
+						</xs:complexContent>
+					</xs:complexType>
+				</xs:element>
+			</xs:sequence>
+		</xs:extension>
+	</xs:complexContent>
 </xs:complexType>
 
 <xs:complexType name="namevalue">
@@ -533,6 +590,7 @@ elementFormDefault="qualified">
 	<xs:attribute name="on_empty" type="onrejecttypes" default="ignore"/>
 	<xs:attribute name="force_empty_value" type="xs:string"/>
 	<xs:attribute name="on_multiple" type="ondupstypes" default="ignore"/>
+	<xs:attribute name="ignore_case" type="xs:boolean" default="false"/>
 	<xs:attribute name="if_exists" type="xs:string"/>
 	<xs:attribute name="for_sync" type="xs:string"/>
 	<xs:attributeGroup ref="activate"/>
@@ -753,6 +811,7 @@ elementFormDefault="qualified">
 								<xs:attribute name="dumplogfile" type="xs:boolean"/>
 								<xs:attribute name="stop_on_error" type="xs:boolean" default="false"/>
 								<xs:attribute name="on_duplicates" type="ondupstypes" default="merge"/>
+								<xs:attribute name="on_duplicates_match" type="xs:string"/>
 								<xs:attribute name="merge_fields" type="xs:string"/>
 								<xs:attribute name="merge_keys" type="xs:string"/>
 								<xs:attribute name="clear_fields" type="xs:string"/>
@@ -779,6 +838,30 @@ elementFormDefault="qualified">
 					<xs:attribute name="maxqueuelength" type="xs:integer" default="100"/>
 					<xs:attributeGroup ref="operation"/>
 					<xs:attributeGroup ref="activate"/>
+				</xs:complexType>
+			</xs:element>
+
+			<xs:element name="loganalyser"> <!-- loganalyser -->
+				<xs:complexType>
+					<xs:sequence><xs:choice minOccurs="0" maxOccurs="unbounded">
+						<xs:element name="reader" type="readlog"/>
+						<xs:element name="log" type="log"/>
+					</xs:choice></xs:sequence>
+					<xs:attribute name="instance" type="xs:string" use="required"/>
+					<xs:attribute name="table" type="xs:string" use="required"/>
+					<xs:attribute name="mapping_table" type="xs:string"/>
+					<xs:attribute name="id_field" type="xs:string"/>
+					<xs:attribute name="id_mapping_field" type="xs:string"/>
+					<xs:attribute name="ignore_match_fields" type="xs:string"/>
+					<xs:attribute name="date_field" type="xs:string"/>
+					<xs:attribute name="activate_field" type="xs:string"/>
+					<xs:attribute name="error_field" type="xs:string"/>
+					<xs:attribute name="purge_field" type="xs:string"/>
+					<xs:attribute name="count_field" type="xs:string"/>
+					<xs:attribute name="count_threshold_field" type="xs:string"/>
+					<xs:attribute name="purge_date_field" type="xs:string"/>
+					<xs:attribute name="purge_default" type="xs:integer"/>
+					<xs:attribute name="purge" type="xs:boolean" default="false"/>
 				</xs:complexType>
 			</xs:element>
 
