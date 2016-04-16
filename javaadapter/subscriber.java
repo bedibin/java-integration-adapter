@@ -131,7 +131,7 @@ class Operation extends SchedulerTask
 					String var = getVariable(param);
 					if (var != null) return var;
 				}
-				return Misc.substituteGet(param,finalxml.getStringByPath(param));
+				return Misc.substituteGet(param,finalxml.getStringByPath(param),null);
 			}
 		});
 

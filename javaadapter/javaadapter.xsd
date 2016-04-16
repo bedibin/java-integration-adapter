@@ -288,7 +288,11 @@ elementFormDefault="qualified">
 		<xs:element name="extractsql" type="simplestringfile" minOccurs="0" maxOccurs="unbounded"/>
 		<xs:element name="row">
 			<xs:complexType>
-				<xs:anyAttribute processContents="skip"/>
+				<xs:simpleContent>
+					<xs:extension base="simplestring">
+						<xs:anyAttribute processContents="skip"/>
+					</xs:extension>
+				</xs:simpleContent>
 			</xs:complexType>
 		</xs:element>
 	</xs:choice></xs:sequence>

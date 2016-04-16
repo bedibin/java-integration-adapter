@@ -12,6 +12,11 @@ import org.xml.sax.*;
 import org.xml.sax.helpers.DefaultHandler;
 import java.util.regex.*;
 
+interface VariableContext
+{
+	public TimeZone getTimeZone();
+}
+
 class XML
 {
 	protected Document dom;
@@ -357,6 +362,15 @@ class XML
 		}
 
 		return row;
+	}
+
+	public void copyAttribute(String name,XML xml) throws Exception
+	{
+		String source = getAttribute(name);
+		if (source == null) return; // Nothing to copy
+		String dest = xml.getAttribute(name);
+		if (dest != null) return; // Don't overwrite
+		xml.setAttribute(name,source);
 	}
 
 	public void copyAttributes(XML xml) throws Exception
@@ -940,27 +954,45 @@ class XML
 
 	static public synchronized String getDefaultVariable(String name)
 	{
+		return getDefaultVariable(name,null);
+	}
+
+	static public synchronized String getDefaultVariable(String name,VariableContext ctx)
+	{
 		final String currentdatevar = "$ADAPTER_CURRENT_DATE_";
 		final String startdatevar = "$ADAPTER_START_DATE_";
 
+		SimpleDateFormat format = null;
+		Date date = null;
+
 		if ("$ADAPTER_CURRENT_DATE".equals(name))
-			return Misc.getGMTDate();
+			format = new SimpleDateFormat(Misc.DATEFORMAT);
 		else if (name.startsWith(currentdatevar))
-		{
-			SimpleDateFormat format = new SimpleDateFormat(name.substring(currentdatevar.length()));
-			format.setTimeZone(TimeZone.getTimeZone("UTC"));
-			return format.format(new Date());
-		}
+			format = new SimpleDateFormat(name.substring(currentdatevar.length()));
 		else if ("$ADAPTER_START_DATE".equals(name))
-			return Misc.getGMTDate(javaadapter.startdate);
+		{
+			format = new SimpleDateFormat(Misc.DATEFORMAT);
+			date = javaadapter.startdate;
+		}
 		else if (name.startsWith(startdatevar))
 		{
-			SimpleDateFormat format = new SimpleDateFormat(name.substring(startdatevar.length()));
-			format.setTimeZone(TimeZone.getTimeZone("UTC"));
-			return format.format(javaadapter.startdate);
+			format = new SimpleDateFormat(name.substring(startdatevar.length()));
+			date = javaadapter.startdate;
 		}
 		else if ("$ADAPTER_NAME".equals(name))
 			return javaadapter.getName();
+
+		if (format != null)
+		{
+			TimeZone tz = null;
+			if (ctx != null) tz = ctx.getTimeZone();
+			if (tz == null) tz = TimeZone.getTimeZone("UTC");
+			format.setTimeZone(tz);
+
+			if (date == null) date = new Date();
+			return format.format(date);
+		}
+
 		return defaultvars.get(name);
 	}
 

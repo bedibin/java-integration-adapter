@@ -13,6 +13,8 @@ class ReaderServiceManager extends ReaderXML
 
 	public ReaderServiceManager(XML xml) throws Exception
 	{
+		super(xml);
+
 		publisher = new XML();
 		XML pub = publisher.add("publisher");
 		String name = xml.getAttribute("name");
@@ -35,13 +37,15 @@ class ReaderServiceManager extends ReaderXML
 		Misc.log("Result: " + result);
 		count = position = 0;
 		xmltable = result.getElements("instance");
+
+		if (headers != null) return;
 		LinkedHashMap<String,String> first = getXML(0);
 		if (first != null)
-			headers = new ArrayList<String>(first.keySet());
+			headers = new LinkedHashSet<String>(first.keySet());
 	}
 
 	@Override
-	public LinkedHashMap<String,String> next() throws Exception
+	public LinkedHashMap<String,String> nextRaw() throws Exception
 	{
 		LinkedHashMap<String,String> row = getXML(position);
 		if (row == null)
@@ -59,6 +63,8 @@ class ReaderServiceManager extends ReaderXML
 		}
 
 		position++;
+
+		row = normalizeFields(row);
 		if (Misc.isLog(15)) Misc.log("row [xml]: " + row);
 		return row;
 	}
@@ -184,7 +190,7 @@ class ServiceManagerUpdateSubscriber extends UpdateSubscriber
 				Reader reader = new ReaderCSV(new StringReader(value));
 				LinkedHashMap<String,String> row;
 				XML array = instance.add(name);
-				ArrayList<String> header = reader.getHeader();
+				Set<String> header = reader.getHeader();
 				while((row = reader.next()) != null)
 				{
 					XML structure = array.add(name);
@@ -233,7 +239,7 @@ class ServiceManagerUpdateSubscriber extends UpdateSubscriber
 		if (ondupsmatch != null) ondupspattern = Pattern.compile(ondupsmatch);
 
 		String message = getMessage(result);
-		if (message != null && oper.equals("add") && ((ondupspattern != null && ondupspattern.matcher(message).find()) || (ondupspattern == null && (message.contains("duplicate key") || message.contains("already associated") || message.contains("déjà associé")))))
+		if (message != null && oper.equals("add") && ((ondupspattern != null && ondupspattern.matcher(message).find()) || (ondupspattern == null && (message.contains("duplicate key") || message.contains("already associated") || message.contains("d\u00e9j\u00e0 associ\u00e9")))))
 		{
 			soap.renameTag("Update" + object + "Request");
 			publisher.setAttribute("action","Update");

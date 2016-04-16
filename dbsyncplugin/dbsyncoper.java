@@ -11,11 +11,11 @@ class DBSyncOper
 	{
 		private String tablename;
 		private String conn;
-		private DB.DBOper oper;
+		private DBOper oper;
 		private TreeMap<String,LinkedHashMap<String,Set<String>>> sortedmap;
 		private Iterator<?> iterator;
 		private String instance;
-		private ArrayList<String> header;
+		private Set<String> header;
 
 		public SortTable(XML xml,Sync sync) throws Exception
 		{
@@ -93,13 +93,6 @@ class DBSyncOper
 			db.execsql(conn,sql,list);
 		}
 
-		@Override
-		public LinkedHashMap<String,String> nextRaw() throws Exception
-		{
-			throw new AdapterException("nextRaw not supported for SortTable class");
-		}
-
-		@Override
 		public LinkedHashMap<String,String> next() throws Exception
 		{
 			LinkedHashMap<String,String> row = new LinkedHashMap<String,String>();
@@ -145,7 +138,7 @@ class DBSyncOper
 			return row;
 		}
 
-		public ArrayList<String> getHeader()
+		public Set<String> getHeader()
 		{
 			return header;
 		}
@@ -186,7 +179,7 @@ class DBSyncOper
 			return reader.next();
 		}
 
-		public ArrayList<String> getHeader()
+		public Set<String> getHeader()
 		{
 			return reader.getHeader();
 		}
@@ -199,6 +192,16 @@ class DBSyncOper
 		public Reader getReader()
 		{
 			return reader;
+		}
+
+		public String getDescription() throws Exception
+		{
+			String syncname = xml.getAttribute("name");
+			String readername = reader.getName().replace("memsort/","");
+			if (syncname == null) return readername;
+			if (!readername.equalsIgnoreCase(syncname))
+				return syncname + "/" + readername;
+			return syncname;
 		}
 
 		public String getName() throws Exception
@@ -351,15 +354,13 @@ class DBSyncOper
 		{
 			super(xml);
 
-			String name = xml.getAttribute("name");
 			String filename = xml.getAttribute("filename");
-
 			if (filename == null)
 			{
 				if (xmlsource == null)
 				{
 					xmlsource = new XML();
-					xmlsource.add(name == null ? "root" : name);
+					xmlsource.add("root");
 				}
 			}
 			else
@@ -389,7 +390,10 @@ class DBSyncOper
 					}
 				}
 				else if (tagname.equals("read"))
+				{
+					element.copyAttribute("fields",xml);
 					Read(element,xmlsource);
+				}
 
 				if (Misc.isLog(9)) Misc.log("XML Sync " + tagname + ": " +xmlsource);
 			}
@@ -1013,7 +1017,7 @@ class DBSyncOper
 		XML xml = new XML();
 		XML xmlop = xml.add(oper);
 
-		ArrayList<String> destinationheader = destinationsync.getHeader();
+		Set<String> destinationheader = destinationsync.getHeader();
 		Set<String> keyset = new HashSet<String>(destinationheader);
 		keyset.addAll(fields.getNames());
 		String ignorestr = destinationxml.getAttribute("ignore_fields");
@@ -1279,14 +1283,14 @@ class DBSyncOper
 
 		if (Misc.isLog(2))
 		{
-			String sourcename = sourcesync.getName();
+			String sourcename = sourcesync.getDescription();
 			String keyinfo = " (" + Misc.implode(fields.getKeys()) + ")";
 			if (destinationsync == null)
-				Misc.log("Reading source " + sourcename + keyinfo + "...");
+				Misc.log("Reading source \"" + sourcename + "\"" + keyinfo + "...");
 			else
 			{
-				String destinationname = destinationsync.getName();
-				Misc.log("Comparing source " + sourcename + " with destination " + destinationname + keyinfo + "...");
+				String destinationname = destinationsync.getDescription();
+				Misc.log("Comparing source \"" + sourcename + "\" with destination \"" + destinationname + "\"" + keyinfo + "...");
 			}
 		}
 

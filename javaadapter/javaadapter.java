@@ -143,7 +143,7 @@ public class javaadapter
 		catch(Throwable ex)
 		{
 			Misc.log(ex);
-			System.exit(1);
+			Misc.exit(1,10000);
 		}
 	}
 

@@ -35,7 +35,7 @@ class dbsyncplugin
 		catch(Exception ex)
 		{
 			Misc.log(ex);
-			System.exit(1);
+			Misc.exit(1,30000);
 		}
 	}
 }

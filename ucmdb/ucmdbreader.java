@@ -99,9 +99,8 @@ class Ucmdb
 	}
 }
 
-class ReaderUCMDB extends ReaderUtil implements Reader
+class ReaderUCMDB extends ReaderUtil
 {
-	private ArrayList<String> headers;
 	Iterator<TopologyCI> cis;
 	Topology topo;
 	String root;
@@ -236,11 +235,6 @@ class ReaderUCMDB extends ReaderUtil implements Reader
 	}
 
 	@Override
-	public LinkedHashMap<String,String> next() throws Exception
-	{
-		return super.next(this);
-	}
-
 	public LinkedHashMap<String,String> nextRaw() throws Exception
 	{
 		if (!cis.hasNext())
@@ -261,13 +255,14 @@ class ReaderUCMDB extends ReaderUtil implements Reader
 		setProperties(null,row,root);
 
 		getRelated(root,ids,row);
+		row = normalizeFields(row);
 
 		if (Misc.isLog(30)) Misc.log("uCMDB row: " + row);
 
 		return row;
 	}
 
-	public ArrayList<String> getHeader()
+	public Set<String> getHeader()
 	{
 		return headers;
 	}

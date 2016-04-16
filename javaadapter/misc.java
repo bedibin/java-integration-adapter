@@ -151,8 +151,9 @@ class StreamGobbler implements Runnable
 class Misc
 {
 	public static final String DATEFORMAT = "yyyy-MM-dd HH:mm:ss";
-	public static SimpleDateFormat dateformat = new SimpleDateFormat(DATEFORMAT);
+	public static final SimpleDateFormat dateformat = new SimpleDateFormat(DATEFORMAT);
 	public static SimpleDateFormat gmtdateformat;
+	public static final TimeZone gmttimezone = TimeZone.getTimeZone("UTC");
 	public static final String CR = System.getProperty("line.separator");
 	public static final Pattern substitutepattern = Pattern.compile("%([^%\n\\\\]*(?:\\\\.[^%\n\\\\]*)*)%");
 
@@ -170,7 +171,7 @@ class Misc
 	static
 	{
 		gmtdateformat = new SimpleDateFormat(DATEFORMAT);
-		gmtdateformat.setTimeZone(TimeZone.getTimeZone("UTC"));
+		gmtdateformat.setTimeZone(gmttimezone);
 	}
 
 	static public String getHostName()
@@ -451,6 +452,17 @@ class Misc
 		}
 
 		return out;
+	}
+
+	public static <T> Set<T> findDuplicates(Collection<T> list)
+	{
+		Set<T> duplicates = new HashSet<T>();
+		Set<T> uniques = new HashSet<T>();
+
+		for(T t:list)
+			if(!uniques.add(t)) duplicates.add(t);
+
+		return duplicates;
 	}
 
 	public static String toHexString(String text) throws Exception
@@ -816,9 +828,19 @@ class Misc
 
 	public static String strftime(String str,Date date)
 	{
-		if (str == null) return null;
+		return strftime(str,date,null);
+	}
 
-		Calendar cal = Calendar.getInstance();
+	private static String formatdate(String format,Date date,TimeZone tz)
+	{
+		SimpleDateFormat df = new SimpleDateFormat(format);
+		if (tz != null) df.setTimeZone(tz);
+		return df.format(date);
+	}
+
+	public static String strftime(String str,Date date,TimeZone tz)
+	{
+		if (str == null) return null;
 
 		StringBuffer out = new StringBuffer();
 		boolean inPercent = false;
@@ -834,55 +856,55 @@ class Misc
 				switch(ch)
 				{
 					case 'a':
-						out.append(new SimpleDateFormat("EEE").format(date));
+						out.append(formatdate("EEE",date,tz));
 						break;
 					case 'A':
-						out.append(new SimpleDateFormat("EEEE").format(date));
+						out.append(formatdate("EEEE",date,tz));
 						break;
 					case 'b':
-						out.append(new SimpleDateFormat("MMM").format(date));
+						out.append(formatdate("MMM",date,tz));
 						break;
 					case 'B':
-						out.append(new SimpleDateFormat("MMMM").format(date));
+						out.append(formatdate("MMMM",date,tz));
 						break;
 					case 'd':
-						out.append(new SimpleDateFormat("dd").format(date));
+						out.append(formatdate("dd",date,tz));
 						break;
 					case 'D':
-						out.append(new SimpleDateFormat("MM/dd/yy").format(date));
+						out.append(formatdate("MM/dd/yy",date,tz));
 						break;
 					case 'F':
-						out.append(new SimpleDateFormat("yyyy-MM-dd").format(date));
+						out.append(formatdate("yyyy-MM-dd",date,tz));
 						break;
 					case 'H':
-						out.append(new SimpleDateFormat("HH").format(date));
+						out.append(formatdate("HH",date,tz));
 						break;
 					case 'm':
-						out.append(new SimpleDateFormat("MM").format(date));
+						out.append(formatdate("MM",date,tz));
 						break;
 					case 'M':
-						out.append(new SimpleDateFormat("mm").format(date));
+						out.append(formatdate("mm",date,tz));
 						break;
 					case 'p':
-						out.append(new SimpleDateFormat("a").format(date));
+						out.append(formatdate("a",date,tz));
 						break;
 					case 'S':
-						out.append(new SimpleDateFormat("ss").format(date));
+						out.append(formatdate("ss",date,tz));
 						break;
 					case 'T':
-						out.append(new SimpleDateFormat("HH:mm;ss").format(date));
+						out.append(formatdate("HH:mm;ss",date,tz));
 						break;
 					case 'y':
-						out.append(new SimpleDateFormat("yy").format(date));
+						out.append(formatdate("yy",date,tz));
 						break;
 					case 'Y':
-						out.append(new SimpleDateFormat("yyyy").format(date));
+						out.append(formatdate("yyyy",date,tz));
 						break;
 					case 'Z':
-						out.append(new SimpleDateFormat("z").format(date));
+						out.append(formatdate("z",date,tz));
 						break;
 					case 'z':
-						out.append(new SimpleDateFormat("Z").format(date));
+						out.append(formatdate("Z",date,tz));
 						break;
 					default:
 						out.append(ch);
@@ -997,7 +1019,7 @@ class Misc
 	public static Set<String> arrayToSet(String[] obj)
 	{
 		if (obj == null) return null;
-		return new HashSet<String>(Arrays.asList(obj));
+		return new LinkedHashSet<String>(Arrays.asList(obj));
 	}
 
 	public static String getKeyValue(Set<String> keys,Map<String,String> map)
@@ -1059,16 +1081,16 @@ class Misc
 		return substitute(substitutepattern,str,sub);
 	}
 
-	public static String substituteEscape(String str)
+	private static String substituteEscape(String str)
 	{
 		if (str == null) return null;
 		return str.replace("\\\\","\\").replace("\\%","%");
 	}
 
-	public static String substituteGet(String param,String def) throws Exception
+	public static String substituteGet(String param,String def,VariableContext ctx) throws Exception
 	{
 		if (param.startsWith("$"))
-			return XML.getDefaultVariable(param);
+			return XML.getDefaultVariable(param,ctx);
 		else if (param.startsWith("<"))
 		{
 			String value = readFile(param.substring(1));
@@ -1078,6 +1100,11 @@ class Misc
 		{
 			String value = exec(param.substring(1),"ISO-8859-1",null);
 			return value == null ? value : value.trim();
+		}
+		else if (param.startsWith("@@"))
+		{
+			String value = strftime(param.substring(2),new Date(),ctx == null ? gmttimezone : ctx.getTimeZone());
+			return value;
 		}
 		else if (param.startsWith("@"))
 		{
@@ -1132,12 +1159,22 @@ class Misc
 		return sb.toString();
 	}
 
+	public static String substitute(String str,final VariableContext ctx) throws Exception
+	{
+		return substitute(str,new Misc.Substituer() {
+			public String getValue(String param) throws Exception
+			{
+				return substituteGet(param,null,ctx);
+			}
+		});
+	}
+
 	public static String substitute(String str) throws Exception
 	{
 		return substitute(str,new Misc.Substituer() {
 			public String getValue(String param) throws Exception
 			{
-				return substituteGet(param,null);
+				return substituteGet(param,null,null);
 			}
 		});
 	}
@@ -1147,7 +1184,7 @@ class Misc
 		return substitute(str,new Misc.Substituer() {
 			public String getValue(String param) throws Exception
 			{
-				return substituteGet(param,map.get(param));
+				return substituteGet(param,map.get(param),null);
 			}
 		});
 	}
@@ -1163,7 +1200,7 @@ class Misc
 				} catch (javax.xml.xpath.XPathExpressionException ex) {
 					def = null;
 				}
-				return substituteGet(param,def);
+				return substituteGet(param,def,null);
 			}
 		});
 	}
@@ -1185,5 +1222,27 @@ class Misc
 	{
 		if (str == null) return null;
 		return str.replaceAll(trimexpr + "\n","\n").replaceAll("\n" + trimexpr,"\n").replaceAll(trimexpr + "$|^" + trimexpr,"");
+	}
+
+	public static void exit(final int status, long maxDelayMillis)
+	{
+		System.out.print("[" + status + "] ");
+		try {
+			Timer timer = new Timer();
+			timer.schedule(new TimerTask()
+			{
+				@Override
+				public void run()
+				{
+					Runtime.getRuntime().halt(status);
+				}
+			},maxDelayMillis);
+			System.exit(status);
+      
+		} catch (Throwable ex) {
+			Runtime.getRuntime().halt(status);
+		} finally {
+			Runtime.getRuntime().halt(status);
+		}
 	}
 }

@@ -280,7 +280,7 @@ class SyncLookup
 			preloadinfo = new Preload(xml,resultname);
 		}
 
-		protected String lookup(final LinkedHashMap<String,String> row) throws Exception
+		protected String lookup(LinkedHashMap<String,String> row) throws Exception
 		{
 			if (preloadinfo != null)
 				return preloadinfo.getPreload(row);
@@ -290,15 +290,8 @@ class SyncLookup
 			String sql = xmllookup.getValue();
 			String instance = xmllookup.getAttribute("instance");
 
-			String str = row == null ? sql : Misc.substitute(sql,new Misc.Substituer() {
-				public String getValue(String param) throws Exception
-				{
-					String value = Misc.substituteGet(param,row.get(param));
-					return db.getValue(value);
-				}
-			});
-
-			DB.DBOper oper = db.makesqloper(instance,str);
+			String str = row == null ? sql : db.substitute(instance,sql,row);
+			DBOper oper = db.makesqloper(instance,str);
 
 			LinkedHashMap<String,String> result = oper.next();
 			if (result == null) return null;
