@@ -253,6 +253,8 @@ class ReaderCSV extends ReaderUtil
 		do
 		{
 			String line = in.readLine();
+			while(line != null && !inquote && line.trim().isEmpty())
+				line = in.readLine();
 			if (line == null)
 			{
 				in.close();
@@ -324,15 +326,23 @@ class ReaderCSV extends ReaderUtil
 			throw new AdapterException("Filename is mandatory");
 
 		File file = new File(javaadapter.getCurrentDir(),filename);
+		initFile(file,charset);
+	}
+
+	private void initFile(File file,String charset) throws Exception
+	{
 		in = new BufferedReader(new InputStreamReader(new FileInputStream(file),charset == null ? "ISO-8859-1" : charset));
 		if (headers == null)
 		{
 			ArrayList<String> row = readCSV();
-			if (row == null)
-				throw new AdapterException("CSV file \"" + filename + "\" requires at least one header line or \"fields\" attribute must be specified");
+			if (row == null || row.size() == 0)
+				throw new AdapterException("CSV file \"" + file.getName() + "\" requires at least one header line or \"fields\" attribute must be specified");
+			// Ignore last empty columns
+			for(int x = row.size() - 1;x >= 0;x--)
+				if (row.get(x).trim().isEmpty()) row.remove(x); else break;
 			headers = new LinkedHashSet<String>(row);
 			if (row.size() != headers.size())
-				throw new AdapterException("Duplicated header values in CSV file " + filename + ": " + Misc.findDuplicates(row));
+				throw new AdapterException("Duplicated header values in CSV file " + file.getName() + ": " + Misc.findDuplicates(row));
 		}
 
 		if (instance == null) instance = file.getName();
@@ -380,6 +390,17 @@ class ReaderCSV extends ReaderUtil
 	{
 		initFile(filename,null);
 	}
+
+	public ReaderCSV(File file,String charset) throws Exception
+	{
+		initFile(file,charset);
+	}
+
+	public void close() throws Exception
+	{
+		if (in != null) in.close();
+		in = null;
+	}
 }
 
 class ReaderLDAP extends ReaderUtil
@@ -387,13 +408,13 @@ class ReaderLDAP extends ReaderUtil
 	private directory ld;
 	private LinkedHashMap<String,String> first;
 
-	private void init(String url,String context,String username,String password,String basedn,String search,String[] sortattrs,String auth,String referral,String deref) throws Exception
+	private void init(String url,String context,String username,String password,String basedn,String search,String[] sortattrs,String auth,String referral,String deref,boolean notrust) throws Exception
 	{
 		if (instance == null) instance = url;
 
 		Misc.log(5,"Searching for " + search + " on " + url + " base " + basedn);
 
-		ld = context == null ? new ldap(url,username,password,sortattrs,auth,referral,deref) : new directory(url,context,username,password,auth);
+		ld = context == null ? new ldap(url,username,password,sortattrs,auth,referral,deref,notrust) : new directory(url,context,username,password,auth);
 
 		if (headers == null)
 		{
@@ -422,15 +443,17 @@ class ReaderLDAP extends ReaderUtil
 		String referral = xml.getAttribute("referral");
 		String deref = xml.getAttribute("derefAliases");
 		String sortfields = xml.getAttribute("sort_fields");
+		String notrustssl = xml.getAttribute("notrustssl");
+		boolean notrust = notrustssl != null && "true".equals(notrustssl);
 
 		String[] sortattrs = sortfields == null ? null :  sortfields.split("\\s*,\\s*");
 
-		init(url,context,username,password,basedn,search,sortattrs,auth,referral,deref);
+		init(url,context,username,password,basedn,search,sortattrs,auth,referral,deref,notrust);
 	}
 
-	public ReaderLDAP(String url,String username,String password,String basedn,String search,String[] sortattrs,String auth,String referral,String deref) throws Exception
+	public ReaderLDAP(String url,String username,String password,String basedn,String search,String[] sortattrs,String auth,String referral,String deref,boolean notrust) throws Exception
 	{
-		init(url,null,username,password,basedn,search,sortattrs,auth,referral,deref);
+		init(url,null,username,password,basedn,search,sortattrs,auth,referral,deref,notrust);
 	}
 
 	@Override

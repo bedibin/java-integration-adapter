@@ -1,11 +1,75 @@
 import java.util.*;
 import java.util.regex.*;
-import java.io.FileNotFoundException;
+import java.io.*;
 import com.esotericsoftware.wildcard.Paths;
 
 class DBSyncOper
 {
 	public enum Scope { SCOPE_GLOBAL, SCOPE_SOURCE, SCOPE_DESTINATION };
+
+	class CacheReader implements Reader
+	{
+		private ReaderCSV csvreader;
+		private Reader sourcereader;
+		private File csvfile;
+
+		public CacheReader(XML xml,Reader reader) throws Exception
+		{
+			javaadapter.setForShutdown(this);
+
+			String cachedir = xml.getAttribute("cached_directory");
+			String prefix = "javaadapter_" + reader.getName() + "_";
+			String suffix = ".csv";
+			if (cachedir == null)
+ 				csvfile = File.createTempFile(prefix,suffix);
+			else
+			{
+				File dir = new File(javaadapter.getCurrentDir(),cachedir);
+ 				csvfile = File.createTempFile(prefix,suffix,dir);
+			}
+
+			if (Misc.isLog(10)) Misc.log("Cached file is " + csvfile.getAbsolutePath());
+			sourcereader = reader;
+
+			try
+			{
+				Writer writer = new BufferedWriter(new OutputStreamWriter(new FileOutputStream(csvfile),"UTF8"));
+				CsvWriter csv = new CsvWriter(writer);
+
+				LinkedHashMap<String,String> row;
+				while((row = reader.next()) != null)
+					csv.write(row);
+
+				csv.flush();
+				csvreader = new ReaderCSV(csvfile,"UTF8");
+			} catch(Exception ex) {
+				Misc.rethrow(ex);
+			}
+		}
+
+		public LinkedHashMap<String,String> next() throws Exception
+		{
+			LinkedHashMap<String,String> result = csvreader.next();
+			if (result == null) csvfile.delete();
+			return result;
+		}
+
+		public Set<String> getHeader()
+		{
+			return sourcereader.getHeader();
+		}
+
+		public String getName()
+		{
+			return "cache/" + sourcereader.getName();
+		}
+
+		public void close() throws Exception
+		{
+			if (csvreader != null) csvreader.close();
+			if (csvfile != null) csvfile.delete();
+		}
+	}
 
 	class SortTable implements Reader
 	{
@@ -156,6 +220,7 @@ class DBSyncOper
 		private CsvWriter csvout;
 		private String syncname;
 		private boolean dumplogfile = false;
+		private boolean isprocessed = false;
 
 		public Sync(XML xml) throws Exception
 		{
@@ -176,7 +241,9 @@ class DBSyncOper
 
 		public LinkedHashMap<String,String> next() throws Exception
 		{
-			return reader.next();
+			LinkedHashMap<String,String> result = reader.next();
+			if (result == null && !isprocessed) isprocessed = true;
+			return result;
 		}
 
 		public Set<String> getHeader()
@@ -223,6 +290,11 @@ class DBSyncOper
 		public void closeDump() throws Exception
 		{
 			if (csvout != null) csvout.flush();
+		}
+
+		public boolean isProcessed()
+		{
+			return isprocessed;
 		}
 	}
 
@@ -309,6 +381,10 @@ class DBSyncOper
 
 			// Overwrite default reader
 			reader = new ReaderSQL(conn,sql,fields.getKeys(),issorted);
+
+			String iscache = xml.getAttribute("cached");
+			if (iscache != null && iscache.equals("true"))
+				reader = new CacheReader(xml,reader);
 		}
 	}
 
@@ -680,15 +756,12 @@ class DBSyncOper
 		{
 			LinkedHashMap<String,String> result;
 
+			boolean doprocessing = !sync.isProcessed();
+			if (!doprocessing && Misc.isLog(30))
+				Misc.log("Field: Skipping field processing since already done during sort");
+
 			while((result = sync.next()) != null)
 			{
-				boolean doprocessing = true;
-				if (sync.getReader() instanceof SortTable)
-				{
-					if (Misc.isLog(30)) Misc.log("Field: Skipping field processing since already done during sort");
-					doprocessing = false;
-				}
-
 				if (doprocessing) setDefaultFields(result);
 				if (doprocessing) fieldloop: for(Field field:fields)
 				{
@@ -759,7 +832,7 @@ class DBSyncOper
 								result = null;
 								break;
 							}
-							Misc.log("ERROR: [" + sync.getName() + ":" + keys + "] Rejecting field " + field.getName() + " since it contains multiple values: " + result);
+							Misc.log("WARNING: [" + sync.getName() + ":" + keys + "] Rejecting field " + field.getName() + " since it contains multiple values: " + result);
 							if (iskey)
 								result.put(name,"");
 							else
@@ -789,7 +862,7 @@ class DBSyncOper
 						if (keyset.contains(newname)) iskey = true;
 						value = result.remove(name);
 						if (result.containsKey(newname))
-							throw new AdapterException("Renaming " + name + " to " + newname + " overwriting an existing field is not supported as it causes unexpected behaviors");
+							throw new AdapterException("Renaming \"" + name + "\" to \"" + newname + "\" overwriting an existing field is not supported as it causes unexpected behaviors (use copy instead)");
 						result.put(newname,value);
 						if (Misc.isLog(30)) Misc.log("Field: " + name + " renamed to " + newname + ": " + value);
 						name = newname;
@@ -865,7 +938,7 @@ class DBSyncOper
 				return result;
 			}
 
-			sync.closeDump();
+			if (doprocessing) sync.closeDump();
 			return null;
 		}
 	}
@@ -919,15 +992,17 @@ class DBSyncOper
 
 	private String getDisplayKey(Set<String> keys,Map<String,String> map)
 	{
-		String result = Misc.getKeyValue(keys,map);
-		if (displayfields == null) return result; // result can be null here
+		LinkedHashSet<String> set = new LinkedHashSet<String>();
+		if (displayfields != null)
+		{
+			ArrayList<String> displayvalues = Misc.getKeyValueList(displayfields,map);
+			if (displayvalues != null) set.addAll(displayvalues);
+		}
 
-		LinkedHashSet<String> set = new LinkedHashSet<String>(displayfields);
-		set.removeAll(keys);
-		String displaykeys = Misc.getKeyValue(set,map);
-		if (displaykeys == null) return result;
+		ArrayList<String> keyvalues = Misc.getKeyValueList(keys,map);
+		if (keyvalues != null) set.addAll(keyvalues);
 
-		return result == null ? displaykeys : displaykeys + "/" + result;
+		return set.size() == 0 ? null : Misc.implode(set,"/");
 	}
 
 	public boolean isValidSync(String[] synclist,Sync sync) throws Exception
@@ -1018,7 +1093,7 @@ class DBSyncOper
 		XML xmlop = xml.add(oper);
 
 		Set<String> destinationheader = destinationsync.getHeader();
-		Set<String> keyset = new HashSet<String>(destinationheader);
+		Set<String> keyset = new LinkedHashSet<String>(destinationheader);
 		keyset.addAll(fields.getNames());
 		String ignorestr = destinationxml.getAttribute("ignore_fields");
 		if (ignorestr != null) keyset.removeAll(Arrays.asList(ignorestr.split("\\s*,\\s*")));
@@ -1079,7 +1154,9 @@ class DBSyncOper
 							if (oldvalue != null)
 								xmlrow.setValue(oldvalue);
 						}
-						if (!isinfo || !type.equals("infoapi"))
+						if (!isinfo && type.equals("infonull") && "".equals(newvalue))
+							xmlrow.setAttribute("type","info");
+						else if (!isinfo || !type.equals("infoapi"))
 							xmlrow.setAttribute("type",type);
 					}
 					ignorecase = field.isIgnoreCase();
@@ -1219,7 +1296,7 @@ class DBSyncOper
 			/* Use exclamation mark since it is the lowest ASCII character */
 			/* This code must match db.getOrderBy logic */
 			String keyvalue = row.get(keyfield);
-			if (keyvalue != null) key.append(keyvalue.replace(' ','!').replace('_','!'));
+			if (keyvalue != null) key.append(keyvalue.trim().replace(' ','!').replace('_','!'));
 			key.append("!");
 		}
 

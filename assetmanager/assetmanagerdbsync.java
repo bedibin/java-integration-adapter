@@ -120,6 +120,7 @@ class AMDB extends DB
 	private String username;
 	private static AMDB instance;
 	public SimpleDateFormat dateformat;
+	public DecimalFormat currencyformat;
 
 	private AMDB() throws Exception
 	{
@@ -141,6 +142,8 @@ class AMDB extends DB
 		String timezone = xml.getValue("timezone","UTC");
 		if (!timezone.equals("local"))
 			dateformat.setTimeZone(TimeZone.getTimeZone(timezone));
+
+		currencyformat = (DecimalFormat)NumberFormat.getCurrencyInstance();
 
 		System.out.println("Done");
 	}
@@ -179,7 +182,10 @@ class AMDB extends DB
 			// Do not do timezone conversion on a simple date
 			return "#" + value + "#";
 		if (value.matches("-\\d+") || value.matches("-\\d+\\.\\d+"))
-			value = value.replace("-","(") + ")";
+		{
+			value = currencyformat.getNegativePrefix() + value.replace("-","") + currencyformat.getNegativeSuffix();
+			value = value.replace(currencyformat.getCurrency().getSymbol(),"");
+		}
 		value = value.replace("'","''");
 		value = value.replace("\r","");
 		value = value.replace("\n","' + char(13) + char(10) + '");

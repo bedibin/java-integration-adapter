@@ -59,6 +59,7 @@ elementFormDefault="qualified">
 		<xs:enumeration value="key"/> <!-- Field is a key -->
 		<xs:enumeration value="info"/> <!-- Field won't be used by comparison or API -->
 		<xs:enumeration value="infoapi"/> <!-- Field will be used by comparison but not the API -->
+		<xs:enumeration value="infonull"/> <!-- Set to info if new value is null only -->
 		<xs:enumeration value="initial"/> <!-- Field use on add or if empty in destination -->
 	</xs:restriction>
 </xs:simpleType>
@@ -304,6 +305,8 @@ elementFormDefault="qualified">
 	<xs:attribute name="keyfield" type="xs:string"/>
 	<xs:attribute name="field" type="xs:string"/>
 	<xs:attribute name="sorted" type="xs:boolean" default="false"/>
+	<xs:attribute name="cached" type="xs:boolean" default="false"/>
+	<xs:attribute name="cached_directory" type="xs:string"/>
 	<xs:attribute name="enclosure" type="xs:string" default='"'/>
 	<xs:attribute name="delimiter" type="xs:string" default=","/>
 	<xs:attribute name="header" type="xs:boolean" default="true"/>
@@ -321,6 +324,9 @@ elementFormDefault="qualified">
 	<xs:attribute name="query" type="xs:string"/>
 	<xs:attribute name="root" type="xs:string"/>
 	<xs:attribute name="context" type="xs:string"/>
+	<xs:attribute name="referral" type="xs:string"/>
+	<xs:attribute name="derefAliases" type="xs:string"/>
+	<xs:attribute name="notrustssl" type="xs:boolean" default="true"/>
 	<xs:attribute name="resultpathrow" type="xs:string"/>
 	<xs:attribute name="resultpathcolumn" type="xs:string"/>
 	<xs:attributeGroup ref="activate"/>
@@ -807,6 +813,7 @@ elementFormDefault="qualified">
 									<xs:element name="customupdatesql" type="simplestringfile"/>
 									<xs:element name="customremovesql" type="simplestringfile"/>
 									<xs:element name="customremove" type="namevalue"/> <!-- uCMDB reader -->
+									<xs:element name="customadd" type="namevalue"/> <!-- uCMDB reader -->
 									<xs:element name="element_function" type="function"/>
 								</xs:choice></xs:sequence>
 								<xs:attribute name="table" type="xs:string"/>

@@ -120,7 +120,11 @@ class ServiceManagerUpdateSubscriber extends UpdateSubscriber
 	@Override
 	protected void oper(XML xmldest,XML xmloper) throws Exception
 	{
-		String object = xmloper.getParent().getAttribute("name");
+		oper(xmloper.getParent().getAttribute("name"),xmldest,xmloper);
+	}
+
+	protected void oper(String object,XML xmldest,XML xmloper) throws Exception
+	{
 		XML publisher = new XML();
 		XML pub = publisher.add("publisher");
 		pub.setAttribute("name",object);
@@ -138,7 +142,42 @@ class ServiceManagerUpdateSubscriber extends UpdateSubscriber
 			customs = xmldest.getElements("customremove");
 			soapoper = customs.length > 0 ? "Update" : "Delete";
 		}
-		else if (oper.equals("update")) soapoper = "Update";
+		else if (oper.equals("update"))
+		{
+			soapoper = "Update";
+			if ("Relationship".equals(object))
+			{
+				// Relationship API is special since removed child relationships must be specifically deleted
+				boolean doremove = false;
+				XML xmlremove = new XML();
+				XML remove = xmlremove.add("remove");
+				XML[] updates = xmloper.getElements();
+				for(XML update:updates)
+				{
+					if ("LIST_ChildCIs".equals(update.getTagName()))
+					{
+						String type = update.getAttribute("info");
+						if (type != null && type.equals("key")) break;
+						String oldvalue = update.getValue("oldvalue",null);
+						String newvalue = update.getValue();
+						if (oldvalue != null && newvalue != null)
+						{
+							ArrayList<String> deleteset = new ArrayList<String>(Arrays.asList(oldvalue.split("\n")));
+							ArrayList<String> newset = new ArrayList<String>(Arrays.asList(newvalue.split("\n")));
+							deleteset.removeAll(newset);
+							if (deleteset.size() > 0)
+							{
+								remove.add("LIST_ChildCIs",Misc.implode(deleteset,"\n"));
+								doremove = true;
+							}
+						}
+					}
+					else
+						remove.add(update);
+				}
+				if (doremove) oper(object,xmldest,xmlremove);
+			}
+		}
 		else return;
 
 		pub.setAttribute("action",soapoper);
@@ -171,7 +210,7 @@ class ServiceManagerUpdateSubscriber extends UpdateSubscriber
 				}
 			}
 
-			if (customs != null)
+			if (customs != null && customs.length > 1)
 			{
 				for(XML custom:customs)
 				{

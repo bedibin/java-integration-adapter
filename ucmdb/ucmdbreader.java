@@ -275,10 +275,17 @@ class ReaderUCMDB extends ReaderUtil
 
 class UCMDBUpdateSubscriber extends UpdateSubscriber
 {
+	class AttributeType
+	{
+		Type type;
+		String enumname;
+		Collection<String> enumvalues;
+	}
+
 	private TopologyUpdateService update;
 	private TopologyUpdateFactory factory;
 	private ClassModelService classmodel;
-	private HashMap<String,Type> attrtypes = new HashMap<String,Type>();
+	private HashMap<String,AttributeType> attrtypes = new HashMap<String,AttributeType>();
 	private Ucmdb ucmdb;
 	private String adapterinfo;
 
@@ -291,22 +298,77 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 		adapterinfo = ucmdb.getInfo();
 	}
 
-	private void FillUpdateData(TopologyModificationData data,XML xml,String prefix,boolean isdelete) throws Exception
+	private void FillUpdateData(TopologyModificationData data,XML xml,boolean isdelete) throws Exception
 	{
-		String citype = xml.getValue(prefix == null ? "INFO" : prefix + ":INFO");
-		if (citype == null) throw new AdapterException("INFO field not found. Set it to CI type");
-		String id = xml.getValue(prefix == null ? "ID" : prefix + ":ID",null);
-		String end1 = xml.getValue(prefix == null ? "END1" : prefix + ":END1",null);
-		String end2 = xml.getValue(prefix == null ? "END2" : prefix + ":END2",null);
-
-		Element ci;
-		if (end1 == null && end2 == null)
-			ci = (id == null ? data.addCI(citype) : data.addCI(factory.restoreCIIdFromString(id),citype));
-		else
-			ci = (id == null ? data.addRelation(citype,factory.restoreCIIdFromString(end1),factory.restoreCIIdFromString(end2)) : data.addRelation(factory.restoreCIIdFromString(id),citype,factory.restoreCIIdFromString(end1),factory.restoreCIIdFromString(end2)));
-		if (ci == null) throw new AdapterException("CI data is null");
-
+		final int debug = 15;
+		HashMap<String,Element> elements = new HashMap<String,Element>();
 		XML[] fields = xml.getElements();
+
+		// First predefine all CIs
+		for(XML field:fields)
+		{
+			String tagname = field.getTagName();
+			String prefix = null;
+			String id = null;
+			String end1id = null;
+			String end2id = null;
+			if (tagname.equals("INFO"))
+			{
+				prefix = "root";
+				id = xml.getValue("ID",null);
+				end1id = xml.getValue("END1",null);
+				end2id = xml.getValue("END2",null);
+			}
+			else if (tagname.endsWith(":INFO") && !tagname.endsWith(":REL:INFO"))
+			{
+				prefix = tagname.substring(0,tagname.length() - ":INFO".length());
+				id = xml.getValue(prefix + ":ID",null);
+			}
+			String value = field.getValue();
+			if (prefix == null) continue;
+			if (value == null) throw new AdapterException(xml,"Value for element " + tagname + " cannot be empty");
+
+			if (end1id != null && end2id != null)
+			{
+				if (Misc.isLog(debug)) Misc.log("UCMDBAPI: Defining relation type " + value + " with ID " + prefix + " between " + end1id + " and " + end2id);
+				Relation relation = factory.createRelation(value,factory.restoreCIIdFromString(end1id),factory.restoreCIIdFromString(end2id));
+				elements.put(prefix,relation);
+				data.addRelation(relation);
+				continue;
+			}
+
+			if (Misc.isLog(debug)) Misc.log("UCMDBAPI: Defining CI type " + value + " with ID " + prefix);
+			CI ci = id == null ? factory.createCI(value) : factory.createCI(factory.restoreCIIdFromString(id),value);
+			elements.put(prefix,ci);
+			data.addCI(ci);
+		}
+
+		// Second predefine all relations
+		for(XML field:fields)
+		{
+			String tagname = field.getTagName();
+			String value = field.getValue();
+			if (tagname.endsWith(":REL:INFO"))
+			{
+				String prefix = tagname.substring(0,tagname.length() - ":REL:INFO".length());
+				int lastColumn = prefix.lastIndexOf(":");
+				String end1prefix = lastColumn == -1 ? "root" : prefix.substring(0,lastColumn);
+				String end2prefix = prefix;
+				CI end1 = (CI)elements.get(end1prefix);
+				if (end1 == null && lastColumn == -1) throw new AdapterException(xml,"Missing INFO element");
+				if (end1 == null && lastColumn != -1) throw new AdapterException(xml,"Missing " + end1prefix + ":INFO element");
+				CI end2 = (CI)elements.get(end2prefix);
+				if (end2 == null) throw new AdapterException(xml,"Missing " + end2prefix + ":INFO element");
+
+				prefix += ":REL";
+				if (Misc.isLog(debug)) Misc.log("UCMDBAPI: Defining relation type " + value + " with ID " + prefix + " from CI ID " + end1prefix + " to CI ID " + end2prefix);
+				Relation relation = factory.createRelation(value,end1,end2);
+				elements.put(prefix,relation);
+				data.addRelation(relation);
+			}
+		}
+
+		// Third populate all attributes
 		for(XML field:fields)
 		{
 			String type = field.getAttribute("type");
@@ -322,90 +384,119 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 			}
 
 			String tagname = field.getTagName();
-			String suffix = tagname;
-			if (prefix != null)
-			{
-				if (!tagname.startsWith(prefix + ":")) continue;
-				suffix = tagname.substring(prefix.length()+1);
-			}
+			int lastColumn = tagname.lastIndexOf(":");
+			String prefix = lastColumn == -1 ? "root" : tagname.substring(0,lastColumn);
+			Element element = elements.get(prefix);
+			if (element == null) throw new AdapterException(xml,"Element " + tagname + " referencing a non existing CI or relation. INFO field missing?");
+			String suffix = lastColumn == -1 ? tagname : tagname.substring(lastColumn + 1);
 
-			if (Misc.isLog(30)) Misc.log("Tag suffix is " + suffix);
+			if (Misc.isLog(debug)) Misc.log("UCMDBAPI: CI attribute '" + suffix + "' prefix " + prefix);
 			if (suffix.equals("INFO")) continue;
 			if (suffix.equals("ID")) continue;
 			if (suffix.equals("END1")) continue;
 			if (suffix.equals("END2")) continue;
 
-			if (suffix.equals(":INFO"))
-				FillUpdateData(data,xml,tagname.substring(0,tagname.length()-5),isdelete);
-			else if (suffix.indexOf(':') == -1)
+			String citype = element.getType();
+			AttributeType attrtype = attrtypes.get(citype + ":" + suffix);
+			if (attrtype == null)
 			{
-				Type attrtype = attrtypes.get(citype + ":" + suffix);
-				if (attrtype == null)
+				ClassDefinition classdef = classmodel.getClassDefinition(citype);
+				attrtype = new AttributeType();
+				attrtype.type = classdef.getAttribute(suffix).getType();
+
+				if (attrtype.type == Type.LIST)
 				{
-					ClassDefinition classdef = classmodel.getClassDefinition(citype);
-					attrtype = classdef.getAttribute(suffix).getType();
-					attrtypes.put(citype + ":" + suffix,attrtype);
+					EnumInfo enumInfo = (EnumInfo)classdef.getAttribute(suffix).getTypeInfo();
+					attrtype.enumname = enumInfo.getEnumName();
+					EnumDefinitions enumdefs = classmodel.getEnumDefinitions();
+					StringEnum enumdef = enumdefs.getStringEnum(attrtype.enumname);
+					attrtype.enumvalues = enumdef.getEntries();
 				}
 
-				String value = field.getValue();
+				attrtypes.put(citype + ":" + suffix,attrtype);
+			}
 
-				if (Misc.isLog(30)) Misc.log("Setting CI attribute '" + suffix + "' type:" + attrtype + " with: " + value);
-				if (value == null)
-					ci.setStringProperty(suffix,null);
-				else switch(attrtype)
-				{
-				case DOUBLE:
-					try {
-					ci.setDoubleProperty(suffix,new Double(value));
-					} catch (NumberFormatException ex) {
-					Misc.log("ERROR: [" + getKeyValue() + "] Cannot convert '" + value + "' for field '" + suffix + "' into a double: " + xml);
-					}
-					break;
-				case FLOAT:
-					try {
-					ci.setFloatProperty(suffix,new Float(value));
-					} catch (NumberFormatException ex) {
-					Misc.log("ERROR: [" + getKeyValue() + "] Cannot convert '" + value + "' for field '" + suffix + "' into a float: " + xml);
-					}
-					break;
-				case LONG:
-					try {
-					ci.setLongProperty(suffix,new Long(value));
-					} catch (NumberFormatException ex) {
-					Misc.log("ERROR: [" + getKeyValue() + "] Cannot convert '" + value + "' for field '" + suffix + "' into a long: " + xml);
-					}
-					break;
-				case ENUM:
-				case INTEGER:
-					try {
-					ci.setIntProperty(suffix,new Integer(value));
-					} catch (NumberFormatException ex) {
-					Misc.log("ERROR: [" + getKeyValue() + "] Cannot convert '" + value + "' for field '" + suffix + "' into an integer: " + xml);
-					}
-					break;
-				case LIST:
-				case STRING:
-					ci.setStringProperty(suffix,value);
-					break;
-				case BOOLEAN:
-					ci.setBooleanProperty(suffix,(value.equals("1") || value.equals("true")));
-					break;
-				case STRING_LIST:
-					ci.setStringListProperty(suffix,value.split("\n"));
-					break;
-				case DATE:
-					ci.setDateProperty(suffix,Misc.gmtdateformat.parse(value));
-					break;
-				default:
-					throw new AdapterException("Unsupported uCMDB type " + attrtype + " for field " + suffix);
+			String value = field.getValue();
+
+			if (Misc.isLog(debug)) Misc.log("UCMDBAPI: Setting CI attribute '" + suffix + "' to ID " + prefix + " type:" + attrtype.type + " with: " + value);
+			if (value == null)
+				element.setStringProperty(suffix,null);
+			else switch(attrtype.type)
+			{
+			case DOUBLE:
+				try {
+				element.setDoubleProperty(suffix,new Double(value));
+				} catch (NumberFormatException ex) {
+				Misc.log("WARNING: [" + getKeyValue() + "] Cannot convert '" + value + "' for field '" + suffix + "' into a double: " + xml);
 				}
+				break;
+			case FLOAT:
+				try {
+				element.setFloatProperty(suffix,new Float(value));
+				} catch (NumberFormatException ex) {
+				Misc.log("WARNING: [" + getKeyValue() + "] Cannot convert '" + value + "' for field '" + suffix + "' into a float: " + xml);
+				}
+				break;
+			case LONG:
+				try {
+				element.setLongProperty(suffix,new Long(value));
+				} catch (NumberFormatException ex) {
+				Misc.log("WARNING: [" + getKeyValue() + "] Cannot convert '" + value + "' for field '" + suffix + "' into a long: " + xml);
+				}
+				break;
+			case ENUM:
+			case INTEGER:
+				try {
+				element.setIntProperty(suffix,new Integer(value));
+				} catch (NumberFormatException ex) {
+				Misc.log("WARNING: [" + getKeyValue() + "] Cannot convert '" + value + "' for field '" + suffix + "' into an integer: " + xml);
+				}
+				break;
+			case LIST:
+				Collection<String> list = attrtype.enumvalues;
+				if (list != null && !list.contains(value))
+				{
+					Misc.log("WARNING: [" + getKeyValue() + "] Invalid value '" + value + "' given for enumeration '" + attrtype.enumname + "': " + xml);
+					break;
+				}
+			case STRING:
+				element.setStringProperty(suffix,value);
+				break;
+			case BOOLEAN:
+				element.setBooleanProperty(suffix,(value.equals("1") || value.toLowerCase().equals("true")));
+				break;
+			case STRING_LIST:
+				element.setStringListProperty(suffix,value.split("\n"));
+				break;
+			case DATE:
+				element.setDateProperty(suffix,Misc.gmtdateformat.parse(value));
+				break;
+			default:
+				throw new AdapterException("Unsupported uCMDB type " + attrtype + " for field " + suffix);
 			}
 		}
 	}
 
-	private void add(XML xml) throws Exception
+	private void add(XML xmldest,XML xml) throws Exception
 	{
 		TopologyModificationData data = factory.createTopologyModificationData(adapterinfo + "/add");
+		XML[] customs = xmldest.getElements("customadd");
+		for(XML custom:customs)
+		{
+			String name = custom.getAttribute("name");
+			if (name == null) throw new AdapterException(custom,"Attribute 'name' required");
+			String value = custom.getAttribute("value");
+			if (value == null) value = "";
+			value = Misc.substitute(value,xml);
+			xml.add(name,value);
+			if (Misc.isLog(10)) Misc.log("Updating " + name + " with value " + value + " instead of adding: " + xml);
+		}
+
+		if (customs.length > 0)
+		{
+			updatemulti("add",xml);
+			return;
+		}
 
 		String end1 = getAddValue(xml,"END1");
 		String end2 = getAddValue(xml,"END2");
@@ -414,19 +505,19 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 			String[] end1values = end1.split("\n");
 			String[] end2values = end2.split("\n");
 
-			if (Misc.isLog(10)) Misc.log("Adding multiple relationship ends: " + xml);
+			if (Misc.isLog(10)) Misc.log("UCMDBAPI: Adding multiple relationship ends: " + xml);
 
 			for(String end1value:end1values) for(String end2value:end2values)
 			{
 				xml.setValue("END1",end1value);
 				xml.setValue("END2",end2value);
-				FillUpdateData(data,xml,null,false);
+				FillUpdateData(data,xml,false);
 				update.create(data,CreateMode.UPDATE_EXISTING);
 			}
 			return;
 		}
 
-		FillUpdateData(data,xml,null,false);
+		FillUpdateData(data,xml,false);
 		update.create(data,CreateMode.UPDATE_EXISTING);
 	}
 
@@ -472,13 +563,13 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 			{
 				idxml.setValue(id);
 
-				FillUpdateData(data,xml,null,false);
+				FillUpdateData(data,xml,false);
 				update.update(data);
 			}
 			return;
 		}
 
-		FillUpdateData(data,xml,null,false);
+		FillUpdateData(data,xml,false);
 		update.update(data);
 	}
 
@@ -494,7 +585,7 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 			if (value == null) value = "";
 			value = Misc.substitute(value,xml);
 			xml.add(name,value);
-			if (Misc.isLog(10)) Misc.log("Updating " + name + " with value " + value + " instead of deleting: " + xml);
+			if (Misc.isLog(10)) Misc.log("UCMDBAPI: Updating " + name + " with value " + value + " instead of deleting: " + xml);
 		}
 
 		if (customs.length > 0)
@@ -510,7 +601,7 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 			String[] end1values = end1.split("\n");
 			String[] end2values = end2.split("\n");
 
-			if (Misc.isLog(10)) Misc.log("Removing multiple relationship ends: " + xml);
+			if (Misc.isLog(10)) Misc.log("UCMDBAPI: Removing multiple relationship ends: " + xml);
 
 			for(String end1value:end1values) for(String end2value:end2values)
 			{
@@ -520,7 +611,7 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 				delete.add("END2",end2value);
 				delete.add("INFO",xml.getValue("INFO",null));
 
-				FillUpdateData(data,delete,null,true);
+				FillUpdateData(data,delete,true);
 				update.delete(data,DeleteMode.IGNORE_NON_EXISTING);
 			}
 			return;
@@ -537,17 +628,17 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 				delete.add("ID",id);
 				delete.add("INFO",xml.getValue("INFO",null));
 
-				FillUpdateData(data,delete,null,true);
+				FillUpdateData(data,delete,true);
 				update.delete(data,DeleteMode.IGNORE_NON_EXISTING);
 			}
 			return;
 		}
 
-		FillUpdateData(data,xml,null,true);
+		FillUpdateData(data,xml,true);
 		update.delete(data,DeleteMode.IGNORE_NON_EXISTING);
 	}
 
-	private void update(XML xml) throws Exception
+	private void update(XML xmldest,XML xml) throws Exception
 	{
 		String old1 = getUpdateValue(xml,"END1");
 		String old2 = getUpdateValue(xml,"END2");
@@ -556,7 +647,7 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 			String[] old1values = old1.split("\n");
 			String[] old2values = old2.split("\n");
 
-			if (Misc.isLog(10)) Misc.log("Update causing relationship recreation: " + xml);
+			if (Misc.isLog(10)) Misc.log("UCMDBAPI: Update causing relationship recreation: " + xml);
 
 			for(String old1value:old1values) for(String old2value:old2values)
 			{
@@ -567,10 +658,10 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 				delete.add("INFO",xml.getValue("INFO",null));
 
 				TopologyModificationData data = factory.createTopologyModificationData(adapterinfo + "/replace");
-				FillUpdateData(data,delete,null,true);
+				FillUpdateData(data,delete,true);
 				update.delete(data,DeleteMode.IGNORE_NON_EXISTING);
 			}
-			add(xml);
+			add(xmldest,xml);
 			return;
 		}
 
@@ -595,9 +686,9 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 		String oper = xmloper.getTagName();
 		try
 		{
-			if (oper.equals("add")) add(xmloper);
+			if (oper.equals("add")) add(xmldest,xmloper);
 			else if (oper.equals("remove")) remove(xmldest,xmloper);
-			else if (oper.equals("update")) update(xmloper);
+			else if (oper.equals("update")) update(xmldest,xmloper);
 		} catch(Exception ex) {
 			if (stoponerror) Misc.rethrow(ex);
 			Misc.log("ERROR: [" + getKeyValue() + "] " + Ucmdb.cleanupException(ex) + ": " + xmloper);

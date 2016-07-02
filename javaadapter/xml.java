@@ -92,6 +92,15 @@ class XML
 		return node;
 	}
 
+	public void setNS(String url,String prefix) throws Exception
+	{
+		Node node = dom.getDocumentElement();
+		if (!isElement(node)) return;
+
+		Element el = (Element)node;
+		el.setAttributeNS("http://www.w3.org/2000/xmlns/","xmlns:" + prefix,url);
+	}
+
 	private void init() throws Exception
 	{
 		SAXParserFactory factory = SAXParserFactory.newInstance();
@@ -827,22 +836,6 @@ class XML
 		return new XML(dom,newnode);
 	}
 
-	public XML addNS(String name,String ns) throws Exception
-	{
-		Element element = dom.createElementNS(ns,fixName(name));
-
-		Node newnode;
-		if (node == null)
-		{
-			newnode = dom.appendChild(element);
-			node = newnode;
-		}
-		else
- 			newnode = node.appendChild(element);
-
-		return new XML(dom,newnode);
-	}
-
 	public XML add(String name,String value) throws Exception
 	{
 		Element element = dom.createElement(fixName(name));
@@ -1001,12 +994,12 @@ class XML
 		return defaultvars;
 	}
 
-	static public boolean isNameChar(char ch)
+	static private boolean isNameChar(char ch,boolean isfirst)
 	{
-		if (ch >= 'a' && ch <= 'z') return true;
-		if (ch >= 'A' && ch <= 'Z') return true;
-		if (ch >= '0' && ch <= '9') return true;
-		if (ch == '.' || ch == '-' || ch == ':' || ch == '_') return true;
+		// See http://www.w3.org/TR/xml/#d0e804
+		if (ch == ':' || (ch >= 'A' && ch <= 'Z') || ch == '_' || (ch >= 'a' && ch <= 'z') || (ch >= '\u00c0' && ch <= '\u00d6') || (ch >= '\u00d8' && ch <= '\u00f6') || (ch >= '\u00f8' && ch <= '\u02ff') || (ch >= '\u0370' && ch <= '\u037d') || (ch >= '\u037f' && ch <= '\u1fff') || (ch >= '\u200c' && ch <= '\u200d') || (ch >= '\u2070' && ch <= '\u218f') || (ch >= '\u2c00' && ch <= '\u2fef') || (ch >= '\u3001' && ch <= '\ud7ff') || (ch >= '\uf900' && ch <= '\ufdcf') || (ch >= '\ufdf0' && ch <= '\ufffd')) return true;
+		if (isfirst) return false;
+		if (ch == '-' || ch == '.' || (ch >= '0' && ch <= '9') || ch == '\u00b7' || (ch >= '\u0300' && ch <= '\u036f') || (ch >= '\u203f' && ch <= '\u2040')) return true;
 		return false;
 	}
 
@@ -1015,7 +1008,7 @@ class XML
 		StringBuffer newname = new StringBuffer();
 		for(int i = 0;i < name.length();i++)
 		{
-			if (isNameChar(name.charAt(i)))
+			if (isNameChar(name.charAt(i),i == 0))
 				newname.append(name.charAt(i));
 			else
 				newname.append('_');

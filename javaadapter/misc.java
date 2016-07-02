@@ -1022,17 +1022,24 @@ class Misc
 		return new LinkedHashSet<String>(Arrays.asList(obj));
 	}
 
-	public static String getKeyValue(Set<String> keys,Map<String,String> map)
+	public static ArrayList<String> getKeyValueList(Set<String> keys,Map<String,String> map)
 	{
-		String keyvalue = null;
+		ArrayList<String> result = new ArrayList<String>();
 		Iterator<String> itr = keys.iterator();
 		while(itr.hasNext())
 		{
 			String itrvalue = map.get(itr.next());
 			if (itrvalue == null || itrvalue.isEmpty()) continue;
-			keyvalue = keyvalue == null ? itrvalue : keyvalue + "," + itrvalue;
+			result.add(itrvalue);
 		}
-		return keyvalue == null ? null : keyvalue;
+
+		return result;
+	}
+
+	public static String getKeyValue(Set<String> keys,Map<String,String> map)
+	{
+		ArrayList<String> result = getKeyValueList(keys,map);
+		return result.size() == 0 ? null : implode(result);
 	}
 
 	public static String getStringValue(String text)

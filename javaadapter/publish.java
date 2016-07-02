@@ -453,7 +453,10 @@ class Publisher
 			else if (type.equals("ldap"))
 			{
 				String url = el.getAttribute("url");
-				pub = new PublisherObject(new ldap(url,el.getAttribute("username"),el.getAttributeCrypt("password"),null,el.getAttribute("authentication"),el.getAttribute("referral"),el.getAttribute("derefAliases")));
+				String notrustssl = el.getAttribute("notrustssl");
+				boolean notrust = notrustssl != null && "true".equals(notrustssl);
+
+				pub = new PublisherObject(new ldap(url,el.getAttribute("username"),el.getAttributeCrypt("password"),null,el.getAttribute("authentication"),el.getAttribute("referral"),el.getAttribute("derefAliases"),notrust));
 			}
 
 			if (pub != null)

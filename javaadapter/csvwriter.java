@@ -45,6 +45,7 @@ class CsvWriter
 
 	public CsvWriter(Writer writer,Collection<String> headers) throws Exception
 	{
+		outlist = new HashMap<String,Writer>();
 		this.headers = headers;
 		defaultout = writer;
 		write(headers);
@@ -52,6 +53,7 @@ class CsvWriter
 
 	public CsvWriter(Writer writer) throws Exception
 	{
+		outlist = new HashMap<String,Writer>();
 		defaultout = writer;
 	}
 

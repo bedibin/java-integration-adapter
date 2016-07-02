@@ -185,21 +185,22 @@ class SyncLookup
 						if (keysplit.length > 1)
 						{
 							ArrayList<String> resultlist = new ArrayList<String>();
+							ArrayList<String> discardedlist = new ArrayList<String>();
 							for(String line:keysplit)
 							{
 								String lineresult = table.get(line);
 								if (lineresult == null)
-								{
-									// Fail even if only one is not found
-									resultlist = null;
-									result = null;
-									break;
-								}
-								resultlist.add(lineresult);
+									discardedlist.add(line);
+								else
+									resultlist.add(lineresult);
 							}
 
-							if (resultlist != null)
+							if (resultlist.size() == 0)
+								result = null;
+							else
 							{
+								if (discardedlist.size() > 0)
+									Misc.log("WARNING: Discarded entries when looking up multiple values for field " + fieldname + ": " + Misc.implode(discardedlist));
 								Collections.sort(resultlist,db.collator);
 								result = Misc.implode(resultlist,"\n");
 							}
@@ -493,7 +494,7 @@ class SyncLookup
 		for(SimpleLookup lookup:lookups)
 		{
 			SyncLookupResultErrorOperation erroroperation = lookup.oper(row,name);
-			if (Misc.isLog(25)) Misc.log("Lookup operation " + lookup.getName() + " returning " + erroroperation);
+			if (Misc.isLog(25)) Misc.log("Lookup operation " + lookup.getName() + " returning " + erroroperation.type);
 			if (erroroperation.type != SyncLookupResultErrorOperationTypes.NONE)
 				return erroroperation;
 		}
