@@ -188,7 +188,11 @@ class Publisher
 				rc.setRequestProperty("SOAPAction",action == null ? "" : action);
 			}
 			else if (type.equals("post"))
-				rc.setRequestProperty("Content-Type","application/x-www-form-urlencoded");
+			{
+				String content = node.getAttribute("content_type");
+				if (content == null) content = "application/x-www-form-urlencoded";
+				rc.setRequestProperty("Content-Type",content);
+			}
 
 			byte[] rawrequest = request.getBytes("UTF-8");
 			int len = rawrequest.length;

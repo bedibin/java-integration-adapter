@@ -34,7 +34,7 @@ class DBSyncOper
 			try
 			{
 				Writer writer = new BufferedWriter(new OutputStreamWriter(new FileOutputStream(csvfile),"UTF8"));
-				CsvWriter csv = new CsvWriter(writer);
+				CsvWriter csv = new CsvWriter(writer,reader.getHeader());
 
 				LinkedHashMap<String,String> row;
 				while((row = reader.next()) != null)
@@ -754,6 +754,7 @@ class DBSyncOper
 
 		public LinkedHashMap<String,String> getNextSub(Sync sync) throws Exception
 		{
+			final String traceid = "GETNEXT";
 			LinkedHashMap<String,String> result;
 
 			boolean doprocessing = !sync.isProcessed();
@@ -765,6 +766,13 @@ class DBSyncOper
 				if (doprocessing) setDefaultFields(result);
 				if (doprocessing) fieldloop: for(Field field:fields)
 				{
+					String rawkey = getKey(result);
+					if (tracekeys.contains(rawkey))
+					{
+						Misc.setTrace(traceid);
+						Misc.log("Record " + sync.getName() + ": " + Misc.implode(result));
+					}
+
 					Set<String> keyset = getKeys();
 					String keys = getDisplayKey(keyset,result);
 
@@ -935,10 +943,12 @@ class DBSyncOper
 
 				if (Misc.isLog(30)) Misc.log("PASSED: " + result);
 				if (doprocessing) sync.makeDump(result);
+				Misc.clearTrace(traceid);
 				return result;
 			}
 
 			if (doprocessing) sync.closeDump();
+			Misc.clearTrace(traceid);
 			return null;
 		}
 	}
@@ -971,6 +981,7 @@ class DBSyncOper
 	private Sync destinationsync;
 	private DatabaseUpdateSubscriber update;
 	private LinkedHashSet<String> displayfields;
+	private HashSet<String> tracekeys;
 	private ArrayList<String> ignorefields;
 	private Fields fields;
 	private Fields fieldssource;
@@ -1154,8 +1165,10 @@ class DBSyncOper
 							if (oldvalue != null)
 								xmlrow.setValue(oldvalue);
 						}
-						if (!isinfo && type.equals("infonull") && "".equals(newvalue))
+						if (type.equals("infonull") && "".equals(newvalue))
 							xmlrow.setAttribute("type","info");
+						else if (isinfo && type.equals("noinfo"))
+							xmlrow.removeAttribute("type");
 						else if (!isinfo || !type.equals("infoapi"))
 							xmlrow.setAttribute("type",type);
 					}
@@ -1355,6 +1368,7 @@ class DBSyncOper
 
 	private void compare() throws Exception
 	{
+		final String traceid = "COMPARE";
 		xmloperlist = new ArrayList<XML>();
 		counter = new RateCounter();
 
@@ -1408,6 +1422,14 @@ class DBSyncOper
 			if (javaadapter.isShuttingDown()) return;
 			if (tobreak) break;
 			counter.total++;
+			Misc.clearTrace(traceid);
+
+			if ((row != null && tracekeys.contains(sourcekey)) || (rowdest != null && tracekeys.contains(destkey)))
+			{
+				Misc.setTrace(traceid);
+				if (row != null) Misc.log("Source: " + Misc.implode(row));
+				if (rowdest != null) Misc.log("Destination: " + Misc.implode(rowdest));
+			}
 
 			if (Misc.isLog(11)) Misc.log("Key source: " + sourcekey + " dest: " + destkey);
 
@@ -1669,6 +1691,14 @@ class DBSyncOper
 			if (keyfield == null) keyfield = xmlsync.getAttribute("keyfields");
 			String displaykeyfield = xmlsync.getAttribute("display_keyfield");
 			displayfields = displaykeyfield == null ? null : new LinkedHashSet<String>(Arrays.asList(displaykeyfield.split("\\s*,\\s*")));
+
+			tracekeys = new HashSet<String>();
+			XML[] traces = xmlsync.getElements("trace");
+			for(XML trace:traces)
+			{
+				String tracekey = trace.getAttribute("key");
+				if (tracekey != null) tracekeys.add(tracekey);
+			}
 
 			XML[] sources = getFilenamePatterns(xmlsync.getElements("source"));
 			XML[] destinations = xmlsync.getElements("destination");

@@ -3,11 +3,15 @@ import javax.crypto.*;
 import javax.crypto.spec.*;
 import javax.naming.Context;
 import javax.naming.InitialContext;
+import java.security.SecureRandom;
+import java.security.MessageDigest;
+import java.util.Arrays;
 
 class crypt
 {
 	private Cipher encryptCipher;
 	private Cipher decryptCipher;
+	private String p = "$%gEHRT/HRyery3%Wrswt$Y/$RH35yerhEY%5&nf$";
 
 	public crypt() throws SecurityException
 	{
@@ -18,6 +22,13 @@ class crypt
 		int iterations = 3;
 
 		init(str,salt,iterations);
+	}
+
+	public byte[] deriveKey(String p,byte[] s,int i,int l) throws Exception
+	{
+		PBEKeySpec ks = new PBEKeySpec(p.toCharArray(),s,i,l);
+		SecretKeyFactory skf = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA1");
+		return skf.generateSecret(ks).getEncoded();
 	}
 
 	public void init(char[] pass,byte[] salt,int iterations) throws SecurityException
@@ -33,11 +44,47 @@ class crypt
 			decryptCipher = Cipher.getInstance("PBEWithMD5AndDES/CBC/PKCS5Padding");
 
 			decryptCipher.init(Cipher.DECRYPT_MODE,k,ps);
+		} catch (Exception e) {
+			throw new SecurityException("Could not encrypt: " + e.toString());
+		}
+	}
+
+	public synchronized String encryptStrong(String str) throws SecurityException
+	{
+		try
+		{
+			SecureRandom r = SecureRandom.getInstance("SHA1PRNG");
+			byte[] esalt = new byte[20]; r.nextBytes(esalt);
+			byte[] dek = deriveKey(p, esalt,100000,128);
+
+			SecretKeySpec eks = new SecretKeySpec(dek, "AES");
+			Cipher encryptCipher = Cipher.getInstance("AES/CTR/NoPadding");
+			encryptCipher.init(Cipher.ENCRYPT_MODE,eks,new IvParameterSpec(new byte[16]));
+			byte[] utf8 = str.getBytes("UTF-8");
+			byte[] es = encryptCipher.doFinal(utf8);
+
+			byte[] hsalt = new byte[20]; r.nextBytes(hsalt);
+			byte[] dhk = deriveKey(p, hsalt,100000,160);
+
+			SecretKeySpec hks = new SecretKeySpec(dhk,"HmacSHA256");
+			Mac m = Mac.getInstance("HmacSHA256");
+			m.init(hks);
+			byte[] hmac = m.doFinal(es);
+
+			byte[] os = new byte[40 + es.length + 32];
+			System.arraycopy(esalt,0,os,0,20);
+			System.arraycopy(hsalt,0,os,20,20);
+			System.arraycopy(es,0,os,40,es.length);
+			System.arraycopy(hmac,0,os,40 + es.length,32);
+
+			String encstr = new String(base64coder.encode(os));
+			return "!!" + encstr + "!";
 		}
 		catch (Exception e)
 		{
-			throw new SecurityException("Could not initialize crypt: " + e.toString());
+			throw new SecurityException("Could not encrypt: " + e.toString());
 		}
+
 	}
 
 	public synchronized String encrypt(String str) throws SecurityException
@@ -48,9 +95,7 @@ class crypt
 			byte[] enc = encryptCipher.doFinal(utf8);
 			String encstr = new String(base64coder.encode(enc));
 			return "!" + encstr + "!";
-		}
-		catch (Exception e)
-		{
+		} catch (Exception e) {
 			throw new SecurityException("Could not encrypt: " + e.toString());
 		}
 	}
@@ -79,14 +124,41 @@ class crypt
 			if (!(str.startsWith("!") && str.endsWith("!")))
 				return str;
 
+			if (str.startsWith("!!"))
+			{
+				str = str.substring(2,str.length() - 1);
+				byte[] os = base64coder.decode(str.toCharArray());
+				if (os.length <= 72) throw new SecurityException("Could not decrypt: Key too short");
+
+				byte[] esalt = Arrays.copyOfRange(os,0,20);
+				byte[] hsalt = Arrays.copyOfRange(os,20,40);
+				byte[] es = Arrays.copyOfRange(os,40,os.length - 32);
+				byte[] hmac = Arrays.copyOfRange(os,os.length - 32,os.length);
+				byte[] dhk = deriveKey(p,hsalt,100000,160);
+
+				SecretKeySpec hks = new SecretKeySpec(dhk,"HmacSHA256");
+				Mac m = Mac.getInstance("HmacSHA256");
+				m.init(hks);
+				byte[] chmac = m.doFinal(es);
+
+				if (!MessageDigest.isEqual(hmac,chmac)) throw new SecurityException("Could not decrypt: Key is invalid");
+
+				byte[] dek = deriveKey(p,esalt,100000,128);
+
+				SecretKeySpec eks = new SecretKeySpec(dek,"AES");
+				Cipher decryptCipher = Cipher.getInstance("AES/CTR/NoPadding");
+				decryptCipher.init(Cipher.DECRYPT_MODE,eks,new IvParameterSpec(new byte[16]));
+				byte[] s = decryptCipher.doFinal(es);
+
+				return new String(s,"UTF-8");
+			}
+
 			str = str.substring(1,str.length() - 1);
 			byte[] dec = base64coder.decode(str);
 			byte[] utf8 = decryptCipher.doFinal(dec);
 
 			return new String(utf8, "UTF-8");
-		}
-		catch (Exception e)
-		{
+		} catch (Exception e) {
 			throw new SecurityException("Could not decrypt: " + e.toString());
 		}
 	}

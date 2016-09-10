@@ -298,7 +298,7 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 		adapterinfo = ucmdb.getInfo();
 	}
 
-	private void FillUpdateData(TopologyModificationData data,XML xml,boolean isdelete) throws Exception
+	private void FillUpdateData(TopologyModificationData data,XML xml,String oper) throws Exception
 	{
 		final int debug = 15;
 		HashMap<String,Element> elements = new HashMap<String,Element>();
@@ -310,20 +310,28 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 			String tagname = field.getTagName();
 			String prefix = null;
 			String id = null;
+			XML idxml = null;
 			String end1id = null;
 			String end2id = null;
 			if (tagname.equals("INFO"))
 			{
 				prefix = "root";
-				id = xml.getValue("ID",null);
+				idxml = xml.getElement("ID");
 				end1id = xml.getValue("END1",null);
 				end2id = xml.getValue("END2",null);
 			}
 			else if (tagname.endsWith(":INFO") && !tagname.endsWith(":REL:INFO"))
 			{
 				prefix = tagname.substring(0,tagname.length() - ":INFO".length());
-				id = xml.getValue(prefix + ":ID",null);
+				idxml = xml.getElement(prefix + ":ID");
 			}
+
+			if (idxml != null)
+			{
+				id = idxml.getValue();
+				if (id == null) id = idxml.getValue("oldvalue",null);
+			}
+
 			String value = field.getValue();
 			if (prefix == null) continue;
 			if (value == null) throw new AdapterException(xml,"Value for element " + tagname + " cannot be empty");
@@ -337,7 +345,7 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 				continue;
 			}
 
-			if (Misc.isLog(debug)) Misc.log("UCMDBAPI: Defining CI type " + value + " with ID " + prefix);
+			if (Misc.isLog(debug)) Misc.log("UCMDBAPI: Defining CI type " + value + " with ID " + prefix + (id == null ? "" : ": " + id));
 			CI ci = id == null ? factory.createCI(value) : factory.createCI(factory.restoreCIIdFromString(id),value);
 			elements.put(prefix,ci);
 			data.addCI(ci);
@@ -374,13 +382,17 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 			String type = field.getAttribute("type");
 			if ("info".equals(type)) continue;
 			if ("infoapi".equals(type)) continue;
-			if (isdelete && !"key".equals(type)) continue;
 
-			XML old = field.getElement("oldvalue");
-			if (type != null && old != null)
+			if (!"key".equals(type))
 			{
-				String oldvalue = old.getValue();
-				if (type.equals("initial") && oldvalue != null) continue;
+				if (oper.equals("remove")) continue;
+				if (oper.equals("update"))
+				{
+					XML old = field.getElement("oldvalue");
+					if (old == null) continue;
+					String oldvalue = old.getValue();
+					if ("initial".equals(type) && oldvalue != null) continue;
+				}
 			}
 
 			String tagname = field.getTagName();
@@ -511,13 +523,13 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 			{
 				xml.setValue("END1",end1value);
 				xml.setValue("END2",end2value);
-				FillUpdateData(data,xml,false);
+				FillUpdateData(data,xml,"add");
 				update.create(data,CreateMode.UPDATE_EXISTING);
 			}
 			return;
 		}
 
-		FillUpdateData(data,xml,false);
+		FillUpdateData(data,xml,"add");
 		update.create(data,CreateMode.UPDATE_EXISTING);
 	}
 
@@ -563,13 +575,13 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 			{
 				idxml.setValue(id);
 
-				FillUpdateData(data,xml,false);
+				FillUpdateData(data,xml,"update");
 				update.update(data);
 			}
 			return;
 		}
 
-		FillUpdateData(data,xml,false);
+		FillUpdateData(data,xml,"update");
 		update.update(data);
 	}
 
@@ -611,7 +623,7 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 				delete.add("END2",end2value);
 				delete.add("INFO",xml.getValue("INFO",null));
 
-				FillUpdateData(data,delete,true);
+				FillUpdateData(data,delete,"remove");
 				update.delete(data,DeleteMode.IGNORE_NON_EXISTING);
 			}
 			return;
@@ -628,13 +640,13 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 				delete.add("ID",id);
 				delete.add("INFO",xml.getValue("INFO",null));
 
-				FillUpdateData(data,delete,true);
+				FillUpdateData(data,delete,"remove");
 				update.delete(data,DeleteMode.IGNORE_NON_EXISTING);
 			}
 			return;
 		}
 
-		FillUpdateData(data,xml,true);
+		FillUpdateData(data,xml,"remove");
 		update.delete(data,DeleteMode.IGNORE_NON_EXISTING);
 	}
 
@@ -658,7 +670,7 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 				delete.add("INFO",xml.getValue("INFO",null));
 
 				TopologyModificationData data = factory.createTopologyModificationData(adapterinfo + "/replace");
-				FillUpdateData(data,delete,true);
+				FillUpdateData(data,delete,"remove");
 				update.delete(data,DeleteMode.IGNORE_NON_EXISTING);
 			}
 			add(xmldest,xml);

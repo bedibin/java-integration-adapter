@@ -202,9 +202,11 @@ class ServiceManagerUpdateSubscriber extends UpdateSubscriber
 					instance.add(name,value);
 					continue;
 				}
-				XML old = field.getElement("oldvalue");
-				if (old != null)
+				if (oper.equals("remove")) continue;
+				if (oper.equals("update"))
 				{
+					XML old = field.getElement("oldvalue");
+					if (old == null) continue;
 					String oldvalue = old.getValue();
 					if (type.equals("initial") && oldvalue != null) continue;
 				}

@@ -130,6 +130,12 @@ public class javaadapter
 				System.out.println(str);
 				return;
 			}
+			else if (args[0].equals("cryptStrong"))
+			{
+				String str = crypter.encryptStrong(args[1]);
+				System.out.println(str);
+				return;
+			}
 
 			filename = args[0];
 		}

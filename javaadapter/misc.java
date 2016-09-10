@@ -158,6 +158,8 @@ class Misc
 	public static final Pattern substitutepattern = Pattern.compile("%([^%\n\\\\]*(?:\\\\.[^%\n\\\\]*)*)%");
 
 	private static int loglevel = 1;
+	private static boolean trace = false;
+	private static HashSet<String> tracearray = new HashSet<String>();
 	private static long maxsize = 0;
 	private static String logcharset;
 	private static String logfile;
@@ -243,6 +245,18 @@ class Misc
 		return getLocalDate(new java.util.Date());
 	}
 
+	static public void setTrace(String name)
+	{
+		tracearray.add(name);
+		trace = true;
+	}
+
+	static public void clearTrace(String name)
+	{
+		tracearray.remove(name);
+		trace = !tracearray.isEmpty();
+	}
+
 	static public void setLogTag(String tag)
 	{
 		logtag = tag;
@@ -250,7 +264,7 @@ class Misc
 
 	static public boolean isLog(int level)
 	{
-		return (level <= loglevel);
+		return (level <= loglevel || trace);
 	}
 
 	static public void log(String message,Object... args)
@@ -260,7 +274,7 @@ class Misc
 
 	static public void log(int level,String message,Object... args)
 	{
-		if (level > loglevel) return;
+		if (level > loglevel && !trace) return;
 		if (message == null) return;
 
 		String text = message;
@@ -283,7 +297,7 @@ class Misc
 		if (logtag != null)
 			taginfo = " [" + logtag + "]";
 
-		text = getLocalDate() + threadinfo + taginfo + " " + text + CR;
+		text = getLocalDate() + (trace ? " TRACE" : "") + threadinfo + taginfo + " " + text + CR;
 
 		try
 		{
