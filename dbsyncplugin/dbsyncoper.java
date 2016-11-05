@@ -121,7 +121,7 @@ class DBSyncOper
 			while((row = fields.getNext(sync)) != null)
 			{
 				if (!row.keySet().containsAll(fields.getKeys()))
-					throw new AdapterException("Sort operation requires all keys [" + Misc.implode(fields.getKeys()) + "]: " + Misc.implode(row));
+					throw new AdapterException("Sort operation requires all keys [" + Misc.implode(fields.getKeys()) + "] while reading " + sync.getDescription() + ": " + Misc.implode(row));
 				put(row);
 			}
 		}
@@ -747,7 +747,7 @@ class DBSyncOper
 			try {
 				return getNextSub(sync);
 			} catch(Exception ex) {
-				Misc.rethrow(ex,"ERROR: Exception generated while reading " + sync.getName());
+				Misc.rethrow(ex,"ERROR: Exception generated while reading " + sync.getDescription());
 			}
 			return null;
 		}
@@ -789,18 +789,22 @@ class DBSyncOper
 
 					try {
 						SyncLookupResultErrorOperation erroroper = lookup.check(result,name);
+						if (Misc.isLog(30)) Misc.log("Lookup check result " + erroroper.type);
 						switch(erroroper.type)
 						{
 						case NONE:
+							if (iskey && value == null) continue; // Skip not updated keys
+							break;
+						case NEWVALUE:
 							value = result.get(name);
 							break;
 						case ERROR:
-							Misc.log("ERROR: [" + sync.getName() + ":" + keys + "] Rejecting record since lookup for field " + field.getName() + " failed: " + (erroroper.msg == null ? "" : erroroper.msg + ": ") + result);
+							Misc.log("ERROR: [" + sync.getName() + ":" + keys + "] Rejecting record since lookup " + (erroroper.name == null ? "" : "[" + erroroper.name + "] ") + "for field " + field.getName() + " failed: " + (erroroper.msg == null ? "" : erroroper.msg + ": ") + result);
 						case REJECT_RECORD:
 							result = null;
 							break fieldloop;
 						case WARNING:
-							Misc.log("WARNING: [" + sync.getName() + ":" + keys + "] Rejecting field " + field.getName() + " since lookup failed: " + (erroroper.msg == null ? "" : erroroper.msg + ": ") + result);
+							Misc.log("WARNING: [" + sync.getName() + ":" + keys + "] Rejecting field " + field.getName() + " since lookup " + (erroroper.name == null ? "" : "[" + erroroper.name + "] ") + "failed: " + (erroroper.msg == null ? "" : erroroper.msg + ": ") + result);
 						case REJECT_FIELD:
 							if (iskey)
 								result.put(name,"");
@@ -808,7 +812,7 @@ class DBSyncOper
 								result.remove(name);
 							continue;
 						case EXCEPTION:
-							throw new AdapterException("[" + sync.getName() + ":" + keys + "] Invalid lookup for field " + field.getName() + ": " + (erroroper.msg == null ? "" : erroroper.msg + ": ") + result);
+							throw new AdapterException("[" + sync.getName() + ":" + keys + "] Invalid lookup " + (erroroper.name == null ? "" : "[" + erroroper.name + "] ") + "for field " + field.getName() + ": " + (erroroper.msg == null ? "" : erroroper.msg + ": ") + result);
 						}
 					} catch (Exception ex) {
 						Misc.rethrow(ex);

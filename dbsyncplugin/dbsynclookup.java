@@ -1,12 +1,13 @@
 import java.util.*;
 import java.io.FileNotFoundException;
 
-enum SyncLookupResultErrorOperationTypes { ERROR, WARNING, EXCEPTION, REJECT_FIELD, REJECT_RECORD, NONE };
+enum SyncLookupResultErrorOperationTypes { ERROR, WARNING, EXCEPTION, REJECT_FIELD, REJECT_RECORD, NEWVALUE, NONE };
 
 class SyncLookupResultErrorOperation
 {
 	public SyncLookupResultErrorOperationTypes type = SyncLookupResultErrorOperationTypes.NONE;
 	public String msg;
+	public String name;
 
 	public SyncLookupResultErrorOperation() {}
 
@@ -235,7 +236,7 @@ class SyncLookup
 		protected SyncLookupResultErrorOperationTypes erroroperation = SyncLookupResultErrorOperationTypes.NONE;
 		private boolean onlookupusekey = false;
 		private DB db;
-		protected String opername;
+		private String opername;
 
 		public SimpleLookup()
 		{
@@ -248,7 +249,7 @@ class SyncLookup
 
 		protected SimpleLookup(XML xml,String resultname) throws Exception
 		{
-			opername = xml.getTagName();
+			opername = xml.getAttribute("name");
 			xmllookup = xml;
 			db = DB.getInstance();
 
@@ -310,12 +311,18 @@ class SyncLookup
 				return new SyncLookupResultErrorOperation(erroroperation);
 
 			row.put(name,value);
-			return new SyncLookupResultErrorOperation();
+			return new SyncLookupResultErrorOperation(SyncLookupResultErrorOperationTypes.NEWVALUE);
 		}
 
 		public String getName()
 		{
 			return opername;
+		}
+
+		public String getNameDebug() throws Exception
+		{
+			if (opername != null) return opername;
+			return xmllookup.getTagName();
 		}
 	}
 
@@ -334,7 +341,7 @@ class SyncLookup
 				return new SyncLookupResultErrorOperation(erroroperation);
 
 			row.put(name,value);
-			return new SyncLookupResultErrorOperation();
+			return new SyncLookupResultErrorOperation(SyncLookupResultErrorOperationTypes.NEWVALUE);
 		}
 	}
 
@@ -351,8 +358,12 @@ class SyncLookup
 			String previous = row.get(name);
 			if (previous != null && !previous.isEmpty()) return new SyncLookupResultErrorOperation();
 
-			row.put(name,lookup(null));
-			return new SyncLookupResultErrorOperation();
+			String value = lookup(null);
+			if (value == null)
+				return new SyncLookupResultErrorOperation(erroroperation);
+
+			row.put(name,value);
+			return new SyncLookupResultErrorOperation(SyncLookupResultErrorOperationTypes.NEWVALUE);
 		}
 	}
 
@@ -414,7 +425,6 @@ class SyncLookup
 
 		public ScriptLookup(XML xml) throws Exception
 		{
-			opername = xml.getTagName();
 			xmllookup = xml;
 
 			String scope = xml.getAttribute("on_exception");
@@ -439,8 +449,11 @@ class SyncLookup
 		{
 			try {
 				String value = Script.execute(xmllookup.getValue(),row);
-			if (value != null)
-				row.put(name,value);
+				if (value != null)
+				{
+					row.put(name,value);
+					return new SyncLookupResultErrorOperation(SyncLookupResultErrorOperationTypes.NEWVALUE);
+				}
 			} catch (AdapterScriptException ex) {
 				return new SyncLookupResultErrorOperation(onexception,"SCRIPT EXCEPTION: " + ex.getMessage());
 			}
@@ -491,21 +504,30 @@ class SyncLookup
 
 	public SyncLookupResultErrorOperation check(LinkedHashMap<String,String> row,String name) throws Exception
 	{
+		SyncLookupResultErrorOperationTypes oper = SyncLookupResultErrorOperationTypes.NONE;
 		for(SimpleLookup lookup:lookups)
 		{
 			SyncLookupResultErrorOperation erroroperation = lookup.oper(row,name);
-			if (Misc.isLog(25)) Misc.log("Lookup operation " + lookup.getName() + " returning " + erroroperation.type);
-			if (erroroperation.type != SyncLookupResultErrorOperationTypes.NONE)
+			if (Misc.isLog(25)) Misc.log("Lookup operation " + lookup.getNameDebug() + " returning " + erroroperation.type + " oper " + oper);
+			if (oper != SyncLookupResultErrorOperationTypes.NEWVALUE || erroroperation.type != SyncLookupResultErrorOperationTypes.NONE)
+				oper = erroroperation.type;
+			if (erroroperation.type != SyncLookupResultErrorOperationTypes.NONE && erroroperation.type != SyncLookupResultErrorOperationTypes.NEWVALUE)
+			{
+				erroroperation.name = lookup.getName();
 				return erroroperation;
+			}
 		}
 
 		if (defaultvalue != null)
 		{
 			String value = row.get(name);
 			if  (value == null || value.isEmpty())
+			{
 				row.put(name,Misc.substitute(defaultvalue,row));
+				return new SyncLookupResultErrorOperation(SyncLookupResultErrorOperationTypes.NEWVALUE);
+			}
 		}
 
-		return new SyncLookupResultErrorOperation();
+		return new SyncLookupResultErrorOperation(oper);
 	}
 }

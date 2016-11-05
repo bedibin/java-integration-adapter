@@ -419,6 +419,7 @@ elementFormDefault="qualified">
 <xs:complexType name="namevalue">
 	<xs:attribute name="name" type="xs:string" use="required"/>
 	<xs:attribute name="value" type="xs:string"/>
+	<xs:attribute name="action" type="xs:string"/> <!-- customremove for SM API only -->
 	<xs:attributeGroup ref="activate"/>
 </xs:complexType>
 
@@ -820,8 +821,8 @@ elementFormDefault="qualified">
 									<xs:element name="customaddsql" type="simplestringfile"/>
 									<xs:element name="customupdatesql" type="simplestringfile"/>
 									<xs:element name="customremovesql" type="simplestringfile"/>
-									<xs:element name="customremove" type="namevalue"/> <!-- uCMDB reader -->
-									<xs:element name="customadd" type="namevalue"/> <!-- uCMDB reader -->
+									<xs:element name="customremove" type="namevalue"/>
+									<xs:element name="customadd" type="namevalue"/>
 									<xs:element name="element_function" type="function"/>
 								</xs:choice></xs:sequence>
 								<xs:attribute name="table" type="xs:string"/>

@@ -12,19 +12,26 @@ class CsvWriter
 	private Collection<String> headers;
 	private char enclosure = '"';
 	private char delimiter = ',';
+	private String charset = "ISO-8859-1";
 	private boolean do_header = true;
+
+	public CsvWriter(String filename,String charset) throws Exception
+	{
+		this.filename = filename;
+		if (charset != null) this.charset = charset;
+		outlist = new HashMap<String,Writer>();
+		if (Misc.isSubstituteDefault(filename)) return;
+		defaultout = new BufferedWriter(new OutputStreamWriter(new FileOutputStream(new File(javaadapter.getCurrentDir(),filename)),this.charset));
+	}
 
 	public CsvWriter(String filename) throws Exception
 	{
-		this.filename = filename;
-		outlist = new HashMap<String,Writer>();
-		if (Misc.isSubstituteDefault(filename)) return;
-		defaultout = new BufferedWriter(new OutputStreamWriter(new FileOutputStream(new File(javaadapter.getCurrentDir(),filename)),"ISO-8859-1"));
+		this(filename,(String)null);
 	}
 
 	public CsvWriter(String filename,XML xml) throws Exception
 	{
-		this(filename);
+		this(filename,xml.getAttribute("charset"));
 		setDelimiters(xml);
 	}
 
@@ -37,7 +44,7 @@ class CsvWriter
 
 	public CsvWriter(String filename,Collection<String> headers,XML xml) throws Exception
 	{
-		this(filename);
+		this(filename,xml.getAttribute("charset"));
 		setDelimiters(xml);
 		this.headers = headers;
 		if (defaultout != null) write(headers);

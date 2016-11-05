@@ -463,6 +463,10 @@ class DatabaseUpdateSubscriber extends UpdateSubscriber
 		String table = xmldest.getAttribute("table");
 		if (table == null) throw new AdapterException(xmldest,"dbsync: destination 'table' attribute required");
 
+		XML[] customs = xmldest.getElements("customadd");
+		if (customs.length > 0)
+			throw new AdapterException(xmldest,"customadd not supported yet for SQL operations");
+
 		String sql = "insert into " + table + " (";
 		String fieldnames = null;
 

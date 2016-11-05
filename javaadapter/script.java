@@ -34,7 +34,8 @@ class Script
 		{
 			String key = var.getKey();
 			if (key == null || key.isEmpty()) continue;
-			scope.putProperty(scope,key.replace(':','_'),var.getValue());
+			// Note: Use this["varname"] if variable name contains invalid characters like spaces or quotes
+			scope.putProperty(scope,key,var.getValue());
 		}
 
 		if (Misc.isLog(30)) Misc.log("Executing script: " + program);

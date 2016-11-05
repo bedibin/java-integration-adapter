@@ -1,5 +1,7 @@
 import java.util.*;
 import java.sql.*;
+import java.io.*;
+import java.util.zip.GZIPInputStream;
 import java.util.regex.*;
 import java.text.SimpleDateFormat;
 import java.text.Collator;
@@ -228,7 +230,6 @@ class DBOper
 {
 	private PreparedStatement stmt;
 	private ResultSet rset;
-	private boolean isselect = false;
 	private int columncount = 0;
 	protected String[] columnnames;
 	private int[] columntypes;
@@ -243,10 +244,8 @@ class DBOper
 		sql = sql.trim();
 		if (list != null) sql = replacementPattern.matcher(sql).replaceAll("?");
 
-		if (sql.startsWith("select") || sql.startsWith("SELECT"))
-			isselect = true;
 		String liststr = list == null ? "" : "; " + Misc.implode(list);
-		if (Misc.isLog(5)) Misc.log("SQL " + (isselect ? "SELECT " : "") + "query [" + dbc.getName() + "]: " + sql + liststr);
+		if (Misc.isLog(5)) Misc.log("SQL query [" + dbc.getName() + "]: " + sql + liststr);
 
 		stmt = dbc.prepareStatement(sql);
 
@@ -270,9 +269,9 @@ class DBOper
 			}
 		}
 
-		if (isselect)
+		if (stmt.execute())
 		{
-			rset = stmt.executeQuery();
+			rset = stmt.getResultSet();
 			ResultSetMetaData rsmd = rset.getMetaData();
 
 			columncount = rsmd.getColumnCount();
@@ -287,7 +286,7 @@ class DBOper
 		}
 		else
 		{
-			resultcount = stmt.executeUpdate();
+			resultcount = stmt.getUpdateCount();
 			if (Misc.isLog(15)) Misc.log("" + resultcount + " row updated");
 			close();
 		}
@@ -373,6 +372,12 @@ class DBOper
 		return resultcount;
 	}
 
+	static public boolean isCompressed(byte[] bytes)
+	{
+		if ((bytes == null) || (bytes.length < 2)) return false;
+		return ((bytes[0] == (byte)(GZIPInputStream.GZIP_MAGIC)) && (bytes[1] == (byte)(GZIPInputStream.GZIP_MAGIC >> 8)));
+	}
+
 	public LinkedHashMap<String,String> next() throws Exception
 	{
 		LinkedHashMap<String,String> row = new LinkedHashMap<String,String>();
@@ -380,6 +385,7 @@ class DBOper
 		if (stmt == null) return null;
 		if (javaadapter.isShuttingDown() || rset == null || !rset.next())
 		{
+			if (stmt.getMoreResults()) throw new AdapterException("Multiple result sets are not supported since they might have different columns. Join multiple selects with UNION instead");
 			close();
 			return null;
 		}
@@ -401,9 +407,25 @@ class DBOper
 				date = rset.getTimestamp(i+1,dbc.getCalendar());
 				break;
 			case Types.BLOB:
-				long length = rset.getBlob(i+1).length();
-				byte[] bytes = rset.getBlob(i+1).getBytes(1,(int)length);
-				value = new String(bytes);
+			case Types.LONGVARBINARY:
+				Blob blob = rset.getBlob(i+1);
+				byte[] bytes = blob.getBytes(1,(int)blob.length());
+				if (isCompressed(bytes))
+				{
+					ByteArrayInputStream bis = new ByteArrayInputStream(bytes);
+					GZIPInputStream gzis = new GZIPInputStream(bis);
+					InputStreamReader reader = new InputStreamReader(gzis);
+					StringBuilder sb = new StringBuilder();
+					int ch = reader.read();
+					while(ch != -1)
+					{
+						sb.append((char)ch);
+						ch = reader.read();
+					}
+					value = sb.toString();
+				}
+				else
+					value = new String(bytes);
 				break;
 			default:
 				value = rset.getString(i+1);
@@ -694,6 +716,7 @@ class DB
 			public String getValue(String param) throws Exception
 			{
 				DBConnection dbc = getConnectionByName(conn);
+				if (param.startsWith("$")) return Misc.substituteGet(param,null,dbc);
 				String value = Misc.substituteGet(param,row == null ? null : row.get(param),dbc);
 				return getFieldValue(value);
 			}
@@ -711,6 +734,7 @@ class DB
 			public String getValue(String param) throws Exception
 			{
 				DBConnection dbc = getConnectionByName(conn);
+				if (param.startsWith("$")) return Misc.substituteGet(param,null,dbc);
 				String value = Misc.substituteGet(param,finalxml.getStringByPath(param),dbc);
 				return getFieldValue(value);
 			}

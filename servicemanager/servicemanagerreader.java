@@ -136,11 +136,27 @@ class ServiceManagerUpdateSubscriber extends UpdateSubscriber
 		XML[] customs = null;
 		String oper = xmloper.getTagName();
 		String soapoper;
-		if (oper.equals("add")) soapoper = "Create";
+		if (oper.equals("add"))
+		{
+			customs = xmldest.getElements("customadd");
+			if (customs.length > 0)
+			{
+				String action = customs[0].getAttribute("action");
+				soapoper = action == null ? "Update" : action;
+			}
+			else
+				soapoper = "Create";
+		}
 		else if (oper.equals("remove"))
 		{
 			customs = xmldest.getElements("customremove");
-			soapoper = customs.length > 0 ? "Update" : "Delete";
+			if (customs.length > 0)
+			{
+				String action = customs[0].getAttribute("action");
+				soapoper = action == null ? "Update" : action;
+			}
+			else
+				soapoper = "Delete";
 		}
 		else if (oper.equals("update"))
 		{
@@ -212,19 +228,6 @@ class ServiceManagerUpdateSubscriber extends UpdateSubscriber
 				}
 			}
 
-			if (customs != null && customs.length > 1)
-			{
-				for(XML custom:customs)
-				{
-					String namecust = custom.getAttribute("name");
-					if (namecust == null) throw new AdapterException(custom,"Attribute 'name' required");
-					String valuecust = custom.getAttribute("value");
-					if (valuecust == null) valuecust = "";
-					setValue(instance,namecust,Misc.substitute(valuecust,xmloper));
-				}
-				continue;
-			}
-
 			if (name.startsWith("TABLE_"))
 			{
 				name = name.substring("TABLE_".length());
@@ -271,6 +274,18 @@ class ServiceManagerUpdateSubscriber extends UpdateSubscriber
 			}
 
 			setValue(struct,name,value);
+		}
+
+		if (customs != null && customs.length > 0)
+		{
+			for(XML custom:customs)
+			{
+				String namecust = custom.getAttribute("name");
+				if (namecust == null) throw new AdapterException(custom,"Attribute 'name' required");
+				String valuecust = custom.getAttribute("value");
+				if (valuecust == null) valuecust = "";
+				setValue(instance,namecust,Misc.substitute(valuecust,xmloper));
+			}
 		}
 
 		XML result = soap.publish(publisher);
