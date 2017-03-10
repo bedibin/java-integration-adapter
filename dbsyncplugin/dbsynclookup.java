@@ -5,9 +5,9 @@ enum SyncLookupResultErrorOperationTypes { ERROR, WARNING, EXCEPTION, REJECT_FIE
 
 class SyncLookupResultErrorOperation
 {
-	public SyncLookupResultErrorOperationTypes type = SyncLookupResultErrorOperationTypes.NONE;
-	public String msg;
-	public String name;
+	private SyncLookupResultErrorOperationTypes type = SyncLookupResultErrorOperationTypes.NONE;
+	private String msg;
+	private String name;
 
 	public SyncLookupResultErrorOperation() {}
 
@@ -20,6 +20,26 @@ class SyncLookupResultErrorOperation
 	{
 		this.type = type;
 		this.msg = msg;
+	}
+
+	public void setName(String name)
+	{
+		this.name = name;
+	}
+
+	public SyncLookupResultErrorOperationTypes getType()
+	{
+		return type;
+	}
+
+	public String getMessage()
+	{
+		return msg;
+	}
+
+	public String getName()
+	{
+		return name;
 	}
 }
 
@@ -60,25 +80,37 @@ class SyncLookup
 				}
 				catch(FileNotFoundException ex)
 				{
-					String onnotfound = xml.getAttribute("on_file_not_found");
-					if (onnotfound == null) onnotfound = xml.getAttributeDeprecated("on_not_found");
-					if (onnotfound == null || onnotfound.equals("exception"))
-						Misc.rethrow(ex);
-					else if (onnotfound.equals("ignore"))
-						return;
-					else if (onnotfound.equals("warning"))
+					xml.setAttributeDeprecated("on_not_found","on_file_not_found");
+					OnOper onnotfound = Field.getOnOper(xml,"on_file_not_found",OnOper.exception,EnumSet.of(OnOper.exception,OnOper.ignore,OnOper.warning,OnOper.error));
+					switch(onnotfound)
 					{
+					case exception:
+						Misc.rethrow(ex);
+					case ignore:
+						return;
+					case warning:
 						Misc.log("WARNING: Ignoring lookup operation since file not found: " + ex.getMessage());
 						return;
-					}
-					else if (onnotfound.equals("error"))
-					{
+					case error:
 						Misc.log("ERROR: Ignoring lookup operation since file not found: " + ex.getMessage());
 						return;
 					}
-					else
-						throw new AdapterException(xml,"Invalid on_file_not_found attribute");
 				}
+			}
+
+			void updateCache(HashMap<String,String> values)
+			{
+				if (fields == null || resultname == null) return;
+				String value = values.get(resultname);
+				if (value == null || value.isEmpty()) return;
+
+				Set<String> keys = values.keySet();
+				for(String field:fields)
+					if (!keys.contains(field))
+						return;
+
+				String key = Misc.getKeyValue(fields,values).toLowerCase();
+				table.put(key,value);
 			}
 
 			void doInitialLoading(LinkedHashMap<String,String> values) throws Exception
@@ -156,7 +188,7 @@ class SyncLookup
 				loadingdone = true;
 			}
 
-			public String getPreload(LinkedHashMap<String,String> values) throws Exception
+			public String getValue(LinkedHashMap<String,String> values) throws Exception
 			{
 				// Delay preloading until first use
 				if (!loadingdone) doInitialLoading(values);
@@ -253,24 +285,25 @@ class SyncLookup
 			xmllookup = xml;
 			db = DB.getInstance();
 
-			String onlookuperror = xml.getAttribute("on_lookup_error");
-			if (onlookuperror == null)
+			String attr = xml.getAttributeDeprecated("use_key_when_not_found");
+			if ("true".equals(attr)) onlookupusekey = true;
+
+			OnOper onlookuperror = Field.getOnOper(xml,"on_lookup_error",OnOper.ignore,EnumSet.of(OnOper.use_key,OnOper.ignore,OnOper.exception,OnOper.error,OnOper.warning));
+			switch(onlookuperror)
 			{
-				String attr = xml.getAttributeDeprecated("use_key_when_not_found");
-				if ("true".equals(attr)) onlookupusekey = true;
-			}
-			else if (onlookuperror.equals("use_key"))
+			case use_key:
 				onlookupusekey = true;
-			else if (onlookuperror.equals("ignore"))
-				;
-			else if (onlookuperror.equals("exception"))
+				break;
+			case exception:
 				erroroperation = SyncLookupResultErrorOperationTypes.EXCEPTION;
-			else if (onlookuperror.equals("error"))
+				break;
+			case error:
 				erroroperation = SyncLookupResultErrorOperationTypes.ERROR;
-			else if (onlookuperror.equals("warning"))
+				break;
+			case warning:
 				erroroperation = SyncLookupResultErrorOperationTypes.WARNING;
-			else
-				throw new AdapterException(xml,"Invalid on_lookup_error attribute " + onlookuperror);
+				break;
+			}
 
 			if (Misc.isSubstituteDefault(xml.getValue()))
 			{
@@ -282,10 +315,10 @@ class SyncLookup
 			preloadinfo = new Preload(xml,resultname);
 		}
 
-		protected String lookup(LinkedHashMap<String,String> row) throws Exception
+		protected final String lookup(LinkedHashMap<String,String> row) throws Exception
 		{
 			if (preloadinfo != null)
-				return preloadinfo.getPreload(row);
+				return preloadinfo.getValue(row);
 
 			if (Misc.isLog(15)) Misc.log("Lookup: Doing lookup for " + fieldname);
 
@@ -314,12 +347,17 @@ class SyncLookup
 			return new SyncLookupResultErrorOperation(SyncLookupResultErrorOperationTypes.NEWVALUE);
 		}
 
-		public String getName()
+		public final void updateCache(HashMap<String,String> row)
+		{
+			if (preloadinfo != null) preloadinfo.updateCache(row);
+		}
+
+		public final String getName()
 		{
 			return opername;
 		}
 
-		public String getNameDebug() throws Exception
+		public final String getNameDebug() throws Exception
 		{
 			if (opername != null) return opername;
 			return xmllookup.getTagName();
@@ -375,21 +413,25 @@ class SyncLookup
 		{
 			super(xml,null);
 
-			String scope = xml.getAttribute("on_exclude");
-			if (scope == null || scope.equals("reject_record"))
-				;
-			else if (scope.equals("ignore"))
+			OnOper scope = Field.getOnOper(xml,"on_exclude",OnOper.reject_record,EnumSet.of(OnOper.ignore,OnOper.reject_field,OnOper.error,OnOper.warning,OnOper.exception));
+			switch(scope)
+			{
+			case ignore:
 				onexclude = SyncLookupResultErrorOperationTypes.NONE;
-			else if (scope.equals("reject_field"))
+				break;
+			case reject_field:
 				onexclude = SyncLookupResultErrorOperationTypes.REJECT_FIELD;
-			else if (scope.equals("error"))
+				break;
+			case error:
 				onexclude = SyncLookupResultErrorOperationTypes.ERROR;
-			else if (scope.equals("warning"))
+				break;
+			case warning:
 				onexclude = SyncLookupResultErrorOperationTypes.WARNING;
-			else if (scope.equals("exception"))
+				break;
+			case exception:
 				onexclude = SyncLookupResultErrorOperationTypes.EXCEPTION;
-			else
-				throw new AdapterException(xml,"Invalid on_exclude attribute");
+				break;
+			}
 		}
 
 		@Override
@@ -427,21 +469,25 @@ class SyncLookup
 		{
 			xmllookup = xml;
 
-			String scope = xml.getAttribute("on_exception");
-			if (scope == null || scope.equals("warning"))
-				;
-			else if (scope.equals("ignore"))
+			OnOper scope = Field.getOnOper(xml,"on_exception",OnOper.warning,EnumSet.of(OnOper.warning,OnOper.ignore,OnOper.reject_field,OnOper.error,OnOper.reject_record,OnOper.exception));
+			switch(scope)
+			{
+			case ignore:
 				onexception = SyncLookupResultErrorOperationTypes.NONE;
-			else if (scope.equals("reject_field"))
+				break;
+			case reject_field:
 				onexception = SyncLookupResultErrorOperationTypes.REJECT_FIELD;
-			else if (scope.equals("error"))
+				break;
+			case error:
 				onexception = SyncLookupResultErrorOperationTypes.ERROR;
-			else if (scope.equals("reject_record"))
+				break;
+			case reject_record:
 				onexception = SyncLookupResultErrorOperationTypes.REJECT_RECORD;
-			else if (scope.equals("exception"))
+				break;
+			case exception:
 				onexception = SyncLookupResultErrorOperationTypes.EXCEPTION;
-			else
-				throw new AdapterException(xml,"Invalid on_exception attribute");
+				break;
+			}
 		}
 
 		@Override
@@ -466,15 +512,13 @@ class SyncLookup
 	private String fieldname;
 	private String defaultlookupvalue;
 	private String defaultvalue;
+	private int count;
 
-	public SyncLookup(DBSyncOper.Field field) throws Exception
+	public SyncLookup(Field field) throws Exception
 	{
 		fieldname = field.getName();
-	}
-
-	public SyncLookup(XML xml,DBSyncOper.Field field) throws Exception
-	{
-		this(field);
+		XML xml = field.getXML();
+		if (xml == null) return;
 
 		XML[] elements = xml.getElements(null);
 		for(XML element:elements)
@@ -494,11 +538,14 @@ class SyncLookup
 				lookups.add(new ScriptLookup(element));
 		}
 
+		count = lookups.size();
+
 		if (xml.isAttribute("default"))
 		{
 			defaultvalue = xml.getAttribute("default");
 			if (defaultvalue == null) defaultvalue = "";
 			if (Misc.isLog(10)) Misc.log("Field: Default " + fieldname + " value: " + defaultvalue);
+			count++;
 		}
 	}
 
@@ -508,12 +555,12 @@ class SyncLookup
 		for(SimpleLookup lookup:lookups)
 		{
 			SyncLookupResultErrorOperation erroroperation = lookup.oper(row,name);
-			if (Misc.isLog(25)) Misc.log("Lookup operation " + lookup.getNameDebug() + " returning " + erroroperation.type + " oper " + oper);
-			if (oper != SyncLookupResultErrorOperationTypes.NEWVALUE || erroroperation.type != SyncLookupResultErrorOperationTypes.NONE)
-				oper = erroroperation.type;
-			if (erroroperation.type != SyncLookupResultErrorOperationTypes.NONE && erroroperation.type != SyncLookupResultErrorOperationTypes.NEWVALUE)
+			if (Misc.isLog(25)) Misc.log("Lookup operation " + lookup.getNameDebug() + " returning " + erroroperation.getType() + " oper " + oper);
+			if (oper != SyncLookupResultErrorOperationTypes.NEWVALUE || erroroperation.getType() != SyncLookupResultErrorOperationTypes.NONE)
+				oper = erroroperation.getType();
+			if (erroroperation.getType() != SyncLookupResultErrorOperationTypes.NONE && erroroperation.getType() != SyncLookupResultErrorOperationTypes.NEWVALUE)
 			{
-				erroroperation.name = lookup.getName();
+				erroroperation.setName(lookup.getName());
 				return erroroperation;
 			}
 		}
@@ -529,5 +576,16 @@ class SyncLookup
 		}
 
 		return new SyncLookupResultErrorOperation(oper);
+	}
+
+	public void updateCache(HashMap<String,String> row)
+	{
+		for(SimpleLookup lookup:lookups)
+			lookup.updateCache(row);
+	}
+
+	public int getCount()
+	{
+		return count;
 	}
 }

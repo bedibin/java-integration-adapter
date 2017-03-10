@@ -289,7 +289,7 @@ class Publisher
 
 				if (command.equals("-"))
 				{
-					XML xml = new XML(new StringBuffer(string));
+					XML xml = new XML(new StringBuilder(string));
 					XML resultxml = new XML();
 					resultxml.add("output",Misc.exec(xml.getValue(),charset,null));
 					result = resultxml.toString();
@@ -311,7 +311,7 @@ class Publisher
 
 			if (direct)
 			{
-				XML xml = new XML(new StringBuffer(string));
+				XML xml = new XML(new StringBuilder(string));
 				String subname = node.getAttribute("name");
 				ArrayList<Subscriber> sublist = javaadapter.subscriberGet(subname);
 				if (sublist == null)
@@ -331,7 +331,7 @@ class Publisher
 
 			if (ld != null)
 			{
-				XML xml = new XML(new StringBuffer(string));
+				XML xml = new XML(new StringBuilder(string));
 				XML resultxml = ld.oper(xml,node);
 				if (resultxml == null) return null;
 				result = resultxml.toString();
@@ -526,6 +526,6 @@ class Publisher
 		if (result.toLowerCase().startsWith("<html>"))
 			throw new AdapterException(xmlpublisher,"HTML received from publisher when XML is expected: " + result + Misc.CR + "Message was: " + str);
 
-		return new XML(new StringBuffer(result));
+		return new XML(new StringBuilder(result));
 	}
 }

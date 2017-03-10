@@ -12,6 +12,8 @@ class CsvWriter
 	private Collection<String> headers;
 	private char enclosure = '"';
 	private char delimiter = ',';
+	private char list_delimiter = 0;
+	private boolean forceenclosure = false;
 	private String charset = "ISO-8859-1";
 	private boolean do_header = true;
 
@@ -47,7 +49,7 @@ class CsvWriter
 		this(filename,xml.getAttribute("charset"));
 		setDelimiters(xml);
 		this.headers = headers;
-		if (defaultout != null) write(headers);
+		if (defaultout != null && headers != null) write(headers);
 	}
 
 	public CsvWriter(Writer writer,Collection<String> headers) throws Exception
@@ -72,18 +74,30 @@ class CsvWriter
 		String enclosure = Misc.unescape(xml.getAttribute("enclosure"));
 		if (enclosure != null) this.enclosure = enclosure.charAt(0);
 
+		String list_delimiter = Misc.unescape(xml.getAttribute("list_delimiter"));
+		if (list_delimiter != null) this.list_delimiter = list_delimiter.charAt(0);
+
+		String forceenclosure = xml.getAttribute("force_enclosure");
+		this.forceenclosure = forceenclosure != null && forceenclosure.equals("true");
+
 		String header = xml.getAttribute("header");
 		if (header != null && header.equals("false"))
 			do_header = false;
 	}
 
-	public void setDelimiters(char enclosure,char delimiter)
+	public void setDelimiters(char enclosure,char delimiter,char list_delimiter)
 	{
 		this.enclosure = enclosure;
 		this.delimiter = delimiter;
+		this.list_delimiter = list_delimiter;
 	}
 
 	private String escape(String value) throws Exception
+	{
+		return escape(value,enclosure,delimiter,list_delimiter,forceenclosure);
+	}
+
+	public static String escape(String value,char enclosure,char delimiter,char list_delimiter,boolean forceenclosure) throws Exception
 	{
 		if (value == null) return "";
 		if (value.matches("\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}"))
@@ -94,8 +108,9 @@ class CsvWriter
 		}
 
 		value = value.replace("" + enclosure,"" + enclosure + enclosure);
-		if (value.contains("" + delimiter) || value.contains("\n") || value.contains("\""))
+		if (forceenclosure || (value.contains("" + delimiter) || value.contains("" + enclosure) || value.contains("\n") || value.contains("\r")))
 			value = enclosure + value + enclosure;
+		if (list_delimiter != 0) value = value.replace('\n',list_delimiter);
 		return value;
 	}
 

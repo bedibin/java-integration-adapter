@@ -45,7 +45,7 @@ class AMDBOper extends DBOper
 		if (sql.startsWith("select") || sql.startsWith("SELECT"))
 		{
 			String out = AmApi.AmQuery(db.getAMConnection(),sql,0,0,true);
-			StringBuffer sb = new StringBuffer(out);
+			StringBuilder sb = new StringBuilder(out);
 			XML xml = new XML(sb);
 
 			XML[] columnlist = xml.getElement("Schema").getElements("Column");
@@ -182,10 +182,7 @@ class AMDB extends DB
 			// Do not do timezone conversion on a simple date
 			return "#" + value + "#";
 		if (value.matches("-\\d+") || value.matches("-\\d+\\.\\d+"))
-		{
-			value = currencyformat.getNegativePrefix() + value.replace("-","") + currencyformat.getNegativeSuffix();
-			value = value.replace(currencyformat.getCurrency().getSymbol(),"");
-		}
+			return value;
 		value = value.replace("'","''");
 		value = value.replace("\r","");
 		value = value.replace("\n","' + char(13) + char(10) + '");
@@ -251,20 +248,6 @@ class AssetManagerUpdateSubscriber extends DatabaseUpdateSubscriber
 	{
 		db = AMDB.getInstance();
 		setQuoteField("");
-	}
-
-	@Override
-	protected void oper(XML xmldest,XML xmloper) throws Exception
-	{
-		try
-		{
-			super.oper(xmldest,xmloper);
-		}
-		catch(AmException ex)
-		{
-			if (stoponerror) Misc.rethrow(ex);
-			Misc.log("ERROR: " + ex.getMessage() + Misc.CR + "XML message was: " + xmloper);
-		}
 	}
 }
 

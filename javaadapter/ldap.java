@@ -2,6 +2,7 @@ import java.util.*;
 import javax.naming.*;
 import javax.naming.directory.*;
 import javax.naming.ldap.*;
+import java.util.regex.*;
 
 class directory
 {
@@ -99,9 +100,10 @@ class directory
 
 	public directory(String url,String context,String username,String password,String auth) throws Exception
 	{
+		dirname = context;
 		Properties env = new Properties();
 		env.put(Context.INITIAL_CONTEXT_FACTORY,context);
-		env.put(Context.PROVIDER_URL,url);
+		if (url != null) env.put(Context.PROVIDER_URL,url);
 		if (username != null) env.put(Context.SECURITY_PRINCIPAL,username);
                 if (password != null) env.put(Context.SECURITY_CREDENTIALS,password);
 		if (auth != null) env.put(Context.SECURITY_AUTHENTICATION,auth);
@@ -111,6 +113,27 @@ class directory
 	protected String getRelativeName(String name) throws Exception
 	{
 		return name;
+	}
+
+	public LinkedHashMap<String,List<String>> read(String dn,String[] fields) throws Exception
+	{
+		LinkedHashMap<String,List<String>> result = new LinkedHashMap<String,List<String>>();
+		Attributes set = ctx.getAttributes(dn,fields);
+
+		NamingEnumeration<String> ids = set.getIDs();
+		while(ids != null && ids.hasMore())
+		{
+			String id = ids.next();
+			Attribute attr = set.get(id);
+
+			List<String> values = new ArrayList<String>();
+			for(int i = 0;i < attr.size();i++)
+				values.add(attr.get(i).toString());
+
+			result.put(id,values);
+		}
+
+		return result;
 	}
 
 	private XML read(String dn,XML sourcexml) throws Exception
@@ -281,7 +304,7 @@ class directory
 				Misc.log("WARNING: " + root + " operation cannot be done since " + dn + " doesn't exist");
 				return null;
 			}
-			SearchResult entry = (SearchResult)results.next();
+			SearchResult entry = results.next();
 
 			dn = entry.getName();
 			if (basedn != null && !Misc.endsWithIgnoreCase(dn,basedn))
@@ -367,7 +390,41 @@ class ldap extends directory
 
 		Properties env = new Properties();
 		env.put(Context.INITIAL_CONTEXT_FACTORY,"com.sun.jndi.ldap.LdapCtxFactory");
-		env.put(Context.PROVIDER_URL,url);
+		if (url.contains(" "))
+			env.put(Context.PROVIDER_URL,url);
+		else
+		{
+			dns resolve = new dns();
+			Pattern urlpat = Pattern.compile("^(\\S+://)([^/]+)(.*)$");
+			Matcher urlmatch = urlpat.matcher(url);
+			if (urlmatch.find())
+			{
+				List<String> servers;
+				try {
+					servers = resolve.readSRV("_ldap._tcp." + urlmatch.group(2));
+				} catch (NameNotFoundException ex) {
+					servers = resolve.readSRV(urlmatch.group(2));
+				}
+				if (servers.size() > 0)
+				{
+					StringBuilder sb = new StringBuilder();
+					String sep = "";
+					for(String server:servers)
+					{
+						sb.append(sep);
+						sb.append(urlmatch.group(1) + server + urlmatch.group(3));
+						sep = " ";
+					}
+
+					if (Misc.isLog(3)) Misc.log("Updated URL: " + sb.toString());
+					env.put(Context.PROVIDER_URL,sb.toString());
+				}
+				else
+					env.put(Context.PROVIDER_URL,url);
+			}
+			else
+				env.put(Context.PROVIDER_URL,url);
+		}
 		if (username != null) env.put(Context.SECURITY_PRINCIPAL,username);
     		if (password != null) env.put(Context.SECURITY_CREDENTIALS,password);
     		if (auth != null) env.put(Context.SECURITY_AUTHENTICATION,auth);
@@ -466,4 +523,38 @@ class ldap extends directory
 		return name.substring(0,pos);
 	}
 
+}
+
+class dns extends directory
+{
+	public dns() throws Exception
+	{
+		super("DNS");
+
+		Properties env = new Properties();
+		env.put(Context.INITIAL_CONTEXT_FACTORY,"com.sun.jndi.dns.DnsContextFactory");
+		ctx = new InitialDirContext(env);
+	}
+
+	public List<String> readSRV(String dn) throws Exception
+	{
+		String[] fields = {"SRV"};
+		List<String> servers = new ArrayList<String>();
+		LinkedHashMap<String,List<String>> result = read(dn,fields);
+		for(Map.Entry<String,List<String>> entry:result.entrySet())
+		{
+			List<String> values = entry.getValue();
+			for(int i = 0;i < values.size();i++)
+			{
+				String value = values.get(i);
+				if (value != null)
+				{
+					String[] parts = value.split("\\s+");
+					if (parts.length > 3)
+						servers.add(parts[3].replaceAll("\\.+$",""));
+				}
+			}
+		}
+		return servers;
+	}
 }

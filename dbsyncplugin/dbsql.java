@@ -13,6 +13,24 @@ interface ComparatorIgnoreCase<T> extends Comparator<T>
 	public int compareIgnoreCase(T a,T b);
 }
 
+interface DBProcessor
+{
+	public String getFieldValue(byte[] bytes) throws Exception;
+}
+
+class DBProcessorManager
+{
+	static HashMap<String,DBProcessor> processorList = new HashMap<String,DBProcessor>();
+	static synchronized public void register(DBProcessor processor)
+	{
+		processorList.put(processor.getClass().getName(),processor);
+	}
+	static synchronized public DBProcessor get(String name)
+	{
+		return processorList.get(name);
+	}
+}
+
 class ConnectionTimeout extends Thread
 {
 	private Connection conn;
@@ -68,6 +86,7 @@ class DBConnection implements VariableContext
 	private TimeZone timezone;
 	private XML xml;
 	private String name;
+	private Set<String> processors = new TreeSet<String>();
 
 	public static final String ORACLEJDBCDRIVER = "oracle.jdbc.driver.OracleDriver";
 	private static final String SQLSERVERJDBCDRIVER = "com.microsoft.sqlserver.jdbc.SQLServerDriver";
@@ -80,6 +99,11 @@ class DBConnection implements VariableContext
 	{
 		init(xml);
 		this.xml = xml;
+	}
+
+	public Set<String> getProcessors()
+	{
+		return processors;
 	}
 
 	private void execsql(String sql) throws SQLException
@@ -119,6 +143,10 @@ class DBConnection implements VariableContext
 			if (Misc.isLog(5)) Misc.log("DB " + name + " timezone is " + timezone.getDisplayName());
 			calendar.setTimeZone(timezone);
 		}
+
+		XML[] xmlprolist = xml.getElements("processor");
+		for(XML xmlpro:xmlprolist)
+			processors.add(xmlpro.getValue());
 
 		if (urlstr == null || (driverstr != null && driverstr.equals(ORACLEJDBCDRIVER)))
 		{
@@ -392,6 +420,12 @@ class DBOper
 
 		for(int i = 0;i < columnnames.length;i++)
 		{
+			if (rset.getObject(i+1) == null)
+			{
+				row.put(columnnames[i],"");
+				continue;
+			}
+
 			String value = null;
 			java.util.Date date = null;
 
@@ -414,18 +448,26 @@ class DBOper
 				{
 					ByteArrayInputStream bis = new ByteArrayInputStream(bytes);
 					GZIPInputStream gzis = new GZIPInputStream(bis);
-					InputStreamReader reader = new InputStreamReader(gzis);
-					StringBuilder sb = new StringBuilder();
-					int ch = reader.read();
-					while(ch != -1)
-					{
-						sb.append((char)ch);
-						ch = reader.read();
-					}
-					value = sb.toString();
+					ByteArrayOutputStream out = new ByteArrayOutputStream();
+
+					int len;
+					byte[] buffer = new byte[1024];
+					while ((len = gzis.read(buffer)) > 0)
+						out.write(buffer,0,len);
+
+					gzis.close();
+					out.close();
+
+					bytes = out.toByteArray();
 				}
-				else
-					value = new String(bytes);
+
+				for(String name:dbc.getProcessors())
+				{
+					DBProcessor processor = DBProcessorManager.get(name);
+					value = processor.getFieldValue(bytes);
+					if (value != null) break;
+				}
+				if (value == null) value = new String(bytes);
 				break;
 			default:
 				value = rset.getString(i+1);
@@ -486,6 +528,10 @@ class DB
 				withdriver = true;
 				Class.forName(driver);
 			}
+
+			XML[] xmlprolist = el.getElements("processor");
+			for(XML xmlpro:xmlprolist)
+				Class.forName(xmlpro.getValue());
 		}
 
 		if (withbd && !withdriver) Class.forName(DBConnection.ORACLEJDBCDRIVER);
@@ -562,6 +608,26 @@ class DB
 		return field + " || " + addedfield;
 	}
 
+	public String getFieldEqualsValue(String field,String value) throws Exception
+	{
+		if (value == null) return field + " is null";
+
+		String[] valuesplit = value.split("\n");
+		if (valuesplit.length == 1)
+			return field + " = " + getValue(value,field);
+
+		StringBuilder sql = new StringBuilder(field + " in (");
+		String sep = "";
+		for(int i = 0;i < valuesplit.length;i++)
+		{
+			sql.append(sep + getValue(valuesplit[i],field));
+			sep = ",";
+		}
+
+		sql.append(")");
+		return sql.toString();
+	}
+
 	public DBConnection getConnectionByName(String name) throws Exception
 	{
 		DBConnection dbc = db.get(name);
@@ -591,7 +657,7 @@ class DB
 		{
 			keyfield = dbc.getQuote() + keyfield + dbc.getQuote();
 			if (ignore_case) keyfield = "upper(" + keyfield + ")";
-			keyfield = "replace(replace(rtrim(ltrim(coalesce(" + keyfield + ",''))),' ','!'),'_','!')";
+			keyfield = "replace(replace(replace(rtrim(ltrim(coalesce(" + keyfield + ",''))),' ','!'),'_','!'),'\t','!')";
 			switch(dbc.getType())
 			{
 			case MYSQL:

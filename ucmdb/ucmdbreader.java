@@ -6,7 +6,16 @@ import com.hp.ucmdb.api.view.*;
 import com.hp.ucmdb.api.view.result.*;
 import com.hp.ucmdb.api.types.*;
 import com.hp.ucmdb.api.topology.*;
+import com.hp.ucmdb.api.topology.queryparameter.*;
 import com.hp.ucmdb.api.classmodel.*;
+
+/* Rules for relations:
+First prefix including the semicolumn is optionnal
+END1:END2:REL = END2:END1:RREL
+END1::REL = END1:RREL
+END2:REL = END2::RREL
+If multiple relations between 2 CIs: END1:END2:REL_x
+*/
 
 class Ucmdb
 {
@@ -72,14 +81,10 @@ class Ucmdb
 
 	static final Pattern causedbypattern = Pattern.compile("Caused by:\\s.*?:\\s+(\\S.+)$",Pattern.MULTILINE);
 
-	public static String cleanupException(Exception ex) throws Exception
+	public static String cleanupException(Exception ex)
 	{
 		String error = ex.getMessage();
-		if (error == null)
-		{
-			Misc.rethrow(ex);
-			return ex.getClass().getName();
-		}
+		if (error == null) return ex.getClass().getName();
 
 		Matcher matcher = causedbypattern.matcher(error);
 		HashSet<String> causes = new HashSet<String>();
@@ -103,78 +108,46 @@ class ReaderUCMDB extends ReaderUtil
 {
 	Iterator<TopologyCI> cis;
 	Topology topo;
-	String root;
+	String rootname;
 	Map<UcmdbId,Set<String>> mapids;
 	Ucmdb ucmdb = Ucmdb.getInstance();
 
 	public ReaderUCMDB(XML xml) throws Exception
 	{
+		super(xml);
+
 		String queryname = xml.getAttribute("query");
-		root = xml.getAttribute("root");
-		if (root == null) root = "Root";
+		if (instance == null) instance = queryname;
+		rootname = xml.getAttribute("root");
+		if (rootname == null) rootname = "Root";
 
 		TopologyQueryService queryService = ucmdb.getQuery();
 		TopologyQueryFactory queryFactory = queryService.getFactory();
 
 		Query query = queryFactory.createNamedQuery(queryname);
 		ExecutableQuery execquery = query.toExecutable();
-/*
-		execquery.setMaxChunkSize(2);
 
-		String sortfields = xml.getAttribute("sort_fields");
-		if (sortfields == null) throw new AdapterException(xml,"sort_fields attribute is mandatory");
-		String[] sortattrs = sortfields.split("\\s*,\\s*");
-		ArrayList<AttributeSortingRule> sortlist = new ArrayList<AttributeSortingRule>();
-		for(String attr:sortattrs)
-			sortlist.add(queryFactory.createAttributeSortingOrderElement(attr,AttributeSortingOrderElementDirection.ASCENDING));
-
-		CIsChunk chunk = queryService.retrieveCIsSortedChunk(execquery,"Root",sortlist);
-		Query subquery = queryFactory.createNamedQuery(queryname);
-		QueryDefinition querydef = subquery.getDefinition();
-		QueryNode node = querydef.getNode(root);
-		ArrayList<UcmdbId> rootids = new ArrayList<UcmdbId>();
-		for(CI ci:chunk.cis())
-			rootids.add(ci.getId());
-		node.withIds(rootids);
-		Topology subtopo = queryService.executeQuery(subquery.toExecutable());
-		mapids = subtopo.getContainingNodesMap();
-		for(CI root:chunk.cis())
+		QueryParameters queryparams = execquery.queryParameters();
+		XML[] xmlparams = xml.getElements("param");
+		for(XML xmlparam:xmlparams)
 		{
-			ArrayList<UcmdbId> ids = new ArrayList<UcmdbId>();
-			HashMap<String,String> row = new HashMap<String,String>();
-			setProperties(null,row,root);
-			getRelated(subtopo.getCI(root.getId()),ids,row);
+			String value = xmlparam.getAttribute("value");
+			queryparams.addValue(xmlparam.getAttribute("name"),Misc.substitute(value));
 		}
 
-		System.exit(0);
-*/
 		topo = queryService.executeQuery(execquery);
-		Collection<TopologyCI> topocis = topo.getCIsByName(root);
+		Collection<TopologyCI> topocis = topo.getCIsByName(rootname);
 		if (Misc.isLog(30)) Misc.log("TopologyCIS: " + topocis);
 		cis = topocis.iterator();
 		mapids = topo.getContainingNodesMap();
 	}
 
-	private String setProperties(String prefix,LinkedHashMap<String,String> row,Element element)
+	private void setProperties(String prefix,LinkedHashMap<String,String> row,Element element)
 	{
 		String post = "";
 		if (prefix != null) post = prefix + ":";
 
-		String info = post + "INFO";
-
-		if (prefix != null)
-		{
-			int count = 0;
-			if (row.containsKey(info))
-				count = new Integer(row.get(post + "NB"));
-			count++;
-
-			row.put(post + "NB","" + count);
-
-			if (count > 1) post = prefix + "_" + (count - 1) + ":";
-		}
-
-		row.put(info,element.getType());
+		row.put(post + "INFO",element.getType());
 		row.put(post + "ID",element.getId().getAsString());
 
 		for(Property property:element.properties())
@@ -188,49 +161,72 @@ class ReaderUCMDB extends ReaderUtil
 			else
 				row.put(post + property.getName(),value == null ? "" : value.toString().trim());
 		}
-
-		return post;
 	}
 
-	String getName(Element ci)
+	String getNameCount(String name,HashMap<String,Integer> counts)
+	{
+		Integer count = counts.get(name);
+		if (count == null)
+			counts.put(name,0);
+		else
+		{
+			count++;
+			counts.put(name,count);
+			name += "_" + count;
+		}
+
+		return name;
+	}
+
+	String getNameCI(Element ci,HashMap<String,Integer> counts)
 	{
 		Set<String> set = mapids.get(ci.getId());
 		Iterator<String> iter = set.iterator();
-		if (iter.hasNext()) return iter.next();
-		return ci.getType();
+		String name = iter.hasNext() ? iter.next() : ci.getType();
+		name = getNameCount(name,counts);
+		return rootname.equals(name) ? null : name;
 	}
 
-	void getLink(TopologyRelation relation,ArrayList<UcmdbId> ids,LinkedHashMap<String,String> row) throws Exception
+	void getRelated(TopologyCI current,String prefix,HashMap<UcmdbId,String> ids,HashMap<String,Integer> counts,LinkedHashMap<String,String> row) throws Exception
 	{
-		if (ids.contains(relation.getId())) return;
-		ids.add(relation.getId());
-		String id = setProperties(getName(relation.getEnd1CI()) + "-" + getName(relation.getEnd2CI()) + "-" + getName(relation),row,relation);
-		row.put(id + "END1",relation.getEnd1CI().getId().getAsString());
-		row.put(id + "END2",relation.getEnd2CI().getId().getAsString());
-	}
+		if (current == null) return;
 
-	void getRelated(TopologyCI root,ArrayList<UcmdbId> ids,LinkedHashMap<String,String> row) throws Exception
-	{
-		if (root == null) return;
-
-		for(TopologyRelation relation:root.getIncomingRelations())
+		for(TopologyRelation relation:current.getIncomingRelations())
 		{
-			getLink(relation,ids,row);
 			TopologyCI ci = relation.getEnd1CI();
-			if (ids.contains(ci.getId())) continue;
-			ids.add(ci.getId());
-			setProperties(getName(ci),row,ci);
-			getRelated(root,ids,row);
+			String name = ids.get(ci.getId());
+			if (!ids.containsKey(ci.getId()))
+			{
+				name = getNameCI(ci,counts);
+				ids.put(ci.getId(),name);
+				setProperties(name,row,ci);
+			}
+			if (!ids.containsKey(relation.getId()))
+			{
+				String relname = getNameCount((prefix == null ? "" : prefix + ":") + (name == null ? "" : name) + ":RREL",counts);
+				ids.put(relation.getId(),relname);
+				setProperties(relname,row,relation);
+				getRelated(ci,name,ids,counts,row);
+			}
 		}
 
-		for(TopologyRelation relation:root.getOutgoingRelations())
+		for(TopologyRelation relation:current.getOutgoingRelations())
 		{
-			getLink(relation,ids,row);
 			TopologyCI ci = relation.getEnd2CI();
-			if (ids.contains(ci.getId())) continue;
-			ids.add(ci.getId());
-			setProperties(getName(ci),row,ci);
-			getRelated(root,ids,row);
+			String name = ids.get(ci.getId());
+			if (!ids.containsKey(ci.getId()))
+			{
+				name = getNameCI(ci,counts);
+				ids.put(ci.getId(),name);
+				setProperties(name,row,ci);
+			}
+			if (!ids.containsKey(relation.getId()))
+			{
+				String relname = getNameCount((prefix == null ? "" : prefix + ":") + (name == null ? "" : name) + ":REL",counts);
+				ids.put(relation.getId(),relname);
+				setProperties(relname,row,relation);
+				getRelated(ci,name,ids,counts,row);
+			}
 		}
 	}
 
@@ -241,35 +237,26 @@ class ReaderUCMDB extends ReaderUtil
 		{
 			if (!topo.hasNextChunk()) return null;
 			topo = topo.getNextChunk();
-			Collection<TopologyCI> topocis = topo.getCIsByName(root);
+			Collection<TopologyCI> topocis = topo.getCIsByName(rootname);
 			if (Misc.isLog(30)) Misc.log("TopologyCIS next chunk: " + topocis);
 			cis = topocis.iterator();
 			if (!cis.hasNext()) return null;
 		}
 
-		ArrayList<UcmdbId> ids = new ArrayList<UcmdbId>();
+		HashMap<UcmdbId,String> ids = new HashMap<UcmdbId,String>();
+		HashMap<String,Integer> counts = new HashMap<String,Integer>();
 		LinkedHashMap<String,String> row = new LinkedHashMap<String,String>();
 		TopologyCI root = cis.next();
 
-		ids.add(root.getId());
+		ids.put(root.getId(),null);
 		setProperties(null,row,root);
 
-		getRelated(root,ids,row);
+		getRelated(root,null,ids,counts,row);
 		row = normalizeFields(row);
 
 		if (Misc.isLog(30)) Misc.log("uCMDB row: " + row);
 
 		return row;
-	}
-
-	public Set<String> getHeader()
-	{
-		return headers;
-	}
-
-	public String getName()
-	{
-		return this.getClass().getName();
 	}
 }
 
@@ -288,6 +275,7 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 	private HashMap<String,AttributeType> attrtypes = new HashMap<String,AttributeType>();
 	private Ucmdb ucmdb;
 	private String adapterinfo;
+	private final Pattern relationTagPattern = Pattern.compile("^((([^:¸]+):)?([^:¸]*):((REL|RREL)(_(\\d+))*)):INFO$");
 
 	public UCMDBUpdateSubscriber() throws Exception
 	{
@@ -298,7 +286,7 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 		adapterinfo = ucmdb.getInfo();
 	}
 
-	private void FillUpdateData(TopologyModificationData data,XML xml,String oper) throws Exception
+	private void FillUpdateData(TopologyModificationData data,XML xml,DBSyncOper.OPER oper) throws Exception
 	{
 		final int debug = 15;
 		HashMap<String,Element> elements = new HashMap<String,Element>();
@@ -313,6 +301,7 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 			XML idxml = null;
 			String end1id = null;
 			String end2id = null;
+
 			if (tagname.equals("INFO"))
 			{
 				prefix = "root";
@@ -320,7 +309,9 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 				end1id = xml.getValue("END1",null);
 				end2id = xml.getValue("END2",null);
 			}
-			else if (tagname.endsWith(":INFO") && !tagname.endsWith(":REL:INFO"))
+
+			Matcher matcher = relationTagPattern.matcher(tagname);
+			if (tagname.endsWith(":INFO") && !matcher.find())
 			{
 				prefix = tagname.substring(0,tagname.length() - ":INFO".length());
 				idxml = xml.getElement(prefix + ":ID");
@@ -356,19 +347,30 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 		{
 			String tagname = field.getTagName();
 			String value = field.getValue();
-			if (tagname.endsWith(":REL:INFO"))
+			Matcher matcher = relationTagPattern.matcher(tagname);
+			if (matcher.find())
 			{
-				String prefix = tagname.substring(0,tagname.length() - ":REL:INFO".length());
-				int lastColumn = prefix.lastIndexOf(":");
-				String end1prefix = lastColumn == -1 ? "root" : prefix.substring(0,lastColumn);
-				String end2prefix = prefix;
+				String prefix = matcher.group(1);
+				String end1prefix = matcher.group(3);
+				if (end1prefix == null || end1prefix.isEmpty()) end1prefix = "root";
+				String end2prefix = matcher.group(4);
+				if (end2prefix == null || end2prefix.isEmpty()) end2prefix = "root";
+				String relprefix = matcher.group(5); // REL_X or RREL_X
+				String reltype = matcher.group(6); // REL or RREL
+
+				if (reltype.equals("RREL"))
+				{
+					// Reverse END1 and END2
+					String tmpprefix = end1prefix;
+					end1prefix = end2prefix;
+					end2prefix = tmpprefix;
+				}
+
 				CI end1 = (CI)elements.get(end1prefix);
-				if (end1 == null && lastColumn == -1) throw new AdapterException(xml,"Missing INFO element");
-				if (end1 == null && lastColumn != -1) throw new AdapterException(xml,"Missing " + end1prefix + ":INFO element");
+				if (end1 == null) throw new AdapterException(xml,"Missing " + end1prefix + ":INFO element");
 				CI end2 = (CI)elements.get(end2prefix);
 				if (end2 == null) throw new AdapterException(xml,"Missing " + end2prefix + ":INFO element");
 
-				prefix += ":REL";
 				if (Misc.isLog(debug)) Misc.log("UCMDBAPI: Defining relation type " + value + " with ID " + prefix + " from CI ID " + end1prefix + " to CI ID " + end2prefix);
 				Relation relation = factory.createRelation(value,end1,end2);
 				elements.put(prefix,relation);
@@ -385,8 +387,8 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 
 			if (!"key".equals(type))
 			{
-				if (oper.equals("remove")) continue;
-				if (oper.equals("update"))
+				if (oper == DBSyncOper.OPER.remove) continue;
+				if (oper == DBSyncOper.OPER.update)
 				{
 					XML old = field.getElement("oldvalue");
 					if (old == null) continue;
@@ -489,7 +491,7 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 		}
 	}
 
-	private void add(XML xmldest,XML xml) throws Exception
+	protected void add(XML xmldest,XML xml) throws Exception
 	{
 		TopologyModificationData data = factory.createTopologyModificationData(adapterinfo + "/add");
 		XML[] customs = xmldest.getElements("customadd");
@@ -506,7 +508,7 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 
 		if (customs.length > 0)
 		{
-			updatemulti("add",xml);
+			updatemulti(DBSyncOper.OPER.add,xml);
 			return;
 		}
 
@@ -523,13 +525,13 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 			{
 				xml.setValue("END1",end1value);
 				xml.setValue("END2",end2value);
-				FillUpdateData(data,xml,"add");
+				FillUpdateData(data,xml,DBSyncOper.OPER.add);
 				update.create(data,CreateMode.UPDATE_EXISTING);
 			}
 			return;
 		}
 
-		FillUpdateData(data,xml,"add");
+		FillUpdateData(data,xml,DBSyncOper.OPER.add);
 		update.create(data,CreateMode.UPDATE_EXISTING);
 	}
 
@@ -563,7 +565,7 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 		return getUpdateValue(idxml);
 	}
 
-	private void updatemulti(String oper,XML xml) throws Exception
+	private void updatemulti(DBSyncOper.OPER oper,XML xml) throws Exception
 	{
 		TopologyModificationData data = factory.createTopologyModificationData(adapterinfo + "/" + oper);
 		XML idxml = xml.getElement("ID");
@@ -575,17 +577,17 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 			{
 				idxml.setValue(id);
 
-				FillUpdateData(data,xml,"update");
+				FillUpdateData(data,xml,DBSyncOper.OPER.update);
 				update.update(data);
 			}
 			return;
 		}
 
-		FillUpdateData(data,xml,"update");
+		FillUpdateData(data,xml,DBSyncOper.OPER.update);
 		update.update(data);
 	}
 
-	private void remove(XML xmldest,XML xml) throws Exception
+	protected void remove(XML xmldest,XML xml) throws Exception
 	{
 		TopologyModificationData data = factory.createTopologyModificationData(adapterinfo + "/remove");
 		XML[] customs = xmldest.getElements("customremove");
@@ -602,7 +604,7 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 
 		if (customs.length > 0)
 		{
-			updatemulti("remove",xml);
+			updatemulti(DBSyncOper.OPER.remove,xml);
 			return;
 		}
 		
@@ -623,7 +625,7 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 				delete.add("END2",end2value);
 				delete.add("INFO",xml.getValue("INFO",null));
 
-				FillUpdateData(data,delete,"remove");
+				FillUpdateData(data,delete,DBSyncOper.OPER.remove);
 				update.delete(data,DeleteMode.IGNORE_NON_EXISTING);
 			}
 			return;
@@ -640,17 +642,17 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 				delete.add("ID",id);
 				delete.add("INFO",xml.getValue("INFO",null));
 
-				FillUpdateData(data,delete,"remove");
+				FillUpdateData(data,delete,DBSyncOper.OPER.remove);
 				update.delete(data,DeleteMode.IGNORE_NON_EXISTING);
 			}
 			return;
 		}
 
-		FillUpdateData(data,xml,"remove");
+		FillUpdateData(data,xml,DBSyncOper.OPER.remove);
 		update.delete(data,DeleteMode.IGNORE_NON_EXISTING);
 	}
 
-	private void update(XML xmldest,XML xml) throws Exception
+	protected void update(XML xmldest,XML xml) throws Exception
 	{
 		String old1 = getUpdateValue(xml,"END1");
 		String old2 = getUpdateValue(xml,"END2");
@@ -670,15 +672,18 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 				delete.add("INFO",xml.getValue("INFO",null));
 
 				TopologyModificationData data = factory.createTopologyModificationData(adapterinfo + "/replace");
-				FillUpdateData(data,delete,"remove");
+				FillUpdateData(data,delete,DBSyncOper.OPER.remove);
 				update.delete(data,DeleteMode.IGNORE_NON_EXISTING);
 			}
 			add(xmldest,xml);
 			return;
 		}
 
-		updatemulti("update",xml);
+		updatemulti(DBSyncOper.OPER.update,xml);
 	}
+
+	protected void start(XML xmldest,XML xml) throws Exception {}
+	protected void end(XML xmldest,XML xml) throws Exception {}
 
 	@Override
 	protected void setKeyValue(XML xml) throws Exception
@@ -693,18 +698,9 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 	}
 
 	@Override
-	protected void oper(XML xmldest,XML xmloper) throws Exception
+	protected String getExceptionMessage(Exception ex)
 	{
-		String oper = xmloper.getTagName();
-		try
-		{
-			if (oper.equals("add")) add(xmldest,xmloper);
-			else if (oper.equals("remove")) remove(xmldest,xmloper);
-			else if (oper.equals("update")) update(xmldest,xmloper);
-		} catch(Exception ex) {
-			if (stoponerror) Misc.rethrow(ex);
-			Misc.log("ERROR: [" + getKeyValue() + "] " + Ucmdb.cleanupException(ex) + ": " + xmloper);
-		}
+		return Ucmdb.cleanupException(ex);
 	}
 
 	public static void main(String[] args) throws Exception

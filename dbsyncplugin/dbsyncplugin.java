@@ -91,13 +91,17 @@ class DBSyncPluginSubscriber extends Subscriber
 	}
 }
 
-class UpdateSubscriber extends Subscriber
+abstract class UpdateSubscriber extends Subscriber
 {
-	protected boolean stoponerror = false;
+	private boolean stoponerror = false;
 	private String keyvalue;
 	private String[] displayfields;
+	private Rate rate;
+	private int addcounter;
+	private int removecounter;
+	private int updatecounter;
 
-	protected String getKeyValue()
+	protected final String getKeyValue()
 	{
 		return keyvalue;
 	}
@@ -134,20 +138,21 @@ class UpdateSubscriber extends Subscriber
 	@Override
 	public XML run(XML xml) throws Exception
 	{
-		String instance = xml.getAttribute("instance");
-		if (instance == null) return null;
 		String name = xml.getAttribute("name");
-		if (name == null) return null;
+		if (name == null) throw new AdapterException(xml,"Missing name attribute");
 		String type = xml.getAttribute("type");
-		if (type == null || !type.equals("db")) return null;
+		if (type == null) throw new AdapterException(xml,"Missing type attribute");
+
+		String path = "/configuration/dbsync[@name='" + name + "']/destination[@type='" + type + "'";
+
+		String instance = xml.getAttribute("instance");
+		if (instance != null) path += " and @instance='" + instance + "'";
 		String table = xml.getAttribute("table");
-
-		String path = "/configuration/dbsync[@name='" + name + "']/destination[@type='" + type + "' and @instance='" + instance + "'";
 		if (table != null) path += " and @table='" + table + "'";
-		path += "]";
 
+		path += "]";
 		XML xmldest = javaadapter.getConfiguration().getElementByPath(path);
-		if (xmldest == null) return null;
+		if (xmldest == null) throw new AdapterException(xml,"Non matching destination element: " + path);
 
 		String stop = xmldest.getAttribute("stop_on_error");
 		if (stop != null && stop.equals("true")) stoponerror = true;
@@ -169,40 +174,109 @@ class UpdateSubscriber extends Subscriber
 		return result;
 	}
 
-	protected void oper(XML xmldest,XML xmloper) throws Exception
+	protected abstract void start(XML xmldest,XML xml) throws Exception;
+	protected abstract void end(XML xmldest,XML xml) throws Exception;
+	protected abstract void add(XML xmldest,XML xml) throws Exception;
+	protected abstract void remove(XML xmldest,XML xml) throws Exception;
+	protected abstract void update(XML xmldest,XML xml) throws Exception;
+
+	private void startOper(XML xmldest,XML xml) throws Exception
 	{
-		throw new AdapterException("Operation method must be overridden");
+		addcounter = 0;
+		removecounter = 0;
+		updatecounter = 0;
+		rate = new Rate();
+		start(xmldest,xml);
 	}
+
+	private void addOper(XML xmldest,XML xml) throws Exception
+	{
+		addcounter++;
+		rate.toString();
+		add(xmldest,xml);
+	}
+
+	private void removeOper(XML xmldest,XML xml) throws Exception
+	{
+		removecounter++;
+		rate.toString();
+		remove(xmldest,xml);
+	}
+
+	private void updateOper(XML xmldest,XML xml) throws Exception
+	{
+		updatecounter++;
+		rate.toString();
+		update(xmldest,xml);
+	}
+
+	private void endOper(XML xmldest,XML xml) throws Exception
+	{
+		keyvalue = null;
+		String add = xml.getAttribute("add");
+		String update = xml.getAttribute("update");
+		String remove = xml.getAttribute("remove");
+		if ((add != null && Integer.parseInt(add) != addcounter)
+				|| (remove != null && Integer.parseInt(remove) != removecounter)
+				|| (update != null && Integer.parseInt(update) != updatecounter))
+			throw new AdapterException("Invalid number of processed update entries. add: " + add + "/" + addcounter + " update: " + update + "/" + updatecounter + " remove: " + remove + "/" + removecounter);
+
+		if (Misc.isLog(2))
+		{
+			String count = rate.getCount();
+			if (!count.equals("0"))
+			{
+				int total = addcounter + removecounter + updatecounter;
+				Misc.log("Final processing rate: " + rate.getMax() + " a second, count: " + count + " add: " + addcounter + " update: " + updatecounter + " remove: " + removecounter + " total record: " + total);
+			}
+		}
+
+		rate = null;
+		end(xmldest,xml);
+	}
+
+	protected String getExceptionMessage(Exception ex)
+	{
+		return ex.getMessage();
+	}
+
+	public final void oper(XML xmldest,XML xmloper) throws Exception
+	{
+		try
+		{
+			String oper = xmloper.getTagName();
+			if (oper.equals("update")) updateOper(xmldest,xmloper);
+			else if (oper.equals("add")) addOper(xmldest,xmloper);
+			else if (oper.equals("remove")) removeOper(xmldest,xmloper);
+			else if (oper.equals("start")) startOper(xmldest,xmloper);
+			else if (oper.equals("end")) endOper(xmldest,xmloper);
+		}
+		catch(Exception ex)
+		{
+			if (stoponerror) Misc.rethrow(ex);
+			String key = getKeyValue();
+			Misc.log("ERROR: " + (keyvalue == null ? "" : "[" + keyvalue + "]") + getExceptionMessage(ex) + Misc.CR + "XML message was: " + xmloper);
+		}
+	}
+}
+
+class ParallelSubscriber extends UpdateSubscriber
+{
+	protected void start(XML xmldest,XML xml) throws Exception {}
+	protected void end(XML xmldest,XML xml) throws Exception {}
+	protected void add(XML xmldest,XML xml) throws Exception {}
+	protected void remove(XML xmldest,XML xml) throws Exception {}
+	protected void update(XML xmldest,XML xml) throws Exception {}
 }
 
 class DatabaseUpdateSubscriber extends UpdateSubscriber
 {
 	protected DB db;
-	private Rate rate;
 	private String quotefield = "\"";
 
 	public DatabaseUpdateSubscriber() throws Exception
 	{
 		db = DB.getInstance();
-	}
-
-	@Override
-	protected void oper(XML xmldest,XML xmloper) throws Exception
-	{
-		try
-		{
-			String oper = xmloper.getTagName();
-			if (oper.equals("update")) update(xmldest,xmloper);
-			else if (oper.equals("add")) add(xmldest,xmloper);
-			else if (oper.equals("remove")) remove(xmldest,xmloper);
-			else if (oper.equals("start")) start(xmldest,xmloper);
-			else if (oper.equals("end")) end(xmldest,xmloper);
-		}
-		catch(SQLException ex)
-		{
-			if (stoponerror) Misc.rethrow(ex);
-			Misc.log("ERROR: [" + getKeyValue() + "] " + ex.getMessage() + Misc.CR + "XML message was: " + xmloper);
-		}
 	}
 
 	public void setQuoteField(String field)
@@ -220,8 +294,6 @@ class DatabaseUpdateSubscriber extends UpdateSubscriber
 			Misc.log(3,"preinsertsql: " + sql);
 			db.execsql(instance,sql);
 		}
-
-		rate = new Rate();
 	}
 
 	protected void end(XML xmldest,XML xml) throws Exception
@@ -234,24 +306,6 @@ class DatabaseUpdateSubscriber extends UpdateSubscriber
 			Misc.log(3,"postinsertsql: " + sql);
 			db.execsql(instance,sql);
 		}
-
-		if (Misc.isLog(2))
-		{
-			String count = rate.getCount();
-			if (!count.equals("0"))
-			{
-				String msg = "Final processing rate: " + rate.getMax() + " a second, count: " + count;
-				String add = xml.getAttribute("add");
-				if (add != null) msg += " add: " + add;
-				String update = xml.getAttribute("update");
-				if (update != null) msg += " update: " + update;
-				String remove = xml.getAttribute("remove");
-				if (remove != null) msg += " remove: " + remove;
-				String total = xml.getAttribute("total");
-				if (total != null) msg += " total record: " + total;
-				Misc.log(msg);
-			}
-		}
 	}
 
 	private boolean customsql(String oper,XML xmldest,XML xml) throws Exception
@@ -260,7 +314,6 @@ class DatabaseUpdateSubscriber extends UpdateSubscriber
 		XML[] sqlxmllist = xmldest.getElements("custom" + oper + "sql");
 		if (sqlxmllist.length == 0) return false;
 
-		rate.toString();
 		for(XML sqlxml:sqlxmllist)
 		{
 			if (!Misc.isFilterPass(sqlxml,xml)) continue;
@@ -284,7 +337,7 @@ class DatabaseUpdateSubscriber extends UpdateSubscriber
 		XML[] fields = xml.getElements();
 
 		String sep = "where";
-		String sql = "";
+		StringBuilder sql = new StringBuilder();
 
 		for(XML field:fields)
 		{
@@ -292,26 +345,10 @@ class DatabaseUpdateSubscriber extends UpdateSubscriber
 			if (type == null || !type.equals("key")) continue;
 
 			String name = field.getTagName();
-			sql += " " + sep + " (" + quotefield + name + quotefield;
 			String value = field.getValue();
 			if (value == null) value = field.getValue("oldvalue",null);
-			if (value == null)
-				sql += " is null";
-			else
-			{
-				String[] valuesplit = value.split("\n");
-				if (valuesplit.length == 1)
-					sql += " = " + db.getValue(value,name);
-				else
-				{
-					for(int i = 0;i < valuesplit.length;i++)
-					{
-						if (i != 0) sql += " or " + quotefield + name + quotefield;
-						sql += " = " + db.getValue(valuesplit[i],name);
-					}
-				}
-			}
-			sql += ")";
+
+			sql.append(" " + sep + " " + db.getFieldEqualsValue(quotefield + name + quotefield,value));
 			sep = "and";
 		}
 
@@ -335,7 +372,7 @@ class DatabaseUpdateSubscriber extends UpdateSubscriber
 			return " where " + idfield + " = " + db.getValue(id);
 		}
 
-		return sql;
+		return sql.toString();
 	}
 
 	private void handleRetryException(Exception ex,XML xmldest,XML xml,boolean isretry) throws Exception
@@ -363,9 +400,9 @@ class DatabaseUpdateSubscriber extends UpdateSubscriber
 
 			if (!isretry)
 			{
-				String ondups = xmldest.getAttribute("on_duplicates");
-				if (ondups == null || ondups.equals("merge"))
+				switch(Field.getOnOper(xmldest,"on_duplicates",OnOper.merge,EnumSet.of(OnOper.merge,OnOper.clear,OnOper.suffix,OnOper.recreate,OnOper.warning,OnOper.error,OnOper.ignore)))
 				{
+				case merge:
 					String mergefields = xmldest.getAttribute("merge_fields");
 					String[] attrs = mergefields == null ? null : mergefields.split("\\s*,\\s*");
 
@@ -399,50 +436,46 @@ class DatabaseUpdateSubscriber extends UpdateSubscriber
 					}
 					Misc.log(1,"WARNING: Record already present." + Misc.CR + "Updating record information with XML message: " + updxml);
 					update(xmldest,updxml,true);
-				}
-				else if (ondups.equals("clear"))
-				{
+					break;
+				case clear:
 					String clearfields = xmldest.getAttribute("clear_fields");
 					if (clearfields == null) throw new AdapterException(xmldest,"clear on_duplicates requires clear_fields attribute");
 					Misc.log(1,"WARNING: [" + getKeyValue() + "] Record already present. Clearing fields " + clearfields + ": " + xml);
-					String sql = "update " + table + " ";
-					String sep = "set ";
+					String sqlclear = "update " + table + " ";
+					String sepclear = "set ";
 					for(String field:clearfields.split("\\s*,\\s*"))
 					{
-						sql += sep + field + "=NULL";
-						sep = ",";
+						sqlclear += sepclear + field + "=NULL";
+						sepclear = ",";
 					}
-					sql += " " + getWhereClause(xmldest,xml);
-					db.execsql(instance,sql);
-				}
-				else if (ondups.equals("suffix"))
-				{
+					sqlclear += " " + getWhereClause(xmldest,xml);
+					db.execsql(instance,sqlclear);
+					break;
+				case suffix:
 					String suffixfields = xmldest.getAttribute("suffix_fields");
 					if (suffixfields == null) throw new AdapterException(xmldest,"suffix on_duplicates requires suffix_fields attribute");
 					Misc.log(1,"WARNING: [" + getKeyValue() + "] Record already present. Adding suffix '_' to fields " + suffixfields + ": " + xml);
-					String sql = "update " + table + " ";
-					String sep = "set ";
+					String sqlsuf = "update " + table + " ";
+					String sepsuf = "set ";
 					for(String field:suffixfields.split("\\s*,\\s*"))
 					{
-						sql += sep + field + "=" + db.getConcat(instance,field,"'_'");
-						sep = ",";
+						sqlsuf += sepsuf + field + "=" + db.getConcat(instance,field,"'_'");
+						sepsuf = ",";
 					}
-					sql += " " + getWhereClause(xmldest,xml);
-					db.execsql(instance,sql);
-				}
-				else if (ondups.equals("recreate"))
-				{
+					sqlsuf += " " + getWhereClause(xmldest,xml);
+					db.execsql(instance,sqlsuf);
+					break;
+				case recreate:
 					Misc.log(1,"WARNING: [" + getKeyValue() + "] Record already present. Record will be automatically recreated with XML message: " + xml);
 					remove(xmldest,xml);
 					add(xmldest,xml,true);
-				}
-				else if (ondups.equals("warning"))
-					Misc.log(1,"WARNING: [" + getKeyValue() + "] Record already present. Error: " + message + Misc.CR + "Ignored XML message: " + xml);
-				else if (ondups.equals("error"))
+					break;
+				case warning:
+					Misc.log(1,"WARNING: [" + getKeyValue() + "] Record already present. Error: " + message + Misc.CR + "Ignored XML message: " + xml);	
+					break;
+				case error:
 					Misc.log(1,"ERROR: [" + getKeyValue() + "] Record already present. Error: " + message + Misc.CR + "Ignored XML message: " + xml);
-				else if (ondups.equals("ignore"));
-				else
-					throw new AdapterException(xmldest,"Invalid on_duplicates attribute " + ondups);
+				}
 				return;
 			}
 		}
@@ -498,7 +531,6 @@ class DatabaseUpdateSubscriber extends UpdateSubscriber
 		}
 		sql += ")";
 
-		rate.toString();
 		if (Misc.isLog(10)) Misc.log("add SQL: " + sql);
 
 		try
@@ -539,7 +571,6 @@ class DatabaseUpdateSubscriber extends UpdateSubscriber
 			sql += getWhereClause(xmldest,xml);
 		}
 
-		rate.toString();
 		if (Misc.isLog(10)) Misc.log("remove SQL: " + sql);
 		db.execsql(instance,sql,list);
 	}
@@ -579,7 +610,6 @@ class DatabaseUpdateSubscriber extends UpdateSubscriber
 
 		sql += getWhereClause(xmldest,xml);
 
-		rate.toString();
 		if (Misc.isLog(10)) Misc.log("update SQL: " + sql);
 
 		try

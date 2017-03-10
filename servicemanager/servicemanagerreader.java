@@ -97,7 +97,7 @@ class ServiceManagerUpdateSubscriber extends UpdateSubscriber
 		String status = xml.getAttribute("status");
 		if ("SUCCESS".equals(status)) return null;
 
-		StringBuffer sb = new StringBuffer();
+		StringBuilder sb = new StringBuilder();
 		String messageattr = xml.getAttribute("message");
 		if (messageattr != null) sb.append(messageattr);
 
@@ -117,11 +117,23 @@ class ServiceManagerUpdateSubscriber extends UpdateSubscriber
 		return sb.toString();
 	}
 
-	@Override
-	protected void oper(XML xmldest,XML xmloper) throws Exception
+	protected void add(XML xmldest,XML xmloper) throws Exception
 	{
 		oper(xmloper.getParent().getAttribute("name"),xmldest,xmloper);
 	}
+
+	protected void remove(XML xmldest,XML xmloper) throws Exception
+	{
+		oper(xmloper.getParent().getAttribute("name"),xmldest,xmloper);
+	}
+
+	protected void update(XML xmldest,XML xmloper) throws Exception
+	{
+		oper(xmloper.getParent().getAttribute("name"),xmldest,xmloper);
+	}
+
+	protected void start(XML xmldest,XML xmloper) throws Exception {}
+	protected void end(XML xmldest,XML xmloper) throws Exception {}
 
 	protected void oper(String object,XML xmldest,XML xmloper) throws Exception
 	{
@@ -324,5 +336,87 @@ class ServiceManagerUpdateSubscriber extends UpdateSubscriber
 		String fault = result.getValue("faultstring",null);
 		if (fault != null) Misc.log("SOAP FAULT ERROR: [" + getKeyValue() + "] " + fault + ": " + xmloper);
 		if (message != null) Misc.log("ERROR: [" + getKeyValue() + "] " + message + ": " + xmloper);
+	}
+}
+
+
+class ServiceManagerDBProcessor implements DBProcessor
+{
+	final static byte[] SMBINARRAY = { 0x5f, 0x52, 0x43, 0x46, 0x4d, 0x2a, 0x3d };
+
+	static
+	{
+		DBProcessorManager.register(new ServiceManagerDBProcessor());
+	}
+
+	public String getFieldValue(byte[] bytes) throws Exception
+	{
+		if (!Misc.startsWith(bytes,SMBINARRAY)) return null;
+
+		//Misc.log(Misc.toHexString(bytes));
+		//Misc.log(new String(bytes));
+		StringBuilder sb = new StringBuilder();
+		int pos = SMBINARRAY.length;
+		int structpos = -1;
+		while(pos < bytes.length)
+		{
+			int len = 0;
+
+			switch(bytes[pos])
+			{
+			case 0x2d:
+				pos++;
+				len = (int)bytes[pos];
+				break;
+			case 0x2c:
+				len = 4;
+				break;
+			case 0x2b:
+				len = 3;
+				break;
+			case 0x2a:
+				len = 2;
+				break;
+			case 0x2f:
+				// Empty value
+				break;
+			case (byte)0x80:
+				// Array start
+				break;
+			case (byte)0x81:
+				// Array end
+				break;
+			case (byte)0x90:
+				structpos = 0;
+				break;
+			case (byte)0x91:
+				structpos = -1;
+				sb.append("\n");
+				break;
+			default:
+				String str = new String(bytes);
+				throw new AdapterException("Unsupported 0x" + String.format("%x",bytes[pos]) + "[" + pos + "] SM array " + Misc.toHexString(bytes) + ": " + str);
+			}
+
+			pos++;
+			if (structpos >= 0)
+			{
+				if (structpos > 1) sb.append(",");
+				structpos++;
+				if (structpos > 0)
+				{
+					sb.append(CsvWriter.escape(new String(Arrays.copyOfRange(bytes,pos,pos+len),"utf-8"),',','"',(char)0,false));
+					pos += len;
+				}
+				continue;
+			}
+
+			if (len == 0) continue;
+			sb.append(new String(Arrays.copyOfRange(bytes,pos,pos+len),"utf-8"));
+			pos += len;
+		}
+		//Misc.log(sb.toString());
+
+		return sb.toString();
 	}
 }

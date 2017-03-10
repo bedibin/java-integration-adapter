@@ -6,7 +6,7 @@ class SoapRequest extends XML
 	private final String nsenv = System.getProperty("javaadapter.soap.nsenv");
 	private final String defnsenv = "http://schemas.xmlsoap.org/soap/envelope/";
 
-	private void makeRequest(String request,String ns) throws Exception
+	private void makeRequest(String request,String ns)
 	{
 		XML env = super.add("SOAP-ENV:Envelope");
 		env.setAttribute("xmlns:SOAP-ENV",nsenv == null ? defnsenv : nsenv);
@@ -29,7 +29,7 @@ class SoapRequest extends XML
 		super.node = xml.node;
 	}
 
-	public SoapRequest(Exception ex) throws Exception
+	public SoapRequest(Exception ex) throws AdapterException
 	{
 		XML env = super.add("SOAP-ENV:Envelope");
 		env.setAttribute("xmlns:SOAP-ENV",nsenv == null ? defnsenv : nsenv);
@@ -45,22 +45,22 @@ class SoapRequest extends XML
 		super.node = fault.node;
 	}
 
-	public SoapRequest() throws Exception
+	public SoapRequest() throws AdapterException
 	{
 		makeRequest(null,null);
 	}
 
-	public SoapRequest(String request) throws Exception
+	public SoapRequest(String request) throws AdapterException
 	{
 		makeRequest(request,null);
 	}
 
-	public SoapRequest(String request,String ns) throws Exception
+	public SoapRequest(String request,String ns) throws AdapterException
 	{
 		makeRequest(request,ns);
 	}
 
-	public SoapRequest(XML xml) throws Exception
+	public SoapRequest(XML xml)
 	{
 		super(xml.dom,xml.node);
 	}
@@ -73,7 +73,7 @@ class SoapRequest extends XML
 		return request;
 	}
 
-	public SoapRequest add(String name) throws Exception
+	public SoapRequest add(String name)
 	{
 		XML xml = super.add(prefix + name);
 		SoapRequest request = new SoapRequest(xml);
@@ -81,7 +81,7 @@ class SoapRequest extends XML
 		return request;
 	}
 
-	public SoapRequest add(String name,String value) throws Exception
+	public SoapRequest add(String name,String value)
 	{
 		XML xml = super.add(prefix + name,value);
 		SoapRequest request = new SoapRequest(xml);
@@ -161,7 +161,7 @@ class SoapServer
 	{
 		if (Misc.isLog(9)) Misc.log("SOAP request: " + request);
 
-		XML xml = new XML(new StringBuffer(request));
+		XML xml = new XML(new StringBuilder(request));
 		HashMap<String,String> attrs = xml.getAttributes();
 		xml = xml.getElement("Body");
 		if (xml != null)

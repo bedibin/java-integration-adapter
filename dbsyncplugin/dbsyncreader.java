@@ -10,7 +10,7 @@ interface Reader
 	public String getName();
 }
 
-class ReaderUtil implements Reader
+abstract class ReaderUtil implements Reader
 {
 	private Set<String> keyfields;
 	private boolean issorted = false;
@@ -20,7 +20,7 @@ class ReaderUtil implements Reader
 	protected boolean skipnormalize = true;
 	protected String instance;
 
-	static public Reader getReader(XML xml) throws Exception
+	static final public Reader getReader(XML xml) throws Exception
 	{
 		Reader reader = null;
 		String type = xml.getAttribute("type");
@@ -87,7 +87,7 @@ class ReaderUtil implements Reader
 		}
 	}
 
-	static public void pushCurrent(Map<String,String> row,Map<String,Set<String>> map,boolean issorted) throws Exception
+	static final public void pushCurrent(Map<String,String> row,Map<String,Set<String>> map,boolean issorted) throws Exception
 	{
 		for(String keyrow:row.keySet())
 		{
@@ -101,10 +101,7 @@ class ReaderUtil implements Reader
 		}
 	}
 
-	public LinkedHashMap<String,String> nextRaw() throws Exception
-	{
-		throw new AdapterException("nextRaw() called from ReadUtil class. It must be overwritten");
-	}
+	abstract public LinkedHashMap<String,String> nextRaw() throws Exception;
 
 	public final LinkedHashMap<String,String> next() throws Exception
 	{
@@ -158,7 +155,7 @@ class ReaderUtil implements Reader
 		return current;
 	}
 
-	public LinkedHashMap<String,String> normalizeFields(LinkedHashMap<String,String> row) throws Exception
+	public final LinkedHashMap<String,String> normalizeFields(LinkedHashMap<String,String> row) throws Exception
 	{
 		if (row == null) return null;
 		if (skipnormalize || headers == null) return row;
@@ -172,12 +169,12 @@ class ReaderUtil implements Reader
 		return result;
 	}
 
-	public Set<String> getHeader()
+	public final Set<String> getHeader()
 	{
 		return headers;
 	}
 
-	public String getName()
+	public final String getName()
 	{
 		return instance;
 	}
@@ -226,7 +223,7 @@ class ReaderCSV extends ReaderUtil
 	private char delimiter = ',';
 	private BufferedReader in;
 
-	private void setValue(ArrayList<String> result,StringBuffer sb) throws Exception
+	private void setValue(ArrayList<String> result,StringBuilder sb) throws Exception
 	{
 		String value = sb.toString();
 		if (value.equals("\"")) value = "";
@@ -248,7 +245,7 @@ class ReaderCSV extends ReaderUtil
 
 		boolean inquote = false;
 		ArrayList<String> result = new ArrayList<String>();
-		StringBuffer sb = new StringBuffer();
+		StringBuilder sb = new StringBuilder();
 
 		do
 		{
@@ -285,7 +282,7 @@ class ReaderCSV extends ReaderUtil
 				if (!inquote && c == delimiter)
 				{
 					setValue(result,sb);
-					sb = new StringBuffer();
+					sb = new StringBuilder();
 					last = 0;
 					continue;
 				}
@@ -633,3 +630,219 @@ class ReaderXML extends ReaderUtil
 		return row;
 	}
 }
+
+class CacheReader implements Reader
+{
+	private ReaderCSV csvreader;
+	private Reader sourcereader;
+	private File csvfile;
+
+	public CacheReader(XML xml,Reader reader) throws Exception
+	{
+		javaadapter.setForShutdown(this);
+
+		String cachedir = xml.getAttribute("cached_directory");
+		String prefix = "javaadapter_" + reader.getName() + "_";
+		String suffix = ".csv";
+		if (cachedir == null)
+			csvfile = File.createTempFile(prefix,suffix);
+		else
+		{
+			File dir = new File(javaadapter.getCurrentDir(),cachedir);
+			csvfile = File.createTempFile(prefix,suffix,dir);
+		}
+
+		if (Misc.isLog(10)) Misc.log("Cached file is " + csvfile.getAbsolutePath());
+		sourcereader = reader;
+
+		try
+		{
+			Writer writer = new BufferedWriter(new OutputStreamWriter(new FileOutputStream(csvfile),"UTF8"));
+			CsvWriter csv = new CsvWriter(writer,reader.getHeader());
+
+			LinkedHashMap<String,String> row;
+			while((row = reader.next()) != null)
+				csv.write(row);
+
+			csv.flush();
+			csvreader = new ReaderCSV(csvfile,"UTF8");
+		} catch(Exception ex) {
+			Misc.rethrow(ex);
+		}
+	}
+
+	public LinkedHashMap<String,String> next() throws Exception
+	{
+		LinkedHashMap<String,String> result = csvreader.next();
+		if (result == null) csvfile.delete();
+		return result;
+	}
+
+	public Set<String> getHeader()
+	{
+		return sourcereader.getHeader();
+	}
+
+	public String getName()
+	{
+		return "cache/" + sourcereader.getName();
+	}
+
+	public void close() throws Exception
+	{
+		if (csvreader != null) csvreader.close();
+		if (csvfile != null) csvfile.delete();
+	}
+}
+
+class SortTable implements Reader
+{
+	private String tablename;
+	private String conn;
+	private DB db = DB.getInstance();
+	private DBOper oper;
+	private TreeMap<String,LinkedHashMap<String,Set<String>>> sortedmap;
+	private Iterator<String> iterator;
+	private String instance;
+	private Set<String> header;
+	private DBSyncOper dbsync;
+
+	public SortTable(XML xml,Sync sync) throws Exception
+	{
+		dbsync = sync.getDBSync();
+		Reader reader = sync.getReader();
+		this.header = reader.getHeader();
+
+		XML sortxml = xml.getElement("dbsyncsorttable");
+		if (sortxml == null)
+		{
+			xml = xml.getParent();
+			sortxml = xml.getElement("dbsyncsorttable");
+		}
+		if (sortxml == null)
+			sortxml = xml.getParent().getElement("dbsyncsorttable");
+		if (sortxml != null)
+		{
+			tablename = sortxml.getAttribute("name");
+			conn = sortxml.getAttribute("instance");
+		}
+
+		if (tablename == null || conn == null)
+		{
+			instance = "memsort/" + reader.getName();
+			sortedmap = new TreeMap<String,LinkedHashMap<String,Set<String>>>(db.collator);
+			Misc.log(7,"Initializing memory sort");
+		}
+		else
+		{
+			instance = "dbsort/" + reader.getName();
+			Misc.log(7,"Initializing temporary DB table sort");
+		}
+
+		put(sync);
+	}
+
+	public void put(Sync sync) throws Exception
+	{
+		LinkedHashMap<String,String> row;
+		Fields fields = dbsync.getFields();
+		while((row = fields.getNext(sync)) != null)
+		{
+			if (!row.keySet().containsAll(fields.getKeys()))
+				throw new AdapterException("Sort operation requires all keys [" + Misc.implode(fields.getKeys()) + "] while reading " + sync.getDescription() + ": " + Misc.implode(row));
+			put(row);
+		}
+	}
+
+	public void put(LinkedHashMap<String,String> row) throws Exception
+	{
+		String key = dbsync.getKey(row);
+		if (key.length() == dbsync.getFields().getKeys().size()) return; // An empty key contains one ! per element
+
+		if (dbsync.getIgnoreCaseKeys()) key = key.toUpperCase();
+		if (sortedmap != null)
+		{
+			LinkedHashMap<String,Set<String>> prevmap = sortedmap.get(key);
+			if (prevmap == null)
+			{
+				prevmap = new LinkedHashMap<String,Set<String>>();
+				sortedmap.put(key,prevmap);
+			}
+			ReaderUtil.pushCurrent(row,prevmap,false);
+			return;
+		}
+
+		XML xml = new XML();
+		xml.add("row",row);
+
+		String value = xml.rootToString();
+		String sql = "insert into " + tablename + " values (" + DB.replacement + "," + DB.replacement + ")";
+
+		ArrayList<String> list = new ArrayList<String>();
+		list.add(key);
+		list.add(value);
+
+		db.execsql(conn,sql,list);
+	}
+
+	public LinkedHashMap<String,String> next() throws Exception
+	{
+		LinkedHashMap<String,String> row = new LinkedHashMap<String,String>();
+
+		if (sortedmap != null)
+		{
+			if (iterator == null)
+				iterator = sortedmap.keySet().iterator();
+			if (!iterator.hasNext()) return null;
+			String key = iterator.next();
+			LinkedHashMap<String,Set<String>> map = sortedmap.get(key);
+			for(String keyrow:map.keySet())
+				row.put(keyrow,Misc.implode(map.get(keyrow),"\n"));
+
+			if (Misc.isLog(15)) Misc.log("row [" + instance + "]: " + row);
+			return row;
+		}
+
+		if (oper == null)
+		{
+			String sql = "select key,value from " + tablename + db.getOrderBy(conn,new String[]{"key"},dbsync.getIgnoreCaseKeys());
+			oper = db.makesqloper(conn,sql);
+		}
+
+		LinkedHashMap<String,String> result = oper.next();
+		if (result == null)
+		{
+			db.execsql(conn,"truncate table " + tablename);
+			return null;
+		}
+
+		XML xml = new XML(new StringBuilder(result.get("VALUE")));
+		XML[] elements = xml.getElements(null);
+
+		for(XML el:elements)
+		{
+			String value = el.getValue();
+			if (value == null) value = "";
+			row.put(el.getTagName(),value);
+		}
+
+		if (Misc.isLog(15)) Misc.log("row [" + instance + "]: " + row);
+		return row;
+	}
+
+	public Set<String> getHeader()
+	{
+		return header;
+	}
+
+	public String getName()
+	{
+		return instance;
+	}
+
+	public TreeMap<String,LinkedHashMap<String,Set<String>>> getSortedMap()
+	{
+		return sortedmap;
+	}
+}
+

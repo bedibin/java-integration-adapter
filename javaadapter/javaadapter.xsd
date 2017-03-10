@@ -73,6 +73,7 @@ elementFormDefault="qualified">
 		<xs:enumeration value="xml"/>
 		<xs:enumeration value="soap"/>
 		<xs:enumeration value="class"/>
+		<xs:enumeration value="null"/>
 	</xs:restriction>
 </xs:simpleType>
 
@@ -96,6 +97,8 @@ elementFormDefault="qualified">
 		<xs:enumeration value="ignore"/>
 		<xs:enumeration value="error"/>
 		<xs:enumeration value="warning"/>
+		<xs:enumeration value="reject_record"/>
+		<xs:enumeration value="reject_field"/>
 		<xs:enumeration value="merge"/>
 		<xs:enumeration value="recreate"/>
 		<xs:enumeration value="clear"/>
@@ -302,6 +305,7 @@ elementFormDefault="qualified">
 				</xs:simpleContent>
 			</xs:complexType>
 		</xs:element>
+		<xs:element name="param" type="namevalue"/>
 	</xs:choice></xs:sequence>
 	<xs:attribute name="name" type="xs:string"/>
 	<xs:attribute name="type" type="readertypes"/>
@@ -314,6 +318,8 @@ elementFormDefault="qualified">
 	<xs:attribute name="cached" type="xs:boolean" default="false"/>
 	<xs:attribute name="cached_directory" type="xs:string"/>
 	<xs:attribute name="enclosure" type="xs:string" default='"'/>
+	<xs:attribute name="list_delimiter" type="xs:string" default="&#xA;"/>
+	<xs:attribute name="force_enclosure" type="xs:boolean" default='false'/>
 	<xs:attribute name="delimiter" type="xs:string" default=","/>
 	<xs:attribute name="header" type="xs:boolean" default="true"/>
 	<xs:attribute name="charset" type="xs:string"/>
@@ -680,6 +686,7 @@ elementFormDefault="qualified">
 				<xs:complexType>
 					<xs:sequence><xs:choice minOccurs="0" maxOccurs="unbounded">
 						<xs:element name="driver" type="simplestring" default="oracle.jdbc.driver.OracleDriver"/>
+						<xs:element name="processor" type="simplestring"/>
 						<xs:element name="url" type="simplestring"/>
 						<xs:element name="initsql" type="simplestringfile"/>
 						<xs:element name="username" type="simplestring"/>
@@ -856,6 +863,7 @@ elementFormDefault="qualified">
 					<xs:attribute name="display_keyfield" type="xs:string"/>
 					<xs:attribute name="root" type="xs:string" default="ISMDatabaseUpdate"/>
 					<xs:attribute name="maxqueuelength" type="xs:integer" default="100"/>
+					<xs:attribute name="preload_cache" type="xs:boolean" default="false"/>
 					<xs:attributeGroup ref="operation"/>
 					<xs:attributeGroup ref="activate"/>
 				</xs:complexType>

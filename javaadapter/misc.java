@@ -14,6 +14,11 @@ class AdapterException extends Exception
 		super(message);
 	}
 
+	public AdapterException(Throwable cause)
+	{
+		super(cause);
+	}
+
 	public AdapterException(String message,Object... args)
 	{
 		super(Misc.getMessage(message,args));
@@ -323,37 +328,37 @@ class Misc
 
 	static public void log(Thread thread)
 	{
-		String error = "Current stack trace:" + CR;
+		StringBuilder error = new StringBuilder("Current stack trace:" + CR);
 
 		StackTraceElement el[] = thread.getStackTrace();
 		for(int i = 1;i < el.length;i++)
-			error += "\t" + el[i].toString() + CR;
+			error.append("\t" + el[i].toString() + CR);
 
-		log(1,error);
+		log(1,error.toString());
 	}
 
 	static public void log(Throwable ex)
 	{
-		String error = "";
+		StringBuilder error = new StringBuilder();
 
 		for(Throwable cause = ex;cause != null;cause = cause.getCause())
 		{
-			if (cause != ex) error += CR + "Caused by:" + CR;
-			error += cause.toString() + CR;
+			if (cause != ex) error.append(CR + "Caused by:" + CR);
+			error.append(cause.toString() + CR);
 			StackTraceElement el[] = cause.getStackTrace();
 			for(int i = 0;i < el.length;i++)
-				error += "\t" + el[i].toString() + CR;
+				error.append("\t" + el[i].toString() + CR);
 		}
 
 		if (loglevel >= 20)
 		{
-			error += CR + "Catched by:" + CR;
+			error.append(CR + "Catched by:" + CR);
 			StackTraceElement el[] = Thread.currentThread().getStackTrace();
 			for(int i = 1;i < el.length;i++)
-				error += "\t" + el[i].toString() + CR;
+				error.append("\t" + el[i].toString() + CR);
 		}
 
-		log(1,error);
+		log(1,error.toString());
 	}
 
 	static public void toFile(String filename,String text,String charset,boolean append) throws Exception
@@ -371,7 +376,7 @@ class Misc
 		try
 		{
 			InputStreamReader in = new InputStreamReader(new FileInputStream(new File(javaadapter.getCurrentDir(),filename)),"ISO-8859-1");
-			StringBuffer text = new StringBuffer();
+			StringBuilder text = new StringBuilder();
 
 			int ch = in.read();
 			while (ch != -1)
@@ -392,17 +397,17 @@ class Misc
 
 	static public String implode(String sep,String... strings)
 	{
-		String out = "";
+		StringBuilder out = new StringBuilder();
 		String currentsep = "";
 
 		for(String string:strings)
 		{
 			if (string == null) continue;
-			out = out + currentsep + string;
+			out.append(currentsep + string);
 			currentsep = sep;
 		}
 
-		return out;
+		return out.toString();
 	}
 
 	static public String implode(String[] strings)
@@ -412,17 +417,18 @@ class Misc
 
 	static public String implode(String[] strings,String sep)
 	{
-		String out = "";
+		StringBuilder out = new StringBuilder();
 		String currentsep = "";
 
 		for(String string:strings)
 		{
 			if (string == null) continue;
-			out += currentsep + string;
+			out.append(currentsep);
+			out.append(string);
 			currentsep = sep;
 		}
 
-		return out;
+		return out.toString();
 	}
 
 	static public String implode(Collection<String> strings)
@@ -432,40 +438,51 @@ class Misc
 
 	static public String implode(Collection<String> strings,String sep)
 	{
-		String out = "";
+		StringBuilder sb = new StringBuilder();
 		String currentsep = "";
 
 		for(String string:strings)
 		{
 			if (string == null) continue;
-			out += currentsep + string;
+			sb.append(currentsep);
+			sb.append(string);
 			currentsep = sep;
 		}
 
-		return out;
+		return sb.toString();
 	}
 
 	static public String implode(Map<String,String> map)
 	{
-		return implode(map,",");
+		return implode(map,null,",");
 	}
 
 	static public String implode(Map<String,String> map,String sep)
 	{
-		String out = "";
+		return implode(map,null,sep);
+	}
+
+	static public String implode(Map<String,String> map,Set<String> keys)
+	{
+		return implode(map,keys,",");
+	}
+
+	static public String implode(Map<String,String> map,Set<String> keys,String sep)
+	{
+		StringBuilder out = new StringBuilder();
 		String currentsep = "";
 
-		Set<String> keys = map.keySet();
+		if (keys == null) keys = map.keySet();
 		for(String key:keys)
 		{
 			String value = map.get(key);
 			if (value == null) value = "";
 
-			out += currentsep + key + "=" + value;
+			out.append(currentsep + key + "=" + value);
 			currentsep = sep;
 		}
 
-		return out;
+		return out.toString();
 	}
 
 	public static <T> Set<T> findDuplicates(Collection<T> list)
@@ -479,17 +496,48 @@ class Misc
 		return duplicates;
 	}
 
+	public static String toHexString(byte[] ba)
+	{
+		StringBuilder str = new StringBuilder();
+		for(int i = 0; i < ba.length; i++)
+			str.append(String.format("%x",ba[i]) + " ");
+		return str.toString();
+	}
+
 	public static String toHexString(String text) throws Exception
+	{
+		return toHexString(text,"ISO-8859-1");
+	}
+
+	public static String toHexString(String text,String charset) throws Exception
 	{
 		StringBuilder str = new StringBuilder();
 		for(char ch:text.toCharArray())
 		{
-			byte[] ba = (""+ch).getBytes("ISO-8859-1");
+			byte[] ba = (""+ch).getBytes(charset);
 			for(int i = 0; i < ba.length; i++)
 				str.append(String.format("%x",ba[i]));
 			str.append(":" + ch + " ");
 		}
 		return str.toString();
+	}
+
+	public static boolean startsWith(byte[] source,byte[] match)
+	{
+		return startsWith(source,0,match);
+	}
+
+	public static boolean startsWith(byte[] source, int offset, byte[] match)
+	{
+		if (match == null || source == null) return false;
+
+		if (match.length > (source.length - offset))
+			return false;
+
+		for (int i = 0; i < match.length; i++)
+			if (source[offset + i] != match[i])
+				return false;
+		return true;
 	}
 
 	static public int indexOf(Object[] list,Object value)
@@ -599,7 +647,7 @@ class Misc
 		}
 	}
 
-	static public XML checkActivate(XML xml) throws Exception
+	static public XML checkActivate(XML xml) throws AdapterException
 	{
 		if (xml == null) return null;
 
@@ -628,7 +676,7 @@ class Misc
 		return has_positive ? null : xml;
 	}
 
-	static public boolean isFilterPass(XML xmlelement,XML xml) throws Exception
+	static public boolean isFilterPass(XML xmlelement,XML xml) throws AdapterException
 	{
 		if (xmlelement == null) return true;
 
@@ -641,7 +689,7 @@ class Misc
 		return result == expectedresult;
 	}
 
-	static public boolean isFilterPass(XML xmlelement,String value) throws Exception
+	static public boolean isFilterPass(XML xmlelement,String value) throws AdapterException
 	{
 		if (xmlelement == null) return true;
 
@@ -659,7 +707,7 @@ class Misc
 		return true;
 	}
 
-	static public boolean isFilterPass(XML xmlelement,Map<String,String> map) throws Exception
+	static public boolean isFilterPass(XML xmlelement,Map<String,String> map) throws AdapterException
 	{
 		return isFilterPass(xmlelement,implode(map));
 	}
@@ -725,13 +773,13 @@ class Misc
 		javaadapter.setForShutdown(sublist);
 	}
 
-	static public void rethrow(Exception ex,String message,Object... args) throws Exception
+	static public <T extends Exception> void rethrow(T ex,String message,Object... args) throws T
 	{
 		log(1,message,args);
 		rethrow(ex);
 	}
 
-	static public void rethrow(Exception ex) throws Exception
+	static public <T extends Exception> void rethrow(T ex) throws T
 	{
 		throw ex;
 	}
@@ -777,11 +825,11 @@ class Misc
 		}
 
 		String line;
-		StringBuffer sbout = new StringBuffer();
+		StringBuilder sbout = new StringBuilder();
 		while((line = stdout.readLine()) != null)
 			sbout.append(line);
 
-		StringBuffer sberr = new StringBuffer();
+		StringBuilder sberr = new StringBuilder();
 		while((line = stderr.readLine()) != null)
 			sberr.append(line);
 
@@ -856,7 +904,7 @@ class Misc
 	{
 		if (str == null) return null;
 
-		StringBuffer out = new StringBuffer();
+		StringBuilder out = new StringBuilder();
 		boolean inPercent = false;
 
 		int sz = str.length();
@@ -947,10 +995,10 @@ class Misc
 	{
 		if (str == null) return null;
 
-		StringBuffer out = new StringBuffer();
+		StringBuilder out = new StringBuilder();
 
 		int sz = str.length();
-		StringBuffer unicode = new StringBuffer(4);
+		StringBuilder unicode = new StringBuilder(4);
 		boolean hadSlash = false;
 		boolean inUnicode = false;
 
@@ -1039,12 +1087,11 @@ class Misc
 	public static ArrayList<String> getKeyValueList(Set<String> keys,Map<String,String> map)
 	{
 		ArrayList<String> result = new ArrayList<String>();
-		Iterator<String> itr = keys.iterator();
-		while(itr.hasNext())
+		for(String key:keys)
 		{
-			String itrvalue = map.get(itr.next());
-			if (itrvalue == null || itrvalue.isEmpty()) continue;
-			result.add(itrvalue);
+			String value = map.get(key);
+			if (value == null || value.isEmpty()) continue;
+			result.add(value);
 		}
 
 		return result;
@@ -1070,11 +1117,11 @@ class Misc
 
 	public static String getMessage(XML xml,String message,Object... args)
 	{
-		String msg = getMessage(message,args);
-		msg += " [XML ";
+		StringBuilder msg = new StringBuilder(getMessage(message,args));
+		msg.append(" [XML ");
 		String line = xml.getLine();
 		if (line != null && !"".equals(line))
-			msg += "(line: " + line + ") ";
+			msg.append("(line: " + line + ") ");
 		try
 		{
 			BufferedReader br = new BufferedReader(new StringReader(xml.toString()));
@@ -1083,13 +1130,13 @@ class Misc
 			{
 				line = br.readLine();
 				if (line == null) break;
-				msg += line.trim() + " ";
+				msg.append(line.trim() + " ");
 			}
 		}
 		catch(IOException ex) {}
-		if (line != null) msg += "...";
-		msg += "]";
-		return msg;
+		if (line != null) msg.append("...");
+		msg.append("]");
+		return msg.toString();
 	}
 
 	interface Substituer
@@ -1156,7 +1203,7 @@ class Misc
 		if (str == null) return null;
 
 		Matcher matcher = pattern.matcher(str);
-		StringBuffer sb = new StringBuffer();
+		StringBuilder sb = new StringBuilder();
 
 		while(matcher.find())
 		{

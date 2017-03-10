@@ -1,8 +1,12 @@
 import java.util.*;
+
+// Depend on Mozilla Rhino library from https://developer.mozilla.org/en-US/docs/Mozilla/Projects/Rhino
 import org.mozilla.javascript.*;
 
 class AdapterScriptException extends AdapterException
 {
+	private static final long serialVersionUID = -6121204203128410513L;
+
         public AdapterScriptException(String message)
         {
                 super(message);
@@ -41,6 +45,7 @@ class Script
 		if (Misc.isLog(30)) Misc.log("Executing script: " + program);
 		try {
 			Object obj = ctx.evaluateString(scope,program,"script",1,null);
+			if (obj instanceof Undefined) return null;
 			if (obj != null) return obj.toString();
 		} catch (org.mozilla.javascript.JavaScriptException ex) {
 			throw new AdapterScriptException(ex.getMessage());
