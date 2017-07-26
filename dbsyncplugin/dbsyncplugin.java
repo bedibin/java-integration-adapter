@@ -237,7 +237,8 @@ abstract class UpdateSubscriber extends Subscriber
 
 	protected String getExceptionMessage(Exception ex)
 	{
-		return ex.getMessage();
+		String msg = ex.getMessage();
+		return msg == null ? ex.toString() : msg;
 	}
 
 	public final void oper(XML xmldest,XML xmloper) throws Exception
@@ -255,7 +256,7 @@ abstract class UpdateSubscriber extends Subscriber
 		{
 			if (stoponerror) Misc.rethrow(ex);
 			String key = getKeyValue();
-			Misc.log("ERROR: " + (keyvalue == null ? "" : "[" + keyvalue + "]") + getExceptionMessage(ex) + Misc.CR + "XML message was: " + xmloper);
+			Misc.log("ERROR: " + (keyvalue == null ? "" : "[" + keyvalue + "] ") + getExceptionMessage(ex) + Misc.CR + "XML message was: " + xmloper);
 		}
 	}
 }

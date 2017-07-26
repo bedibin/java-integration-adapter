@@ -11,6 +11,7 @@ import org.w3c.dom.*;
 import org.xml.sax.*;
 import org.xml.sax.helpers.DefaultHandler;
 import java.util.regex.*;
+import org.json.JSONObject;
 
 interface VariableContext
 {
@@ -21,13 +22,15 @@ class XML
 {
 	protected Document dom;
 	protected Node node;
-	private static ArrayList<XML> defaults = new ArrayList<XML>();
+	private static ArrayList<XML> defaultattributes = new ArrayList<XML>();
+	private static HashMap<String,XML> defaultelements = new HashMap<String,XML>();
 	private static HashMap<String,String> defaultvars = new HashMap<String,String>();
 	final static String LINE_NUMBER_KEY_NAME = "lineNumber";
 	Stack<Element> elementStack = new Stack<Element>();
 	StringBuilder textBuffer = new StringBuilder();
 	SAXParser parser;
-	private static Pattern xmlvaluepattern = Pattern.compile("[^\\x09\\x0A\\x0D\\x20-\\xD7EF\\xE000-\\xFFFD\\x10000-x10FFFF]");
+	// See: https://www.w3.org/TR/xml/#charsets
+	private static Pattern xmlvaluepattern = Pattern.compile("[^\\x09\\x0a\\x0d\\x20-\\x7f\\xa0-\\uD7EF\\uE000-\\uFFFD]");
 
 	private DefaultHandler handler = new DefaultHandler()
 	{
@@ -132,6 +135,21 @@ class XML
 		node = getElementByPath(root).node;
 	}
 
+	public XML(JSONObject json) throws Exception
+	{
+		// https://github.com/stleary/JSON-java
+		// https://search.maven.org/#search%7Cgav%7C1%7Cg%3A%22org.json%22%20AND%20a%3A%22json%22
+		this();
+		String txt = org.json.XML.toString(json,"root");
+		try
+		{
+			parser.parse(new InputSource(new StringReader(txt)),handler);
+		} catch(Exception ex) {
+			Misc.rethrow(ex,"Invalid XML: " + txt);
+		}
+		node = getRootNode();
+	}
+
 	public XML(TextMessage msg) throws Exception
 	{
 		this();
@@ -155,9 +173,7 @@ class XML
 		try
 		{
 			parser.parse(new InputSource(new StringReader(txt)),handler);
-		}
-		catch(Exception ex)
-		{
+		} catch(Exception ex) {
 			Misc.rethrow(ex,"Invalid XML: " + txt);
 		}
 		node = getRootNode();
@@ -170,9 +186,7 @@ class XML
 		try
 		{
 			parser.parse(new InputSource(new StringReader(txt)),handler);
-		}
-		catch(Exception ex)
-		{
+		} catch(Exception ex) {
 			Misc.rethrow(ex,"Invalid XML: " + txt);
 		}
 		node = getRootNode();
@@ -198,6 +212,12 @@ class XML
 		xml.add(this);
 		xml.node = xml.getRootNode();
 		return xml;
+	}
+
+	public XML rename(String name) throws Exception
+	{
+		dom.renameNode(node,node.getNamespaceURI(),name);
+		return this;
 	}
 
 	public Document getDocument()
@@ -450,6 +470,24 @@ class XML
 			xml.setAttribute(entry.getKey(),entry.getValue());
 	}
 
+	public synchronized boolean isElementNoDefault(String name)
+	{
+		if (!isElement(node)) return false;
+		Node currentnode = node.getFirstChild();
+		while(currentnode != null)
+		{
+			if (isElement(currentnode))
+			{
+				Element el = (Element)currentnode;
+				String tagname = el.getTagName();
+				if (tagname.equals(name)) return true;
+			}
+			currentnode = currentnode.getNextSibling();
+		}
+
+		return false;
+	}
+
 	public synchronized boolean isAttributeNoDefault(String name)
 	{
 		if (!isElement(node)) return false;
@@ -466,7 +504,7 @@ class XML
 
 		if (attr == null)
 		{
-			for(XML def:defaults)
+			for(XML def:defaultattributes)
 			{
 				String attribute = def.getAttribute("attribute");
 				if (!name.equals(attribute)) continue;
@@ -513,7 +551,7 @@ class XML
 
 		if (attr == null)
 		{
-			for(XML def:defaults)
+			for(XML def:defaultattributes)
 			{
 				String attribute = def.getAttribute("attribute");
 				if (!name.equals(attribute)) continue;
@@ -608,7 +646,8 @@ class XML
 
 	public XML getElement(String name) throws AdapterException
 	{
-		return getElement(name,false);
+		XML result = getElement(name,false);
+		return result == null ? defaultelements.get(name) : result;
 	}
 
 	public XML getElementByPath(String name) throws AdapterException
@@ -731,7 +770,7 @@ class XML
 		if (result == null) result = (String)expr.evaluate(node,XPathConstants.STRING);
 		if (result == null) return "";
 
-		return result;
+		return (String)result;
 	}
 
 	public void setAttributeByPath(String path,String name,String value) throws AdapterException
@@ -992,19 +1031,28 @@ class XML
 		{
 			String attribute = xml.getAttribute("attribute");
 			if (attribute != null)
-				defaults.add(xml);
+				defaultattributes.add(xml);
 			else
 			{
-				attribute = xml.getAttribute("name");
-				if (attribute != null && attribute.startsWith("$"))
+				String element = xml.getAttribute("element");
+				if (element != null)
 				{
-					String value = xml.getAttribute("value");
-					if (value == null) value = xml.getValue();
-					if (!defaultvars.containsKey(attribute)) // Take first matching one only
-						defaultvars.put(attribute,value);
+					if (!defaultelements.containsKey(element)) // Take first matching one only
+						defaultelements.put(element,xml);
 				}
 				else
-					throw new AdapterException(xml,"Missing \"attribute\" attribute or \"name\" attribute is not a variable");
+				{
+					attribute = xml.getAttribute("name");
+					if (attribute != null && attribute.startsWith("$"))
+					{
+						String value = xml.getAttribute("value");
+						if (value == null) value = xml.getValue();
+						if (!defaultvars.containsKey(attribute)) // Take first matching one only
+							defaultvars.put(attribute,value);
+					}
+					else
+						throw new AdapterException(xml,"Missing 'attribute'/'element' attribute or 'name' attribute is not a variable");
+				}
 			}
 		}
 		

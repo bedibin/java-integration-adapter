@@ -371,6 +371,54 @@ class Misc
 		stream.close();
 	}
 
+	static public BufferedReader getFileReader(File file,String default_charset) throws Exception
+	{
+		byte bom[] = new byte[4];
+
+		FileInputStream fis = new FileInputStream(file);
+		int read = fis.read(bom);
+
+		// Try to auto-detect character set. See: http://www.unicode.org/faq/utf_bom.html#bom1
+		String charset = null;
+		int bom_size = 0;
+		if (read >= 4 && bom[0] == (byte)0xFF && bom[1] == (byte)0xFE && bom[2] == (byte)0x00 && bom[3] == (byte)0x00)
+		{
+			charset = "UTF-32LE";
+			bom_size = 4;
+		}
+		else if (read >= 4 && bom[0] == (byte)0x00 && bom[1] == (byte)0x00 && bom[2] == (byte)0xFE && bom[3] == (byte)0xFF)
+		{
+			charset = "UTF-32BE";
+			bom_size = 4;
+		}
+		else if (read >= 3 && bom[0] == (byte)0xEF && bom[1] == (byte)0xBB && bom[2] == (byte)0xBF)
+		{
+			charset = "UTF-8";
+			bom_size = 3;
+		}
+		else if (read >= 2 && bom[0] == (byte)0xFF && bom[1] == (byte)0xFE)
+		{
+			charset = "UTF-16LE";
+			bom_size = 2;
+		}
+		else if (read >= 2 && bom[0] == (byte)0xFE && bom[1] == (byte)0xFF)
+		{
+			charset = "UTF-16BE";
+			bom_size = 2;
+		}
+
+		if (charset != null && default_charset != null && !charset.equalsIgnoreCase(default_charset))
+			throw new AdapterException("Detected charset " + charset + " for file '" + file.getName() + "' but " + default_charset + " is specified");
+
+		if (charset == null) charset = default_charset;
+		if (charset == null) charset = "ISO-8859-1";
+
+		fis = new FileInputStream(file);
+		if (bom_size > 0) fis.skip(bom_size);
+
+		return new BufferedReader(new InputStreamReader(fis,charset));
+	}
+
 	static public String readFile(String filename)
 	{
 		try
@@ -1157,7 +1205,9 @@ class Misc
 
 	public static String substituteGet(String param,String def,VariableContext ctx) throws Exception
 	{
-		if (param.startsWith("$"))
+		if (param.startsWith("$PASSWORD"))
+			return javaadapter.crypter.decrypt(XML.getDefaultVariable(param,ctx));
+		else if (param.startsWith("$"))
 			return XML.getDefaultVariable(param,ctx);
 		else if (param.startsWith("<"))
 		{
@@ -1262,13 +1312,11 @@ class Misc
 		return substitute(str,new Misc.Substituer() {
 			public String getValue(String param) throws Exception
 			{
-				String def;
 				try {
-					def = xml.getStringByPath(param);
-				} catch (javax.xml.xpath.XPathExpressionException ex) {
-					def = null;
-				}
-				return substituteGet(param,def,null);
+					String value = xml.getStringByPath(param);
+					if (value != null) return value;
+				} catch (javax.xml.xpath.XPathExpressionException ex) {}
+				return substituteGet(param,null,null);
 			}
 		});
 	}

@@ -229,6 +229,15 @@ class Operation extends SchedulerTask
 		return xml;
 	}
 
+	static public void renameByPath(XML xml,String path,String name) throws Exception
+	{
+		if (path == null || name == null) return;
+
+		XML[] nodes = xml.getElementsByPath(path);
+		for(XML node:nodes)
+			node.rename(name);
+	}
+
 	static public void addByPath(XML xml,String path,String name,String value) throws Exception
 	{
 		if (path == null)
@@ -355,6 +364,8 @@ class Operation extends SchedulerTask
 			removeByPath(xml,element.getAttribute("path"));
 		else if (tagname.equals("setpath"))
 			xml = xml.getElementByPath(element.getAttribute("path"));
+		else if (tagname.equals("renamepath"))
+			renameByPath(xml,element.getAttribute("path"),element.getAttribute("name"));
 		else if (tagname.equals("variablepath"))
 			setVariable(xml,element.getAttribute("path"),element.getAttribute("name"));
 		else if (tagname.equals("log"))
@@ -370,7 +381,10 @@ class Operation extends SchedulerTask
 			{
 				String ns = element.getAttribute("ns");
 				String request = element.getAttribute("request");
-				SoapRequest soap = new SoapRequest(request,ns);
+				XML header = element.getElement("header");
+				if (header != null)
+					header = new XML(new StringBuilder(Misc.substitute(header.toString(),xml)));
+				SoapRequest soap = new SoapRequest(request,ns,header);
 
 				// Workaround for soap.add crash... Use it if needed.
 				// soap.add(new XML(new StringBuffer(xml.rootToString())));

@@ -35,6 +35,7 @@ elementFormDefault="qualified">
 		<xs:enumeration value="file"/>
 		<xs:enumeration value="direct"/>
 		<xs:enumeration value="ldap"/>
+		<xs:enumeration value="http"/>
 	</xs:restriction>
 </xs:simpleType>
 
@@ -47,6 +48,15 @@ elementFormDefault="qualified">
 </xs:simpleType>
 
 <xs:simpleType name="httptypes">
+	<xs:restriction base="xs:string">
+		<xs:enumeration value="get"/>
+		<xs:enumeration value="post"/>
+		<xs:enumeration value="put"/>
+		<xs:enumeration value="delete"/>
+	</xs:restriction>
+</xs:simpleType>
+
+<xs:simpleType name="httpsrvtypes">
 	<xs:restriction base="xs:string">
 		<xs:enumeration value="get"/>
 		<xs:enumeration value="post"/>
@@ -121,6 +131,8 @@ elementFormDefault="qualified">
 		<xs:enumeration value="error"/>
 		<xs:enumeration value="ignore"/>
 		<xs:enumeration value="exception"/>
+		<xs:enumeration value="reject_record"/>
+		<xs:enumeration value="reject_field"/>
 		<xs:enumeration value="use_key"/>
 	</xs:restriction>
 </xs:simpleType>
@@ -220,7 +232,7 @@ elementFormDefault="qualified">
 	</xs:simpleContent>  
 </xs:complexType>
 
-<xs:complexType name="anyxml">
+<xs:complexType name="anyxml" mixed="true">
 	<xs:sequence>
 		<xs:any minOccurs="0" processContents="skip"/>
 	</xs:sequence>
@@ -271,8 +283,13 @@ elementFormDefault="qualified">
 </xs:complexType>
 
 <xs:complexType name="simplelookup"> <!-- dbsyncplugin -->
-	<xs:complexContent>
+	<xs:complexContent mixed="true">
 		<xs:extension base="read">
+			<xs:sequence><xs:choice minOccurs="0" maxOccurs="unbounded">
+				<xs:element name="function" type="function"/>
+				<xs:element name="read" type="read"/>
+				<xs:element name="element" type="anyxml"/>
+			</xs:choice></xs:sequence>
 		</xs:extension>
 	</xs:complexContent>
 </xs:complexType>
@@ -326,7 +343,7 @@ elementFormDefault="qualified">
 	<xs:attribute name="filename" type="xs:string"/>
 	<xs:attribute name="worksheet" type="xs:string"/>
 	<xs:attribute name="class" type="xs:string"/>
-	<xs:attribute name="url" type="xs:anyURI"/>
+	<xs:attribute name="url" type="xs:string"/>
 	<xs:attribute name="username" type="xs:string"/>
 	<xs:attribute name="password" type="xs:string"/>
 	<xs:attribute name="clientkeystore" type="xs:string"/>
@@ -338,29 +355,34 @@ elementFormDefault="qualified">
 	<xs:attribute name="context" type="xs:string"/>
 	<xs:attribute name="referral" type="xs:string"/>
 	<xs:attribute name="derefAliases" type="xs:string"/>
-	<xs:attribute name="notrustssl" type="xs:boolean" default="true"/>
+	<xs:attribute name="notrustssl" type="xs:boolean" default="false"/>
 	<xs:attribute name="resultpathrow" type="xs:string"/>
 	<xs:attribute name="resultpathcolumn" type="xs:string"/>
 	<xs:attributeGroup ref="activate"/>
 </xs:complexType>
 
 <xs:complexType name="publisher">
+	<xs:sequence>
+		<xs:element name="header" minOccurs="0" maxOccurs="1" type="anyxml"/>
+	</xs:sequence>
 	<xs:attribute name="type" type="publishertypes" default="jms"/>
 	<xs:attribute name="name" type="xs:string" use="required"/>
 	<xs:attribute name="username" type="xs:string"/>
 	<xs:attribute name="password" type="crypted"/>
-	<xs:attribute name="url" type="xs:anyURI"/>
+	<xs:attribute name="url" type="xs:string"/>
 	<xs:attribute name="wsdl" type="xs:anyURI"/>
 	<xs:attribute name="command" type="xs:string"/>
 	<xs:attribute name="filename" type="xs:string"/>
 	<xs:attribute name="action" type="xs:string"/>
 	<xs:attribute name="content_type" type="xs:string"/>
+	<xs:attribute name="method" type="httptypes" default="post"/>
 	<xs:attribute name="request" type="xs:string"/>
 	<xs:attribute name="basedn" type="xs:string"/>
 	<xs:attribute name="fields" type="xs:string"/>
 	<xs:attribute name="operation" type="xs:string"/>
 	<xs:attribute name="port" type="xs:string"/>
 	<xs:attribute name="charset" type="xs:string" default="UTF-8"/>
+	<xs:attribute name="notrustssl" type="xs:boolean" default="false"/>
 	<xs:attributeGroup ref="activate"/>
 </xs:complexType>
 
@@ -491,6 +513,15 @@ elementFormDefault="qualified">
 				<xs:attributeGroup ref="result"/>
 			</xs:complexType>
 		</xs:element>
+		<xs:element name="renamepath">
+			<xs:complexType>
+				<xs:attribute name="path" type="xpath" use="required"/>
+				<xs:attribute name="name" type="xs:string" use="required"/>
+				<xs:attributeGroup ref="activate"/>
+				<xs:attributeGroup ref="filter"/>
+				<xs:attributeGroup ref="result"/>
+			</xs:complexType>
+		</xs:element>
 		<xs:element name="variablepath">
 			<xs:complexType>
 				<xs:attribute name="name" type="xs:string" use="required"/>
@@ -577,6 +608,7 @@ elementFormDefault="qualified">
 			</xs:complexType>
 		</xs:element>
 		<xs:element name="default_lookup" type="simplelookup"/>
+		<xs:element name="insert_lookup" type="simplelookup"/>
 		<xs:element name="exclude_lookup">
 			<xs:complexType>
 				<xs:complexContent>
@@ -598,7 +630,7 @@ elementFormDefault="qualified">
 		<xs:element name="script">
 			<xs:complexType>
 				<xs:complexContent>
-					<xs:extension base="simplestring">
+					<xs:extension base="simplestringfile">
 						<xs:attribute name="on_exception" type="onrejecttypes" default="warning"/>
 					</xs:extension>
 				</xs:complexContent>
@@ -617,6 +649,7 @@ elementFormDefault="qualified">
 	<xs:attribute name="ignore_case" type="xs:boolean" default="false"/>
 	<xs:attribute name="if_exists" type="xs:string"/>
 	<xs:attribute name="for_sync" type="xs:string"/>
+	<xs:attribute name="min_deviation" type="xs:integer"/>
 	<xs:attributeGroup ref="activate"/>
 	<xs:attributeGroup ref="filter"/>
 </xs:complexType>
@@ -669,16 +702,15 @@ elementFormDefault="qualified">
 
 			<xs:element name="default">
 				<xs:complexType>
-					<xs:simpleContent>
-						<xs:extension base="xs:string">
+					<xs:complexContent>
+						<xs:extension base="anyxml">
 							<xs:attribute name="attribute" type="xs:string"/>
+							<xs:attribute name="element" type="xs:string"/>
 							<xs:attribute name="name" type="xs:string"/>
 							<xs:attribute name="value" type="xs:string"/>
 							<xs:attribute name="tagname" type="xs:string"/>
-							<xs:attributeGroup ref="activate"/>
-							<xs:attributeGroup ref="filter"/>
 						</xs:extension>
-					</xs:simpleContent>  
+					</xs:complexContent>  
 				</xs:complexType>
 			</xs:element>
 
@@ -755,7 +787,7 @@ elementFormDefault="qualified">
 							<xs:attribute name="password" type="crypted"/>
 							<xs:attribute name="keystore" type="xs:string"/> <!-- soapserverstandalone -->
 							<xs:attribute name="passphrase" type="crypted" default="changeit"/> <!-- soapserverstandalone -->
-							<xs:attribute name="type" type="httptypes" default="post"/>
+							<xs:attribute name="type" type="httpsrvtypes" default="post"/>
 						</xs:extension>
 					</xs:complexContent>
 				</xs:complexType>
@@ -781,6 +813,7 @@ elementFormDefault="qualified">
 				</xs:complexType>
 			</xs:element>
 
+			<xs:element name="script" type="simplestringfile"/>
 			<xs:element name="dbsyncsorttable" type="sorttable"/> <!-- dbsyncplugin -->
 			<xs:element name="dbsync"> <!-- dbsyncplugin -->
 				<xs:complexType>
@@ -844,6 +877,7 @@ elementFormDefault="qualified">
 								<xs:attribute name="clear_fields" type="xs:string"/>
 								<xs:attribute name="suffix_fields" type="xs:string"/>
 								<xs:attribute name="ignore_fields" type="xs:string"/>
+								<xs:attribute name="on_file_not_found" type="onnotfoundtypes" default="exception"/>
 								<xs:attributeGroup ref="operation"/>
 								<!-- archivage -->
 								<xs:attribute name="reftable" type="xs:string"/>

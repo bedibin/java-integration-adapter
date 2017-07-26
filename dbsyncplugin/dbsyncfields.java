@@ -26,6 +26,7 @@ class Field
 	private String ifexists;
 	private String synclist[];
 	private Scope scope;
+	private int deviation = 0;
 	private boolean ignorecase = false;
 
 	public Field(XML xml,Scope scope) throws Exception
@@ -64,6 +65,8 @@ class Field
 		lookup = new SyncLookup(this);
 		hasvalue = lookup.getCount() > 0 || "true".equals(xml.getAttribute("hasvalue"));
 		isdefault = "true".equals(xml.getAttribute("isdefault"));
+		String min_deviation = xml.getAttribute("min_deviation");
+		if (min_deviation != null) deviation = new Integer(min_deviation);
 	}
 
 	public Field(String name) throws Exception
@@ -211,6 +214,19 @@ class Field
 		if (Misc.isLog(30)) Misc.log("Looking for filter " + filtername + " [" + filterresult + "]: " + xml);
 
 		return Misc.isFilterPass(xmlfield,xml);
+	}
+
+	public boolean checkDeviation(String oldvalue,String newvalue)
+	{
+		// Only interger supported for now
+		if (deviation == 0) return false;
+		if (!oldvalue.matches("^-?\\d+$")) return false;
+		if (!newvalue.matches("^-?\\d+$")) return false;
+		int oldint = new Integer(oldvalue);
+		int newint = new Integer(newvalue);
+		int gap = oldint * deviation / 100;
+		if (Misc.isLog(25)) Misc.log("Deviation " + gap + ": " + oldint + "," + newint);
+		return (newint >= oldint - gap) && (newint <= oldint + gap);
 	}
 
 	public void updateCache(HashMap<String,String> row)

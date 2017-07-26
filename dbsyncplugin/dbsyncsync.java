@@ -16,12 +16,14 @@ class Sync
 
 	public Sync(DBSyncOper dbsync,XML xml) throws Exception
 	{
-		this.xml = xml;
 		this.dbsync = dbsync;
 		db = DB.getInstance();
 
 		Fields fields = dbsync.getFields();
 		keys = fields == null ? null : fields.getKeys();
+
+		if (xml == null) return;
+		this.xml = xml;
 
 		String fieldsattr = xml.getAttribute("fields");
 		Set<String> headers = fieldsattr == null ? null : Misc.arrayToSet(fieldsattr.split("\\s*,\\s*"));
@@ -90,6 +92,7 @@ class Sync
 	public String getName() throws Exception
 	{
 		if (syncname != null) return syncname;
+		if (xml == null) return "NONE";
 		syncname = xml.getAttribute("name");
 		if (syncname == null) syncname = xml.getAttribute("instance");
 		if (syncname == null) syncname = xml.getAttribute("filename");
@@ -190,7 +193,7 @@ class SyncSql extends Sync
 					sb.append(sepor + "(");
 					for(String keyname:keys)
 					{
-						sb.append(sepand + keyname + "=" + db.getFieldValue(Misc.implode(entry.get(keyname),"\n")));
+						sb.append(sepand + "\"" + keyname + "\"=" + db.getFieldValue(Misc.implode(entry.get(keyname),"\n")));
 						sepand = " and ";
 					}
 					sb.append(")");
@@ -260,66 +263,9 @@ class SyncXML extends Sync
 {
 	private XML xml;
 
-	private void Read(XML xml,XML xmlsource) throws Exception
-	{
-		Reader reader = ReaderUtil.getReader(xml);
-
-		LinkedHashMap<String,String> row;
-
-		XML xmltable = xmlsource.add(reader.getName());
-		xml.copyAttributes(xmltable);
-
-		while((row = reader.next()) != null)
-			xmltable.add("row",row);
-	}
-
 	public SyncXML(DBSyncOper dbsync,XML xml,XML xmlsource) throws Exception
 	{
 		super(dbsync,xml);
-
-		String filename = xml.getAttribute("filename");
-		if (filename == null)
-		{
-			if (xmlsource == null)
-			{
-				xmlsource = new XML();
-				xmlsource.add("root");
-			}
-		}
-		else
-			xmlsource = new XML(filename);
-
-		XML[] elements = xml.getElements(null);
-		for(XML element:elements)
-		{
-			String tagname = element.getTagName();
-
-			if (tagname.equals("element"))
-				xmlsource.add(element);
-			else if (tagname.equals("function"))
-			{
-				Subscriber sub = new Subscriber(element);
-
-				Operation.ResultTypes resulttype = Operation.getResultType(element);
-				XML xmlresult = sub.run(xmlsource);
-				switch(resulttype)
-				{
-				case LAST:
-					xmlsource = xmlresult;
-					break;
-				case MERGE:
-					xmlsource.add(xmlresult);
-					break;
-				}
-			}
-			else if (tagname.equals("read"))
-			{
-				element.copyAttribute("fields",xml);
-				Read(element,xmlsource);
-			}
-
-			if (Misc.isLog(9)) Misc.log("XML Sync " + tagname + ": " +xmlsource);
-		}
 
 		reader = new ReaderXML(xml,xmlsource);
 

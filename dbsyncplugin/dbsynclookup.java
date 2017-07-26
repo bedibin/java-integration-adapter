@@ -64,6 +64,13 @@ class SyncLookup
 				this.resultname = resultname;
 				loadingdone = false;
 
+				if ("insert_lookup".equals(xml.getTagName()))
+				{
+					loadingdone = true;
+					table = new HashMap<String,String>();
+					return;
+				}
+
 				if (Misc.isLog(15)) Misc.log("Lookup: Doing preload for " + fieldname);
 				xml.setAttribute("default_field_name",fieldname);
 
@@ -188,6 +195,14 @@ class SyncLookup
 				loadingdone = true;
 			}
 
+			public String addValue(LinkedHashMap<String,String> values) throws Exception
+			{
+				XML xmladd = new XML(new StringBuilder(Misc.substitute(xml.toString(),values)));
+				reader = ReaderUtil.getReader(xmladd);
+				doInitialLoading(values);
+				return getValue(values);
+			}
+
 			public String getValue(LinkedHashMap<String,String> values) throws Exception
 			{
 				// Delay preloading until first use
@@ -197,7 +212,7 @@ class SyncLookup
 				{
 					if (table == null) return null;
 					Iterator<String> iter = table.values().iterator();
-					return  iter.hasNext() ? iter.next() : null;
+					return iter.hasNext() ? iter.next() : null;
 				}
 
 				if (fields == null) return null;
@@ -276,10 +291,15 @@ class SyncLookup
 
 		public SimpleLookup(XML xml) throws Exception
 		{
-			this(xml,fieldname);
+			this(xml,fieldname,null);
 		}
 
-		protected SimpleLookup(XML xml,String resultname) throws Exception
+		public SimpleLookup(XML xml,Preload preloadinfo) throws Exception
+		{
+			this(xml,fieldname,preloadinfo);
+		}
+
+		protected SimpleLookup(XML xml,String resultname,Preload preloadinfo) throws Exception
 		{
 			opername = xml.getAttribute("name");
 			xmllookup = xml;
@@ -288,11 +308,17 @@ class SyncLookup
 			String attr = xml.getAttributeDeprecated("use_key_when_not_found");
 			if ("true".equals(attr)) onlookupusekey = true;
 
-			OnOper onlookuperror = Field.getOnOper(xml,"on_lookup_error",OnOper.ignore,EnumSet.of(OnOper.use_key,OnOper.ignore,OnOper.exception,OnOper.error,OnOper.warning));
+			OnOper onlookuperror = Field.getOnOper(xml,"on_lookup_error",OnOper.ignore,EnumSet.of(OnOper.use_key,OnOper.ignore,OnOper.exception,OnOper.error,OnOper.warning,OnOper.reject_record,OnOper.reject_field));
 			switch(onlookuperror)
 			{
 			case use_key:
 				onlookupusekey = true;
+				break;
+			case reject_field:
+				erroroperation = SyncLookupResultErrorOperationTypes.REJECT_FIELD;
+				break;
+			case reject_record:
+				erroroperation = SyncLookupResultErrorOperationTypes.REJECT_RECORD;
 				break;
 			case exception:
 				erroroperation = SyncLookupResultErrorOperationTypes.EXCEPTION;
@@ -312,7 +338,13 @@ class SyncLookup
 				return;
 			}
 
-			preloadinfo = new Preload(xml,resultname);
+			this.preloadinfo = preloadinfo == null ? new Preload(xml,resultname) : preloadinfo;
+		}
+
+		protected final String add(LinkedHashMap<String,String> row) throws Exception
+		{
+			if (preloadinfo == null) throw new AdapterException("Adding non preload is not supported");
+			return preloadinfo.addValue(row);
 		}
 
 		protected final String lookup(LinkedHashMap<String,String> row) throws Exception
@@ -362,13 +394,18 @@ class SyncLookup
 			if (opername != null) return opername;
 			return xmllookup.getTagName();
 		}
+
+		public final Preload getPreload()
+		{
+			return preloadinfo;
+		}
 	}
 
 	class MergeLookup extends SimpleLookup
 	{
 		public MergeLookup(XML xml) throws Exception
 		{
-			super(xml,null);
+			super(xml,null,null);
 		}
 
 		@Override
@@ -387,7 +424,7 @@ class SyncLookup
 	{
 		public DefaultLookup(XML xml) throws Exception
 		{
-			super(xml,null);
+			super(xml,null,null);
 		}
 
 		@Override
@@ -411,7 +448,7 @@ class SyncLookup
 
 		public ExcludeLookup(XML xml) throws Exception
 		{
-			super(xml,null);
+			super(xml,null,null);
 
 			OnOper scope = Field.getOnOper(xml,"on_exclude",OnOper.reject_record,EnumSet.of(OnOper.ignore,OnOper.reject_field,OnOper.error,OnOper.warning,OnOper.exception));
 			switch(scope)
@@ -458,6 +495,24 @@ class SyncLookup
 			if (value == null)
 				return new SyncLookupResultErrorOperation(onexclude);
 			return new SyncLookupResultErrorOperation();
+		}
+	}
+
+	class InsertLookup extends SimpleLookup
+	{
+		public InsertLookup(XML xml,Preload preload) throws Exception
+		{
+			super(xml,preload);
+		}
+
+		@Override
+		public SyncLookupResultErrorOperation oper(LinkedHashMap<String,String> row,String name) throws Exception
+		{
+			String value = lookup(row);
+			if (value == null) value = add(row);
+			if (value == null) return new SyncLookupResultErrorOperation();
+			row.put(name,value);
+			return new SyncLookupResultErrorOperation(SyncLookupResultErrorOperationTypes.NEWVALUE);
 		}
 	}
 
@@ -520,6 +575,7 @@ class SyncLookup
 		XML xml = field.getXML();
 		if (xml == null) return;
 
+		SimpleLookup.Preload preload = null;
 		XML[] elements = xml.getElements(null);
 		for(XML element:elements)
 		{
@@ -534,6 +590,12 @@ class SyncLookup
 				lookups.add(new IncludeLookup(element));
 			else if (name.equals("exclude_lookup"))
 				lookups.add(new ExcludeLookup(element));
+			else if (name.equals("insert_lookup"))
+			{
+				SimpleLookup lookup = new InsertLookup(element,preload);
+				lookups.add(lookup);
+				preload = lookup.getPreload();
+			}
 			else if (name.equals("script"))
 				lookups.add(new ScriptLookup(element));
 		}

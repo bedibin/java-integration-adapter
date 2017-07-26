@@ -5,8 +5,6 @@ import org.mozilla.javascript.*;
 
 class AdapterScriptException extends AdapterException
 {
-	private static final long serialVersionUID = -6121204203128410513L;
-
         public AdapterScriptException(String message)
         {
                 super(message);
@@ -30,6 +28,19 @@ class Script
 	public static String execute(String program,Map<String,String> vars) throws AdapterScriptException
 	{
 		if (program == null) return null;
+
+		XML xmlcfg = javaadapter.getConfiguration();
+		if (xmlcfg != null)
+		{
+			try {
+				StringBuilder sb = new StringBuilder(program);
+				XML[] xmlscripts = xmlcfg.getElements("script");
+				for(XML xmlscript:xmlscripts)
+					sb.append(xmlscript.getValue());
+				program = sb.toString() + program;
+			} catch(AdapterException ex) {}
+		}
+
 		Context ctx = getContext();
 		ScriptableObject scope = ctx.initStandardObjects();
 		for(Map.Entry<String,String> var:XML.getDefaultVariables().entrySet())

@@ -22,6 +22,11 @@ abstract class ReaderUtil implements Reader
 
 	static final public Reader getReader(XML xml) throws Exception
 	{
+		return getReader(xml,xml);
+	}
+
+	static final public Reader getReader(XML xml,XML xmlsource) throws Exception
+	{
 		Reader reader = null;
 		String type = xml.getAttribute("type");
 
@@ -34,7 +39,7 @@ abstract class ReaderUtil implements Reader
 		else if (type.equals("ldap"))
 			reader = new ReaderLDAP(xml);
 		else if (type.equals("xml"))
-			reader = new ReaderXML(xml,xml);
+			reader = new ReaderXML(xml,xmlsource);
 		else if (type.equals("class"))
 		{
 			String name = xml.getAttribute("class");
@@ -328,7 +333,7 @@ class ReaderCSV extends ReaderUtil
 
 	private void initFile(File file,String charset) throws Exception
 	{
-		in = new BufferedReader(new InputStreamReader(new FileInputStream(file),charset == null ? "ISO-8859-1" : charset));
+		in = Misc.getFileReader(file,charset);
 		if (headers == null)
 		{
 			ArrayList<String> row = readCSV();
@@ -430,7 +435,7 @@ class ReaderLDAP extends ReaderUtil
 	{
 		super(xml);
 
-		String url = xml.getAttribute("url");
+		String url = Misc.substitute(xml.getAttribute("url"));
 		String username = xml.getAttribute("username");
 		String password = xml.getAttributeCrypt("password");
 		String auth = xml.getAttribute("authentication");
@@ -532,14 +537,38 @@ class ReaderXML extends ReaderUtil
 	protected int position = 0;
 	private String pathcol;
 
+	private void Read(XML xml,XML xmlsource) throws Exception
+	{
+		Reader reader = ReaderUtil.getReader(xml,xmlsource);
+
+		LinkedHashMap<String,String> row;
+
+		XML xmltable = xmlsource.add(reader.getName());
+		xml.copyAttributes(xmltable);
+
+		while((row = reader.next()) != null)
+			xmltable.add("row",row);
+	}
+
 	private void getSubXML(LinkedHashMap<String,String> row,String prefix,XML xml) throws Exception
 	{
-		XML[] elements = xml.getElements();
+		HashMap<String,String> attributes = xml.getAttributes();
+		for(Map.Entry<String,String> entry:attributes.entrySet())
+		{
+			String value = entry.getValue();
+			if (value == null) value = "";
+			String name = entry.getKey();
+			if (prefix != null) name = prefix + "_" + name;
+			if (headers != null && !headers.contains(name)) continue;
+			row.put(name,value.trim());
+		}
+
+		XML[] elements = prefix == null ? xml.getElements() : xml.getElementsByPath(pathcol);
 		for(XML element:elements)
 		{
 			String name = element.getTagName();
 			if (name == null) continue;
-			name = prefix + "_" + name;
+			if (prefix != null) name = prefix + "_" + name;
 			if (headers != null && !headers.contains(name)) continue;
 			String value = element.getValue();
 			if (value == null) value = "";
@@ -551,29 +580,9 @@ class ReaderXML extends ReaderUtil
 	protected LinkedHashMap<String,String> getXML(int pos) throws Exception
 	{
 		if (pos >= xmltable.length) return null;
-		XML[] elements = xmltable[pos].getElementsByPath(pathcol);
-		HashMap<String,String> attributes = xmltable[pos].getAttributes();
 
 		LinkedHashMap<String,String> row = new LinkedHashMap<String,String>();
-
-		for(Map.Entry<String,String> entry:attributes.entrySet())
-		{
-			String value = entry.getValue();
-			if (value == null) value = "";
-			row.put(entry.getKey(),value.trim());
-		}
-
-		for(XML element:elements)
-		{
-			String name = element.getTagName();
-			if (name == null) continue;
-			if (headers != null && !headers.contains(name)) continue;
-			String value = element.getValue();
-			if (value == null) value = "";
-			row.put(name,value.trim());
-			getSubXML(row,name,element);
-		}
-
+		getSubXML(row,null,xmltable[pos]);
 		return row;
 	}
 
@@ -596,8 +605,48 @@ class ReaderXML extends ReaderUtil
 		super(xml);
 
 		String filename = xml.getAttribute("filename");
-		if (filename != null && (xmlsource == null || xml == xmlsource))
+		if (filename == null)
+		{
+			if (xmlsource == null)
+			{
+				xmlsource = new XML();
+				xmlsource.add("root");
+			}
+		}
+		else
 			xmlsource = new XML(filename);
+
+		XML[] elements = xml.getElements(null);
+		for(XML element:elements)
+		{
+			String tagname = element.getTagName();
+
+			if (tagname.equals("element"))
+				xmlsource.add(element);
+			else if (tagname.equals("function"))
+			{
+				Subscriber sub = new Subscriber(element);
+
+				Operation.ResultTypes resulttype = Operation.getResultType(element);
+				XML xmlresult = sub.run(xmlsource);
+				switch(resulttype)
+				{
+				case LAST:
+					xmlsource = xmlresult;
+					break;
+				case MERGE:
+					xmlsource.add(xmlresult);
+					break;
+				}
+			}
+			else if (tagname.equals("read"))
+			{
+				element.copyAttribute("fields",xml);
+				Read(element,xmlsource);
+			}
+
+			if (Misc.isLog(9)) Misc.log("XML reader " + tagname + ": " + xmlsource);
+		}
 
 		init(xmlsource,xml.getAttribute("resultpathrow"),xml.getAttribute("resultpathcolumn"));
 	}
@@ -606,6 +655,7 @@ class ReaderXML extends ReaderUtil
 	{
 		this.pathcol = pathcol;
 		xmltable = xml.getElementsByPath(pathrow);
+		if (Misc.isLog(5)) Misc.log("Found " + xmltable.length + " elements with path " + pathrow);
 		if (instance == null) instance = xml.getTagName();
 
 		if (headers != null) return;

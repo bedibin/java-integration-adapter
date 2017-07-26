@@ -17,7 +17,7 @@ class DummyTrustmanager implements X509TrustManager
 
 	public X509Certificate[] getAcceptedIssuers()
 	{
-		return new java.security.cert.X509Certificate[0];
+		return null;
 	}
 }
 
@@ -29,7 +29,7 @@ public class notrustsslsocket extends SSLSocketFactory
 	{
 		try {
 			SSLContext ctx = SSLContext.getInstance("TLS");
-			ctx.init(null, new TrustManager[] { new DummyTrustmanager() }, new SecureRandom());
+			ctx.init(null,new TrustManager[] { new DummyTrustmanager() }, new SecureRandom());
 			socketFactory = ctx.getSocketFactory();
 		} catch (Exception ex) {
 			ex.printStackTrace(System.err);
@@ -81,5 +81,18 @@ public class notrustsslsocket extends SSLSocketFactory
 	public Socket createSocket(InetAddress ia, int i, InetAddress ia1, int i1) throws IOException
 	{
 		return socketFactory.createSocket(ia, i, ia1, i1);
+	}
+}
+
+class nohostverifier implements HostnameVerifier
+{
+	public nohostverifier()
+	{
+	}
+
+	@Override
+	public boolean verify(String hostname,javax.net.ssl.SSLSession sslSession)
+	{
+		return true;
 	}
 }

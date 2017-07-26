@@ -598,7 +598,8 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 			String value = custom.getAttribute("value");
 			if (value == null) value = "";
 			value = Misc.substitute(value,xml);
-			xml.add(name,value);
+			XML xmlval = xml.add(name,value);
+			xmlval.add("oldvalue");
 			if (Misc.isLog(10)) Misc.log("UCMDBAPI: Updating " + name + " with value " + value + " instead of deleting: " + xml);
 		}
 
@@ -635,17 +636,18 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 		if (idlist != null)
 		{
 			String[] ids = idlist.split("\n");
-			for(String id:ids)
+			if (ids.length > 1)
 			{
-				XML delete = new XML();
-				delete = delete.add("remove");
-				delete.add("ID",id);
-				delete.add("INFO",xml.getValue("INFO",null));
+				for(String id:ids)
+				{
+					XML delete = xml.copy();
+					delete.add("ID",id);
 
-				FillUpdateData(data,delete,DBSyncOper.OPER.remove);
-				update.delete(data,DeleteMode.IGNORE_NON_EXISTING);
+					FillUpdateData(data,delete,DBSyncOper.OPER.remove);
+					update.delete(data,DeleteMode.IGNORE_NON_EXISTING);
+				}
+				return;
 			}
-			return;
 		}
 
 		FillUpdateData(data,xml,DBSyncOper.OPER.remove);

@@ -255,27 +255,30 @@ class DBSyncOper
 			for(Field field:fields.getFields())
 			{
 				String fieldname = field.getName();
-				if (key.equals(fieldname) && (field.isValid(sourcesync) || field.isValid(destinationsync)))
+				if (!key.equals(fieldname)) continue;
+				if (!field.isValid(sourcesync) && !field.isValid(destinationsync)) continue;
+				if (!field.isValidFilter(row,key)) continue;
+
+				if (Misc.isLog(30)) Misc.log("Matched field " + fieldname + " with key " + key);
+				String type = field.getType();
+				if (type != null)
 				{
-					if (Misc.isLog(30)) Misc.log("Matched field " + fieldname + " with key " + key);
-					String type = field.getType();
-					if (type != null)
+					if (type.equals("key") && rowold != null && "".equals(newvalue))
 					{
-						if (type.equals("key") && rowold != null && "".equals(newvalue))
-						{
-							String oldvalue = rowold.get(key);
-							if (oldvalue != null)
-								xmlrow.setValue(oldvalue);
-						}
-						if (type.equals("infonull") && "".equals(newvalue))
-							xmlrow.setAttribute("type","info");
-						else if (isinfo && type.equals("noinfo"))
-							xmlrow.removeAttribute("type");
-						else if (!isinfo || !type.equals("infoapi"))
-							xmlrow.setAttribute("type",type);
+						String oldvalue = rowold.get(key);
+						if (oldvalue != null)
+							xmlrow.setValue(oldvalue);
 					}
-					ignorecase = field.isIgnoreCase();
+					if (type.equals("infonull") && "".equals(newvalue))
+						xmlrow.setAttribute("type","info");
+					else if (isinfo && type.equals("noinfo"))
+						xmlrow.removeAttribute("type");
+					else if (!isinfo || !type.equals("infoapi"))
+						xmlrow.setAttribute("type",type);
 				}
+				ignorecase = field.isIgnoreCase();
+				if (rowold != null && field.checkDeviation(rowold.get(key),newvalue))
+					xmlrow.setAttribute("type","info");
 			}
 
 			if (rowold != null)
@@ -418,7 +421,7 @@ class DBSyncOper
 			/* Use exclamation mark since it is the lowest ASCII character */
 			/* This code must match db.getOrderBy logic */
 			String keyvalue = row.get(keyfield);
-			if (keyvalue != null) key.append(keyvalue.trim().replace(' ','!').replace('_','!').replace('\t','!'));
+			if (keyvalue != null) key.append(keyvalue.trim().replace(' ','!').replace('_','!'));
 			key.append("!");
 		}
 
@@ -816,6 +819,7 @@ class DBSyncOper
 			}
 
 			XML[] destinations = xmlsync.getElements("destination");
+			XML[] sources = xmlsync.getElements("source");
 
 			ArrayList<Field> globalfields = new ArrayList<Field>();
 			XML[] globalfieldsxml = xmlsync.getElements("field");
@@ -823,7 +827,7 @@ class DBSyncOper
 				for(XML globalfieldxml:globalfieldsxml)
 					globalfields.add(new Field(globalfieldxml,Scope.SCOPE_GLOBAL));
 
-			for(XML rawsource:xmlsync.getElements("source"))
+			for(XML rawsource:sources)
 			{
 				ArrayList<Field> sourcefields = new ArrayList<Field>();
 				XML[] sourcefieldsxml = rawsource.getElements("field");
@@ -918,6 +922,68 @@ class DBSyncOper
 						sourcesync = null;
 						for(XML var:varsxml) fields.removeDefaultVar(var);
 					}
+				}
+			}
+
+			if (!xmlsync.isElementNoDefault("source")) for(XML rawdestination:destinations)
+			{
+				sourcesync = new Sync(this,null);
+				for(XML destination:getFilenamePatterns(rawdestination))
+				{
+					final String operkey = "OPERATION";
+
+					if (destination == null) continue;
+					destinationsync = new Sync(this,destination);
+
+					String keyfield_destination = destination.getAttribute("keyfield");
+					if (keyfield_destination == null) keyfield_destination = destination.getAttribute("keyfields");
+					if (keyfield_destination != null) keyfield = keyfield_destination;
+					if (keyfield == null) throw new AdapterException(xmlsync,"keyfield is mandatory");
+					keyfield += "," + operkey;
+
+					fields = new Fields(this,keyfield.split("\\s*,\\s*"));
+					if (iscache)
+						for(Field globalfield:globalfields) fields.add(globalfield);
+					else
+						for(XML globalfieldxml:globalfieldsxml) fields.add(new Field(globalfieldxml,Scope.SCOPE_GLOBAL));
+
+					XML[] fieldsxml = destination.getElements("field");
+					for(XML field:fieldsxml) fields.add(new Field(field,Scope.SCOPE_DESTINATION));
+
+					destinationsync = getSync(destination,null,xmlsource);
+					if (destinationsync == null) continue;
+
+					comparefields = destinationsync.getHeader();
+					if (ignorefields != null) comparefields.removeAll(ignorefields);
+					counter = new RateCounter();
+					xmloperlist = new ArrayList<XML>();
+
+					push(OPER.start);
+					LinkedHashMap<String,String> row;
+					while((row = fields.getNext(destinationsync)) != null)
+					{
+						String operstr = row.get(operkey);
+						if (operstr == null) throw new AdapterException("OPERATION is mandatory for destination only processing: " + Misc.implode(row));
+						OPER oper = Enum.valueOf(OPER.class,operstr.toLowerCase());
+						row.remove(operkey);
+
+						LinkedHashMap<String,String> oldrow = null;
+						if (oper == OPER.update)
+						{
+							oldrow = new LinkedHashMap<String,String>();
+							for(Map.Entry<String,String> entry:row.entrySet())
+							{
+								String key = entry.getKey();
+								oldrow.put(key,fields.getKeys().contains(key) ? entry.getValue() : "");
+							}
+						}
+
+						push(oper,row,oldrow);
+					}
+					push(OPER.end);
+					flush();
+
+					destinationsync = null;
 				}
 			}
 

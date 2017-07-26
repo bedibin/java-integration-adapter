@@ -657,7 +657,7 @@ class DB
 		{
 			keyfield = dbc.getQuote() + keyfield + dbc.getQuote();
 			if (ignore_case) keyfield = "upper(" + keyfield + ")";
-			keyfield = "replace(replace(replace(rtrim(ltrim(coalesce(" + keyfield + ",''))),' ','!'),'_','!'),'\t','!')";
+			keyfield = "replace(replace(rtrim(ltrim(coalesce(" + keyfield + ",''))),' ','!'),'_','!')";
 			switch(dbc.getType())
 			{
 			case MYSQL:

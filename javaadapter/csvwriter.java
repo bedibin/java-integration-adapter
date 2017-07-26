@@ -23,7 +23,7 @@ class CsvWriter
 		if (charset != null) this.charset = charset;
 		outlist = new HashMap<String,Writer>();
 		if (Misc.isSubstituteDefault(filename)) return;
-		defaultout = new BufferedWriter(new OutputStreamWriter(new FileOutputStream(new File(javaadapter.getCurrentDir(),filename)),this.charset));
+		defaultout = new BufferedWriter(new OutputStreamWriter(new FileOutputStream(new File(javaadapter.getCurrentDir(),Misc.substitute(filename))),this.charset));
 	}
 
 	public CsvWriter(String filename) throws Exception

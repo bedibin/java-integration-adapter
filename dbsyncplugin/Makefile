@@ -2,12 +2,12 @@ include ../Makefile.def
 
 envl = LANG=fr_CA.iso88591 NLS_LANG=FRENCH_CANADA.WE8ISO8859P1
 
-CLASS = .:../javaadapter/javaadapter.jar:${JAR_DIR}/scheduling.jar:${JAR_DIR}/wljmsclient.jar:${JAR_DIR}/webserviceclient.jar:${JAR_DIR}/wildcard.jar:${JAR_DIR}/ojdbc14.jar
+CLASS = .:../javaadapter/javaadapter.jar:${JAR_DIR}/scheduling.jar:${JAR_DIR}/json.jar:${JAR_DIR}/wljmsclient.jar:${JAR_DIR}/webserviceclient.jar:${JAR_DIR}/wildcard.jar:${JAR_DIR}/ojdbc14.jar
 
 JAR =	dbsyncplugin.jar
 DIR =	classes
 
-FILES =	dbsyncplugin.java dbsql.java dbsyncreader.java dbsyncoper.java dbsynclookup.java
+FILES =	dbsyncplugin.java dbsql.java dbsyncreader.java dbsyncoper.java dbsynclookup.java dbsyncfields.java dbsyncsync.java
 
 all:	${JAR}
 

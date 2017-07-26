@@ -6,7 +6,7 @@ class SoapRequest extends XML
 	private final String nsenv = System.getProperty("javaadapter.soap.nsenv");
 	private final String defnsenv = "http://schemas.xmlsoap.org/soap/envelope/";
 
-	private void makeRequest(String request,String ns)
+	private void makeRequest(String request,String ns,XML header)
 	{
 		XML env = super.add("SOAP-ENV:Envelope");
 		env.setAttribute("xmlns:SOAP-ENV",nsenv == null ? defnsenv : nsenv);
@@ -17,6 +17,15 @@ class SoapRequest extends XML
 		{
 			env.setAttribute("xmlns:ns1",ns);
 			prefix = "ns1:";
+		}
+
+		if (header != null)
+		{
+			try {
+				XML headerxml = env.add("SOAP-ENV:Header");
+				for(XML el:header.getElements(null))
+					headerxml.add(el);
+			} catch(Exception ex) {}
 		}
 
 		XML body = env.add("SOAP-ENV:Body");
@@ -47,17 +56,22 @@ class SoapRequest extends XML
 
 	public SoapRequest() throws AdapterException
 	{
-		makeRequest(null,null);
+		makeRequest(null,null,null);
 	}
 
 	public SoapRequest(String request) throws AdapterException
 	{
-		makeRequest(request,null);
+		makeRequest(request,null,null);
 	}
 
 	public SoapRequest(String request,String ns) throws AdapterException
 	{
-		makeRequest(request,ns);
+		makeRequest(request,ns,null);
+	}
+
+	public SoapRequest(String request,String ns,XML header) throws AdapterException
+	{
+		makeRequest(request,ns,header);
 	}
 
 	public SoapRequest(XML xml)
@@ -93,33 +107,36 @@ class SoapRequest extends XML
 	{
 		Publisher publisher = Publisher.getInstance();
 
-		XML response = publisher.publish(this,xmlconfig);
-		if (Misc.isLog(15)) Misc.log("SOAP response: " + response);
-		if (response == null) return null;
+		XML envsoap = publisher.publish(this,xmlconfig);
+		if (Misc.isLog(15)) Misc.log("SOAP response: " + envsoap);
+		if (envsoap == null) return null;
 
-		XML respsoap = response.getElement("Body");
-		if (respsoap == null)
+		XML bodysoap = envsoap.getElement("Body");
+		if (bodysoap == null)
 		{
-			Misc.log("WARNING: SOAP message returned invalid body element: " + this.rootToString() + "\nResponse: " + response);
+			Misc.log("WARNING: SOAP message returned invalid body element: " + this.rootToString() + "\nResponse: " + envsoap);
 			return null;
 		}
 
-		XML faultrespsoap = respsoap.getElement("Fault");
-		if (faultrespsoap != null)
+		XML faultsoap = bodysoap.getElement("Fault");
+		if (faultsoap != null)
 		{
 			publisher.setSessionID(xmlconfig.getAttribute("url"),null);
 
 			String faultdelay = xmlconfig.getAttribute("faultdelay");
 			if (faultdelay != null)
 				Thread.sleep(new Integer(faultdelay));
-			return faultrespsoap.copy();
+			return faultsoap.copy();
 		}
 
-		response = respsoap.getElement(null);
+		XML response = bodysoap.getElement(null);
 		if (response != null)
-			return response.copy();
+		{
+			response = response.copy();
+			envsoap.copyAttributes(response);
+		}
 
-		return null;
+		return response;
 	}
 }
 

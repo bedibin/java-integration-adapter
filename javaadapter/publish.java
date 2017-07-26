@@ -63,51 +63,59 @@ class AliasSelectorKeyManager implements X509KeyManager
 	}
 }
 
+enum PublisherTypes { DIRECT, JMS, LDAP, SOAP, HTTP, CMD, FILE };
+
 class Publisher
 {
 	class PublisherObject
 	{
+		private PublisherTypes type;
 		private TopicPublish topicpublish;
 		private Service service;
-		private URL url;
+		private URL defaulturl;
 		private String command;
 		private File file;
-		private boolean direct = false;
 		private ldap ld;
 		private String publishername;
 
-		public PublisherObject()
+		public PublisherObject(PublisherTypes type)
 		{
-			direct = true;
+			this.type = type;
 		}
 
 		public PublisherObject(TopicPublish topicpublish)
 		{
+			type = PublisherTypes.JMS;
 			this.topicpublish = topicpublish;
 		}
 
 		public PublisherObject(ldap ld)
 		{
+			type = PublisherTypes.LDAP;
 			this.ld = ld;
 		}
 
 		public PublisherObject(Service service)
 		{
+			type = PublisherTypes.SOAP;
 			this.service = service;
 		}
 
 		public PublisherObject(URL url)
 		{
-			this.url = url;
+			type = PublisherTypes.HTTP;
+			defaulturl = url;
 		}
 
 		public PublisherObject(String command)
 		{
+			type = PublisherTypes.CMD;
 			this.command = command;
 		}
 
 		public PublisherObject(File file)
 		{
+			type = PublisherTypes.FILE;
 			this.file = file;
 		}
 
@@ -116,20 +124,47 @@ class Publisher
 			publishername = name;
 		}
 
-		public String sendHttpRequest(String request,XML node) throws Exception
+		public String sendHttpRequest(String body,XML xmlpub) throws Exception
 		{
+			return sendHttpRequest(body,null,xmlpub);
+		}
+
+		public String sendHttpRequest(String body,XML xml,XML xmlpub) throws Exception
+		{
+			String urlstr = xml == null ? Misc.substitute(xmlpub.getAttribute("url")) : Misc.substitute(xmlpub.getAttribute("url"),xml);
+			if (urlstr == null && defaulturl == null) urlstr = "http://localhost/";
+			URL url = urlstr == null ? defaulturl : new URL(urlstr);
+			if (url == null) throw new AdapterException(xmlpub,"No URL provided");
+
+			String method = xmlpub.getAttribute("method");
+			if (method == null)
+				method = "POST";
+			else
+				method = method.toUpperCase();
+			if (Misc.isLog(12)) Misc.log("HTTP " + method + " URL: " + url.toString());
+
 			HttpURLConnection rc = (HttpURLConnection)url.openConnection();
 			if (rc instanceof HttpsURLConnection)
 			{
-				String clientkeystore = node.getAttribute("clientkeystore");
+				String notrustssl = xmlpub.getAttribute("notrustssl");
+				boolean notrust = notrustssl != null && "true".equals(notrustssl);
+				if (notrust)
+				{
+					HttpsURLConnection rcs = (HttpsURLConnection)rc;
+					rcs.setSSLSocketFactory(new notrustsslsocket());
+					rcs.setHostnameVerifier(new nohostverifier());
+					if (Misc.isLog(3)) Misc.log("WARNING: Untrusted SSL with url " + url);
+				}
+
+				String clientkeystore = xmlpub.getAttribute("clientkeystore");
 				if (clientkeystore != null)
 				{
-					SSLContext sc = clientsslcontexts.get(url.toString());
+					SSLContext sc = clientsslcontexts.get(publishername);
 					if (sc == null)
 					{
 						KeyStore ks = KeyStore.getInstance("jks");
 						FileInputStream fis = new FileInputStream(clientkeystore);
-						String clientkeystorepassword = node.getAttributeCrypt("clientkeystorepassword");
+						String clientkeystorepassword = xmlpub.getAttributeCrypt("clientkeystorepassword");
 						if (clientkeystorepassword == null) clientkeystorepassword = "changeit";
 						ks.load(fis,clientkeystorepassword.toCharArray());
 						fis.close();
@@ -138,7 +173,7 @@ class Publisher
 						kmf.init(ks,clientkeystorepassword.toCharArray());
 
 						KeyManager[] kms = kmf.getKeyManagers();
-						String alias = node.getAttributeCrypt("clientkeystorealias");
+						String alias = xmlpub.getAttributeCrypt("clientkeystorealias");
 						if (alias != null)
 							for (int i = 0;i < kms.length;i++)
             							if (kms[i] instanceof X509KeyManager)
@@ -146,13 +181,13 @@ class Publisher
 
 						sc = SSLContext.getInstance("TLS");
 						sc.init(kms,null,null);
-						clientsslcontexts.put(url.toString(),sc);
+						clientsslcontexts.put(publishername,sc);
 					}
 					((HttpsURLConnection)rc).setSSLSocketFactory(sc.getSocketFactory());
 				}
 			}
 
-			String jsessionid = getSessionID(url.toString());
+			String jsessionid = getSessionID(publishername);
 
 			rc.setConnectTimeout(default_soap_connect_timeout);
 			if (jsessionid == null)
@@ -160,7 +195,7 @@ class Publisher
 			else
 				rc.setReadTimeout(default_soap_read_timeout);
 
-			rc.setRequestMethod("POST");
+			rc.setRequestMethod(method);
 			rc.setDoOutput(true);
 			rc.setDoInput(true); 
 			if (jsessionid != null)
@@ -169,10 +204,10 @@ class Publisher
 				rc.setRequestProperty("Cookie",jsessionid);
 			}
 
-			String username = node.getAttribute("username");
+			String username = xmlpub.getAttribute("username");
 			if (username != null)
 			{
-				String password = node.getAttributeCrypt("password");
+				String password = xmlpub.getAttributeCrypt("password");
 				if (password == null) password = "";
 				String authstr = username + ":" + password;
 				// Note: Service Manager is UTF-8, other SOAP servers might be different...
@@ -180,29 +215,33 @@ class Publisher
 				rc.setRequestProperty("Authorization","Basic " + auth);
 			}
 
-			String type = node.getAttribute("type");
+			String type = xmlpub.getAttribute("type");
 			if (type.equals("soap"))
 			{
 				rc.setRequestProperty("Content-Type","text/xml; charset=utf-8");
-				String action = node.getAttribute("action");
+				String action = xmlpub.getAttribute("action");
 				rc.setRequestProperty("SOAPAction",action == null ? "" : action);
 			}
-			else if (type.equals("post"))
+			else if (type.equals("post") || type.equals("http"))
 			{
-				String content = node.getAttribute("content_type");
+				String content = xmlpub.getAttribute("content_type");
 				if (content == null) content = "application/x-www-form-urlencoded";
 				rc.setRequestProperty("Content-Type",content);
 			}
 
-			byte[] rawrequest = request.getBytes("UTF-8");
+			byte[] rawrequest = body.getBytes("UTF-8");
 			int len = rawrequest.length;
 			rc.setRequestProperty("Content-Length",Integer.toString(len));
 
 			rc.connect();
 
-			OutputStream out = rc.getOutputStream();
-			out.write(rawrequest);
-			out.flush();
+			OutputStream out = null;
+			if (!method.equals("DELETE"))
+			{
+				out = rc.getOutputStream();
+				out.write(rawrequest);
+				out.flush();
+			}
 
 			InputStreamReader read = null;
 
@@ -215,7 +254,7 @@ class Publisher
 				// Not sure if Service Manager needs this: setSessionID(url.toString(),null);
 				InputStream es = rc.getErrorStream();
 				if (es == null)
-					throw new AdapterException(node,"Cannot get error stream. Connection " + publishername + " is not connected or the server sent no useful data within maximum allowed period");
+					throw new AdapterException(xmlpub,"Cannot get error stream. Connection " + publishername + " is not connected or the server sent no useful data within maximum allowed period");
 
 				read = new InputStreamReader(es,"UTF-8");
 			}
@@ -240,66 +279,59 @@ class Publisher
 				{
 					if (!cookie.startsWith("JSESSIONID=")) continue;
 					if (jsessionid == null || !cookie.equals(jsessionid))
-						setSessionID(url.toString(),cookie);
+						setSessionID(publishername,cookie);
 				}
 			}
 
-			out.close();
+			if (out != null) out.close();
 			read.close();
 
 			return response;
 		}
 
-		public String send(String string,XML node) throws Exception
+		public String send(String string,XML xml,XML xmlpub) throws Exception
 		{
 			String result = null;
 
-			if (topicpublish != null)
+			switch(type) {
+			case JMS:
 				topicpublish.publish(string);
-
-			if (service != null)
-			{
-				String operation = node.getAttribute("operation");
-				String port = node.getAttribute("port");
+				break;
+			case SOAP:
+				String operation = xmlpub.getAttribute("operation");
+				String port = xmlpub.getAttribute("port");
 
 				Call call = (port == null) ? service.createCall() : service.createCall(new QName(port));
 				if (operation != null)
 					call.setOperationName(new QName(operation));
 
 				result = (String)call.invoke(new Object[] { string });
-			}
-
-			if (url != null)
-			{
+				break;
+			case HTTP:
 				try
 				{
-					result = sendHttpRequest(string,node);
+					result = sendHttpRequest(string,xml,xmlpub);
 				}
 				catch(Exception ex)
 				{
-					setSessionID(url.toString(),null);
+					setSessionID(publishername,null);
 					Misc.rethrow(ex,"Error publishing to " + publishername + ": " + string);
 				}
-			}
-
-			if (command != null)
-			{
-				String charset = node.getAttribute("charset");
+				break;
+			case CMD:
+				String charset = xmlpub.getAttribute("charset");
 				if (charset == null) charset = "UTF-8";
 
 				if (command.equals("-"))
 				{
-					XML xml = new XML(new StringBuilder(string));
 					XML resultxml = new XML();
-					resultxml.add("output",Misc.exec(xml.getValue(),charset,null));
+					resultxml.add("output",Misc.exec(xml == null ? string : xml.getValue(),charset,null));
 					result = resultxml.toString();
 				}
 				else
 					result = Misc.exec(command,charset,string);
-			}
-
-			if (file != null)
-			{
+				break;
+			case FILE:
 				FileOutputStream os = new FileOutputStream(file,true);
 				OutputStreamWriter out = new OutputStreamWriter(os,"UTF-8"); 
 				out.write(string,0,string.length());
@@ -307,12 +339,10 @@ class Publisher
 				out.flush();
 				os.close();
 				result = string;
-			}
-
-			if (direct)
-			{
-				XML xml = new XML(new StringBuilder(string));
-				String subname = node.getAttribute("name");
+				break;
+			case DIRECT:
+				if (xml == null) throw new AdapterException("Direct publisher only supports XML");
+				String subname = xmlpub.getAttribute("name");
 				ArrayList<Subscriber> sublist = javaadapter.subscriberGet(subname);
 				if (sublist == null)
 				{
@@ -327,14 +357,13 @@ class Publisher
 						result = resultxml.toString();
 					}
 				}
-			}
-
-			if (ld != null)
-			{
-				XML xml = new XML(new StringBuilder(string));
-				XML resultxml = ld.oper(xml,node);
+				break;
+			case LDAP:
+				if (xml == null) throw new AdapterException("LDAP publisher only supports XML");
+				XML resultxml = ld.oper(xml,xmlpub);
 				if (resultxml == null) return null;
 				result = resultxml.toString();
+				break;
 			}
 
 			return result;
@@ -370,18 +399,18 @@ class Publisher
 		return instance;
 	}
 
-	public synchronized void setSessionID(String url,String id)
+	public synchronized void setSessionID(String name,String id)
 	{
-		if (Misc.isLog(9)) Misc.log("Setting JSESSION for url " + url + " with id " + id);
+		if (Misc.isLog(9)) Misc.log("Setting JSESSION for name " + name + " with id " + id);
 		if (id == null)
-			sessionids.remove(url);
+			sessionids.remove(name);
 		else
-			sessionids.put(url,id);
+			sessionids.put(name,id);
 	}
 
-	public synchronized String getSessionID(String url)
+	public synchronized String getSessionID(String name)
 	{
-		return sessionids.get(url);
+		return sessionids.get(name);
 	}
 
 	public synchronized void publisherRemove(XML xmlpublisher) throws Exception
@@ -398,10 +427,7 @@ class Publisher
 			if (!publishers.containsKey(name)) continue;
 
 			publishers.remove(name);
-
-			String url = el.getAttribute("url");
-			if (url != null)
-				setSessionID(url,null);
+			setSessionID(name,null);
 		}
 	}
 
@@ -434,14 +460,8 @@ class Publisher
 				Service service = factory.createService(wsdlurl,new QName(name));
 				pub = new PublisherObject(service);
 			}
-			else if (type.equals("soap") || type.equals("post"))
-			{
-				String url = el.getAttribute("url");
-				if (url == null) url = "http://localhost/";
-				URL serviceurl = new URL(url);
-				pub = new PublisherObject(serviceurl);
-
-			}
+			else if (type.equals("soap") || type.equals("post") || type.equals("http"))
+				pub = new PublisherObject(PublisherTypes.HTTP);
 			else if (type.equals("exec"))
 			{
 				String command = el.getAttribute("command");
@@ -453,7 +473,7 @@ class Publisher
 				pub = new PublisherObject(new File(javaadapter.getCurrentDir(),filename));
 			}
 			else if (type.equals("direct"))
-				pub = new PublisherObject();
+				pub = new PublisherObject(PublisherTypes.DIRECT);
 			else if (type.equals("ldap"))
 			{
 				String url = el.getAttribute("url");
@@ -482,7 +502,7 @@ class Publisher
 		return publishers.get(name);
 	}
 
-	public String publish(String string,XML xmlpublisher) throws Exception
+	private String publish(String string,XML xml,XML xmlpublisher) throws Exception
 	{
 		String result = null;
 		if (string == null) return result;
@@ -498,16 +518,21 @@ class Publisher
 
 			PublisherObject pub = publisherGet(name);
 			if (Misc.isLog(6)) Misc.log("Sending message to " + name + ": " + string);
-			result = pub.send(string,el);
+			result = pub.send(string,xml,el);
 			if (Misc.isLog(9)) Misc.log("Sending " + i + " done. Result is: " + result);
 		}
 		return result;
 	}
 
+	public String publish(String string,XML xmlpublisher) throws Exception
+	{
+		return publish(string,null,xmlpublisher);
+	}
+
 	public XML publish(XML xml,XML xmlpublisher) throws Exception
 	{
 		String str = xml.rootToString();
-		String result = publish(str,xmlpublisher);
+		String result = publish(str,xml,xmlpublisher);
 
 		if (javaadapter.isShuttingDown()) return null;
 
@@ -526,6 +551,8 @@ class Publisher
 		if (result.toLowerCase().startsWith("<html>"))
 			throw new AdapterException(xmlpublisher,"HTML received from publisher when XML is expected: " + result + Misc.CR + "Message was: " + str);
 
+		if (result.startsWith("{") && result.endsWith("}"))
+			return new XML(new org.json.JSONObject(result));
 		return new XML(new StringBuilder(result));
 	}
 }
