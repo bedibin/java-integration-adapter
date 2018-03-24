@@ -262,6 +262,7 @@ class DBOper
 	protected String[] columnnames;
 	private int[] columntypes;
 	private DBConnection dbc;
+	private boolean totrim = true;
 	protected int resultcount = 0;
 	public static final Pattern replacementPattern = Pattern.compile("\\*@\\?@\\!");
 
@@ -320,16 +321,17 @@ class DBOper
 		}
 	}
 
-	public DBOper(DBConnection dbc,String sql) throws Exception
+	public DBOper(DBConnection dbc,String sql,boolean totrim) throws Exception
 	{
-		this(dbc,sql,null);
+		this(dbc,sql,null,totrim);
 	}
 
-	public DBOper(DBConnection dbc,String sql,List<String> list) throws Exception
+	public DBOper(DBConnection dbc,String sql,List<String> list,boolean totrim) throws Exception
 	{
 		if (javaadapter.isShuttingDown()) return;
 		dbc.checkConnectionState(false);
 		this.dbc = dbc;
+		this.totrim = totrim;
 
 		try
 		{
@@ -345,7 +347,8 @@ class DBOper
 				if (message.indexOf(errors[i]) != -1)
 				{
 					Misc.log(1,"Database connection " + dbc.getName() + " closed, statement retried. Error: " + ex);
-					close();
+					// Do not close statement since it may hang
+					// close();
 
 					try
 					{
@@ -476,7 +479,7 @@ class DBOper
 			if (date != null) value = Misc.gmtdateformat.format(date);
 			if (value == null) value = "";
 
-			row.put(columnnames[i],value.trim());
+			row.put(columnnames[i],totrim ? value.trim() : value);
 		}
 
 		if (Misc.isLog(15)) Misc.log("row [" + dbc.getName() + "]: " + row);
@@ -495,20 +498,22 @@ class DBOper
 class DB
 {
 	public static final String replacement = "*@?@!";
-	public ComparatorIgnoreCase<String> collator;
+	private final ComparatorIgnoreCase<String> collator;
 
 	private static DB instance;
 
 	private HashMap<String,DBConnection> db;
 	private XML[] xmlconn;
 
-	protected DB() { }
+	protected DB()
+	{
+		collator = new DBComparator();
+		db = new HashMap<String,DBConnection>();
+	}
 
 	public DB(XML xmlcfg) throws Exception
 	{
-		collator = new DBComparator();
-
-		db = new HashMap<String,DBConnection>();
+		this();
 
 		System.out.print("Connection to database... ");
 
@@ -545,6 +550,11 @@ class DB
 		}
 
 		System.out.println("Done");
+	}
+
+	public ComparatorIgnoreCase<String> getCollator()
+	{
+		return collator;
 	}
 
 	public Set<String> getConnectionInstances()
@@ -700,21 +710,26 @@ class DB
 
 	public DBOper makesqloper(String conn,String sql) throws Exception
 	{
+		return makesqloper(conn,sql,true);
+	}
+
+	public DBOper makesqloper(String conn,String sql,boolean totrim) throws Exception
+	{
 		DBConnection dbc = getConnectionByName(conn);
-		return new DBOper(dbc,sql);
+		return new DBOper(dbc,sql,totrim);
 	}
 
 	public DBOper makesqloper(String conn,XML xml) throws Exception
 	{
 		DBConnection dbc = getConnectionByName(conn);
 		String sql = xml.getValue();
-		return new DBOper(dbc,sql);
+		return new DBOper(dbc,sql,true);
 	}
 
 	public int execsqlresult(String conn,String sql,List<String> list) throws Exception
 	{
 		DBConnection dbc = getConnectionByName(conn);
-		DBOper oper = new DBOper(dbc,sql,list);
+		DBOper oper = new DBOper(dbc,sql,list,true);
 		return oper.getResultCount();
 	}
 
@@ -734,7 +749,7 @@ class DB
 		DBOper oper = null;
 		ArrayList<LinkedHashMap<String,String>> result = null;
 
-		oper = new DBOper(dbc,sql,list);
+		oper = new DBOper(dbc,sql,list,true);
 		result = new ArrayList<LinkedHashMap<String,String>>();
 		LinkedHashMap<String,String> row;
 

@@ -2,13 +2,64 @@ import java.util.*;
 import java.io.*;
 
 enum Scope { SCOPE_GLOBAL, SCOPE_SOURCE, SCOPE_DESTINATION };
-enum OnOper { ignore, warning, error, reject_field, reject_record, use_key, exception, merge, recreate, suffix, clear };
+enum FieldFeature { FIELD_FEATURE_ONMULTIPLE, FIELD_FEATURE_IGNORE_CASE, FIELD_FEATURE_TYPE, FIELD_FEATURE_DEVIATION };
+enum OnOper { IGNORE, WARNING, ERROR, REJECT_FIELD, REJECT_RECORD, USE_KEY, EXCEPTION, MERGE, RECREATE, SUFFIX, CLEAR, TRUE, FALSE, KEYS_ONLY, NON_KEYS_ONLY, KEY, INFO, INFONULL, NOINFO, INFOAPI, INITIAL };
+enum DeviationType { ABSOLUTE, PERCENTAGE };
+
+class FieldDeviation
+{
+	private int value = 0;
+	private DeviationType type = DeviationType.ABSOLUTE;
+
+	FieldDeviation(String attr)
+	{
+		if (attr.endsWith("%"))
+		{
+			type = DeviationType.PERCENTAGE;
+			attr = attr.substring(0,attr.length() - 1);
+		}
+		value = new Integer(attr);
+	}
+
+	boolean check(String oldvalue,String newvalue)
+	{
+		// Only interger supported for now
+		if (value == 0) return false;
+		if (!oldvalue.matches("^-?\\d+$")) return false;
+		if (!newvalue.matches("^-?\\d+$")) return false;
+		int oldint = new Integer(oldvalue);
+		int newint = new Integer(newvalue);
+		int gap = type == DeviationType.PERCENTAGE ? oldint * value / 100 : value;
+		if (Misc.isLog(25)) Misc.log("Deviation " + gap + ": " + oldint + "," + newint);
+		return (newint >= oldint - gap) && (newint <= oldint + gap);
+	}
+
+}
+
+class FieldResult
+{
+	private LinkedHashMap<String,String> values;
+	private Sync sync;
+	private Field field;
+
+	FieldResult(Sync sync,Field field,LinkedHashMap<String,String> values)
+	{
+		this.values = values;
+		this.sync = sync;
+		this.field = field;
+	}
+
+	Sync getSync() { return sync; }
+	Field getField() { return field; }
+	LinkedHashMap<String,String> getValues() { return values; }
+	String getValue() { return values.get(field.getName()); }
+	void setValue(String value) { values.put(field.getName(),value); }
+}
 
 class Field
 {
 	private XML xmlfield;
 	private SyncLookup lookup;
-	private String typeoverride;
 	private String name;
 	private String newname;
 	private boolean dostrip = false;
@@ -19,22 +70,19 @@ class Field
 	private String filterresult;
 	private boolean iskey = false;
 
-	private OnOper onempty = OnOper.ignore;
+	private OnOper onempty = OnOper.IGNORE;
 	private String forceemptyvalue;
-	private OnOper onmultiple = OnOper.ignore;
-	private boolean onmultiple_present = false;
 	private String ifexists;
 	private String synclist[];
 	private Scope scope;
-	private int deviation = 0;
-	private boolean ignorecase = false;
 
 	public Field(XML xml,Scope scope) throws Exception
 	{
 		xmlfield = xml;
 		this.scope = scope;
 		name = xml.getAttribute("name");
-		if (Misc.isLog(10)) Misc.log("Initializing field " + name);
+		if (name == null || name.isEmpty()) throw new AdapterException(xml,"Field name cannot be empty");
+		if (Misc.isLog(10)) Misc.log("Initializing field " + name + " " + scope);
 		newname = xml.getAttribute("rename");
 		String strip = xml.getAttributeDeprecated("strip");
 		if (strip != null && strip.equals("true")) dostrip = true;
@@ -43,14 +91,9 @@ class Field
 		filterresult = xml.getAttribute("filter_result");
 
 		xml.setAttributeDeprecated("on_not_found","on_empty");
-		onempty = getOnOper(xml,"on_empty",OnOper.ignore,EnumSet.of(OnOper.ignore,OnOper.reject_field,OnOper.reject_record,OnOper.warning,OnOper.error,OnOper.exception));
+		onempty = getOnOper("on_empty",OnOper.IGNORE,EnumSet.of(OnOper.IGNORE,OnOper.REJECT_FIELD,OnOper.REJECT_RECORD,OnOper.WARNING,OnOper.ERROR,OnOper.EXCEPTION));
 
-		String ignorecasestr = xml.getAttribute("ignore_case");
-		if (ignorecasestr != null && ignorecasestr.equals("true"))
-			ignorecase = true;
 		forceemptyvalue = xml.getAttribute("force_empty_value");
-		onmultiple = getOnOper(xml,"on_multiple",OnOper.ignore,EnumSet.of(OnOper.ignore,OnOper.error,OnOper.warning,OnOper.merge,OnOper.reject_record,OnOper.reject_field));
-		onmultiple_present = xml.isAttributeNoDefault("on_multiple");
 		ifexists = null;
 		if (xml.isAttribute("if_exists"))
 		{
@@ -60,13 +103,9 @@ class Field
 		String forsync = xml.getAttribute("for_sync");
 		if (forsync != null) synclist = forsync.split("\\s*,\\s*");
 
-		typeoverride = xml.getAttribute("type");
-
 		lookup = new SyncLookup(this);
 		hasvalue = lookup.getCount() > 0 || "true".equals(xml.getAttribute("hasvalue"));
 		isdefault = "true".equals(xml.getAttribute("isdefault"));
-		String min_deviation = xml.getAttribute("min_deviation");
-		if (min_deviation != null) deviation = new Integer(min_deviation);
 	}
 
 	public Field(String name) throws Exception
@@ -75,7 +114,23 @@ class Field
 		this.scope = Scope.SCOPE_GLOBAL;
 		this.name = name;
 		this.hasvalue = true;
+		xmlfield = new XML();
 		lookup = new SyncLookup(this);
+	}
+
+	public OnOper getOnOper(String attr,OnOper def,EnumSet<OnOper> validset) throws AdapterException
+	{
+		return getOnOper(xmlfield,attr,def,validset);
+	}
+
+	public String getAttribute(String attr) throws AdapterException
+	{
+		return xmlfield.getAttribute(attr);
+	}
+
+	public boolean isAttributeNoDefault(String attr)
+	{
+		return xmlfield.isAttributeNoDefault(attr);
 	}
 
 	static public OnOper getOnOper(XML xml,String attr,OnOper def,EnumSet<OnOper> validset) throws AdapterException
@@ -84,7 +139,7 @@ class Field
 		if (value == null) return def;
 
 		try {
-			OnOper result = Enum.valueOf(OnOper.class,value);
+			OnOper result = Enum.valueOf(OnOper.class,value.toUpperCase());
 			if (validset != null && !validset.contains(result))
 				throw new AdapterException(xml,"Invalid attribute '" + attr + "' value: " + value);
 			return result;
@@ -96,12 +151,6 @@ class Field
 	public XML getXML()
 	{
 		return xmlfield;
-	}
-
-	public void setScope(Scope scope) throws AdapterException
-	{
-		if (!isdefault) throw new AdapterException("Cannot change scope on non default field");
-		this.scope = scope;
 	}
 
 	public String getName()
@@ -119,24 +168,9 @@ class Field
 		return scope;
 	}
 
-	public boolean getOnMultiplePresent()
-	{
-		return onmultiple_present;
-	}
-
-	public OnOper getOnMultiple()
-	{
-		return onmultiple;
-	}
-
 	public OnOper getOnEmpty()
 	{
 		return onempty;
-	}
-
-	public void setOnMultiple(OnOper onmultiple)
-	{
-		this.onmultiple = onmultiple;
 	}
 
 	public boolean isStrip()
@@ -149,13 +183,6 @@ class Field
 		return copyname;
 	}
 
-	public String getType()
-	{
-		if (typeoverride != null) return typeoverride;
-		if (iskey) return "key";
-		return null;
-	}
-
 	public boolean hasValue()
 	{
 		return hasvalue;
@@ -164,11 +191,6 @@ class Field
 	public boolean isDefault()
 	{
 		return isdefault;
-	}
-
-	public boolean isIgnoreCase()
-	{
-		return ignorecase;
 	}
 
 	public boolean isForceEmpty(String value)
@@ -186,9 +208,14 @@ class Field
 		return iskey;
 	}
 
+	public String[] getForSync()
+	{
+		return synclist;
+	}
+
 	public boolean isValid(Sync sync) throws Exception
 	{
-		boolean result = sync.getDBSync().isValidSync(synclist,sync);
+		boolean result = sync.getDBSync().isValidSync(synclist,sync.getScope());
 		if (!result) return false;
 		if (scope == Scope.SCOPE_SOURCE && sync.getScope() != Scope.SCOPE_SOURCE) return false;
 		if (scope == Scope.SCOPE_DESTINATION && sync.getScope() != Scope.SCOPE_DESTINATION) return false;
@@ -216,19 +243,6 @@ class Field
 		return Misc.isFilterPass(xmlfield,xml);
 	}
 
-	public boolean checkDeviation(String oldvalue,String newvalue)
-	{
-		// Only interger supported for now
-		if (deviation == 0) return false;
-		if (!oldvalue.matches("^-?\\d+$")) return false;
-		if (!newvalue.matches("^-?\\d+$")) return false;
-		int oldint = new Integer(oldvalue);
-		int newint = new Integer(newvalue);
-		int gap = oldint * deviation / 100;
-		if (Misc.isLog(25)) Misc.log("Deviation " + gap + ": " + oldint + "," + newint);
-		return (newint >= oldint - gap) && (newint <= oldint + gap);
-	}
-
 	public void updateCache(HashMap<String,String> row)
 	{
 		lookup.updateCache(row);
@@ -239,33 +253,55 @@ class Fields
 {
 	private LinkedHashSet<String> keyfields;
 	private LinkedHashSet<String> namefields;
+	private EnumMap<Scope,EnumMap<FieldFeature,HashMap<String,Object>>> features;
 	private ArrayList<Field> fields;
-	private EnumMap<Scope,Boolean> default_set = new EnumMap<Scope,Boolean>(Scope.class);
 	private DBSyncOper dbsync;
 
-	public Fields(DBSyncOper dbsync,String[] keyfields) throws Exception
+	public Fields(DBSyncOper dbsync,Set<String> keyfields) throws Exception
 	{
 		this.dbsync = dbsync;
-		this.keyfields = new LinkedHashSet<String>(Arrays.asList(keyfields));
-		this.namefields = new LinkedHashSet<String>(Arrays.asList(keyfields));
+		this.keyfields = new LinkedHashSet<String>(keyfields);
+		namefields = new LinkedHashSet<String>(keyfields);
 		fields = new ArrayList<Field>();
+		features = new EnumMap<Scope,EnumMap<FieldFeature,HashMap<String,Object>>>(Scope.class);
+		features.put(Scope.SCOPE_SOURCE,new EnumMap<FieldFeature,HashMap<String,Object>>(FieldFeature.class));
+		features.put(Scope.SCOPE_DESTINATION,new EnumMap<FieldFeature,HashMap<String,Object>>(FieldFeature.class));
+		features.put(Scope.SCOPE_GLOBAL,new EnumMap<FieldFeature,HashMap<String,Object>>(FieldFeature.class));
 		for(String keyfield:keyfields)
-			fields.add(new Field(keyfield));
+			add(new Field(keyfield));
 	}
 
-	private void setDefaultFields(LinkedHashMap<String,String> result,Scope scope) throws Exception
+	void setFeature(Scope scope,FieldFeature feature,Field field,Object oper,boolean overwrite)
 	{
-		// To be done once
-		Boolean isset = default_set.get(scope);
-		if (isset != null && isset.booleanValue() == true) return;
-		default_set.put(scope,Boolean.TRUE);
+		EnumMap<FieldFeature,HashMap<String,Object>> mapscope = features.get(scope);
+		HashMap<String,Object> mapoper = mapscope.get(feature);
+		if (mapoper == null)
+		{
+			mapoper = new HashMap<String,Object>();
+			mapscope.put(feature,mapoper);
+		}
+
+		if (!mapoper.containsKey(field.getName()) || overwrite) mapoper.put(field.getName(),oper);
+		if ((!mapoper.containsKey(field.getNewName()) || overwrite) && field.getNewName() != null) mapoper.put(field.getNewName(),oper);
+		if ((!mapoper.containsKey(field.getCopyName()) || overwrite) && field.getCopyName() != null) mapoper.put(field.getCopyName(),oper);
+	}
+
+	Object getFeature(Scope scope,FieldFeature feature,String name)
+	{
+		return features.get(scope).get(feature).get(name);
+	}
+
+	void setDefaultFields(Set<String> set,Scope scope) throws Exception
+	{
 		XML xml = new XML();
 		xml = xml.add("field");
-		for(String name:result.keySet())
+		for(String name:set)
 		{
 			boolean exists = false;
-			for(Field field:fields)
+			Iterator<Field> it = fields.iterator();
+			while (it.hasNext())
 			{
+				Field field = it.next();
 				if (name.equals(field.getName()) && (field.getScope() == Scope.SCOPE_GLOBAL || field.getScope() == scope))
 				{
 					exists = true;
@@ -273,8 +309,8 @@ class Fields
 				}
 				else if (name.equals(field.getName()) && field.getScope() != scope && field.isDefault())
 				{
-					field.setScope(Scope.SCOPE_GLOBAL);
-					exists = true;
+					it.remove();
+					scope = Scope.SCOPE_GLOBAL;
 					break;
 				}
 			}
@@ -297,19 +333,53 @@ class Fields
 		XML.setDefaultVariable(xml.getAttribute("name"),null);
 	}
 
+	private void addName(Set<String> set,Field field)
+	{
+		if (field.getNewName() == null)
+			set.add(field.getName());
+		else
+			set.add(field.getNewName());
+
+		if (field.getCopyName() != null)
+			set.add(field.getCopyName());
+	}
+
 	public void add(Field field) throws Exception
 	{
-		namefields.add(field.getName());
+		addName(namefields,field);
 
-		OnOper default_onmultiple = null;
-		for(Field prevfield:fields)
-			if (prevfield.getName().equals(field.getName()) && (prevfield.getScope() == Scope.SCOPE_GLOBAL || prevfield.getScope() == field.getScope()) && prevfield.getOnMultiplePresent())
-			{
-				default_onmultiple = prevfield.getOnMultiple();
-				break;
-			}
-		if (!field.getOnMultiplePresent() && default_onmultiple != null)
-			field.setOnMultiple(default_onmultiple);
+		Scope scope = field.getScope();
+		String[] synclist = field.getForSync();
+
+		final String onmultipleattr = "on_multiple";
+		OnOper onmultipleoper = field.getOnOper(onmultipleattr,OnOper.IGNORE,EnumSet.of(OnOper.IGNORE,OnOper.ERROR,OnOper.WARNING,OnOper.MERGE,OnOper.REJECT_RECORD,OnOper.REJECT_FIELD));
+
+		final String ignorecaseattr = "ignore_case";
+		OnOper ignorecaseoper = field.getOnOper(ignorecaseattr,OnOper.FALSE,EnumSet.of(OnOper.TRUE,OnOper.FALSE,OnOper.KEYS_ONLY,OnOper.NON_KEYS_ONLY));
+
+		final String typeattr = "type";
+		OnOper typeoper = field.getOnOper(typeattr,field.isKey() ? OnOper.KEY : null,EnumSet.of(OnOper.KEY,OnOper.INFONULL,OnOper.NOINFO,OnOper.INFOAPI,OnOper.INFO,OnOper.INITIAL));
+
+		final String deviationattr = "min_deviation";
+		String deviationstr = field.getAttribute(deviationattr);
+		FieldDeviation deviation = deviationstr == null ? null : new FieldDeviation(deviationstr);
+
+		if ((scope == Scope.SCOPE_GLOBAL || scope == Scope.SCOPE_SOURCE) && dbsync.isValidSync(synclist,Scope.SCOPE_SOURCE))
+		{
+			setFeature(Scope.SCOPE_SOURCE,FieldFeature.FIELD_FEATURE_ONMULTIPLE,field,onmultipleoper,field.isAttributeNoDefault(onmultipleattr));
+		}
+
+		if ((scope == Scope.SCOPE_GLOBAL || scope == Scope.SCOPE_DESTINATION) && dbsync.isValidSync(synclist,Scope.SCOPE_DESTINATION))
+		{
+			setFeature(Scope.SCOPE_DESTINATION,FieldFeature.FIELD_FEATURE_ONMULTIPLE,field,onmultipleoper,field.isAttributeNoDefault(onmultipleattr));
+		}
+
+		if (dbsync.isValidSync(synclist,Scope.SCOPE_GLOBAL))
+		{
+			setFeature(Scope.SCOPE_GLOBAL,FieldFeature.FIELD_FEATURE_IGNORE_CASE,field,ignorecaseoper,field.isAttributeNoDefault(ignorecaseattr));
+			setFeature(Scope.SCOPE_GLOBAL,FieldFeature.FIELD_FEATURE_TYPE,field,typeoper,field.isAttributeNoDefault(typeattr));
+			setFeature(Scope.SCOPE_GLOBAL,FieldFeature.FIELD_FEATURE_DEVIATION,field,deviation,field.isAttributeNoDefault(deviationattr));
+		}
 
 		fields.add(field);
 	}
@@ -323,8 +393,10 @@ class Fields
 	{
 		Set<String> names = new LinkedHashSet<String>();
 		for(Field field:fields)
-			if (field.hasValue() && field.isValid(sync))
-				names.add(field.getName());
+		{
+			if ((field.hasValue() || names.contains(field.getName())) && field.isValid(sync))
+				addName(names,field);
+		}
                 return names;
 	}
 
@@ -394,99 +466,105 @@ class Fields
 
 		while((result = sync.next()) != null)
 		{
-			if (doprocessing) setDefaultFields(result,sync.getScope());
-			if (doprocessing) fieldloop: for(Field field:fields)
+			String rawkey = dbsync.getKey(result);
+			if (dbsync.getTraceKeys().contains(rawkey)) Misc.setTrace(traceid);
+			if (Misc.isLog(30))
+				Misc.log((doprocessing ? "Processing" : "No processing") + " record " + sync.getName() + ": " + Misc.implode(result));
+
+			Set<String> keyset = getKeys();
+			String keys = dbsync.getDisplayKey(keyset,result);
+
+			fieldloop: for(Field field:fields)
 			{
-				String rawkey = dbsync.getKey(result);
-				if (dbsync.getTraceKeys().contains(rawkey))
-				{
-					Misc.setTrace(traceid);
-					Misc.log("Record " + sync.getName() + ": " + Misc.implode(result));
-				}
-
-				Set<String> keyset = getKeys();
-				String keys = dbsync.getDisplayKey(keyset,result);
-
 				String name = field.getName();
 				boolean iskey = keyset.contains(name);
 				String value = result.get(name);
-				SyncLookup lookup = field.getLookup();
 
-				if (Misc.isLog(30)) Misc.log("Field: [" + keys + "] Check " + name + ":" + value + ":" + sync.getXML().getTagName() + ":" + (dbsync.getSourceSync() == null ? "NOSRC" : dbsync.getSourceSync().getName()) + ":" + (dbsync.getDestinationSync() == null ? "NODEST" : dbsync.getDestinationSync().getName()) + ":" + result);
-				if (!field.isValid(sync)) continue;
-				if (!field.isValidFilter(result,name)) continue;
+				if (doprocessing)
+				{
+					SyncLookup lookup = field.getLookup();
 
-				if (Misc.isLog(30)) Misc.log("Field: " + name + " is valid");
+					if (Misc.isLog(30)) Misc.log("Field: [" + keys + "] Check " + name + ":" + value + ":" + sync.getXML().getTagName() + ":" + (dbsync.getSourceSync() == null ? "NOSRC" : dbsync.getSourceSync().getName()) + ":" + (dbsync.getDestinationSync() == null ? "NODEST" : dbsync.getDestinationSync().getName()) + ":" + result);
+					if (!field.isValid(sync)) continue;
+					if (!field.isValidFilter(result,name)) continue;
 
-				try {
-					SyncLookupResultErrorOperation erroroper = lookup.check(result,name);
-					if (Misc.isLog(30)) Misc.log("Lookup check result " + erroroper.getType());
-					switch(erroroper.getType())
-					{
-					case NONE:
-						if (iskey && value == null && field.getOnEmpty() == null) continue; // Skip not updated keys
-						break;
-					case NEWVALUE:
-						value = result.get(name);
-						break;
-					case ERROR:
-						Misc.log("ERROR: [" + sync.getName() + ":" + keys + "] Rejecting record since lookup " + (erroroper.getName() == null ? "" : "[" + erroroper.getName() + "] ") + "for field " + field.getName() + " failed: " + (erroroper.getMessage() == null ? "" : erroroper.getMessage() + ": ") + result);
-					case REJECT_RECORD:
-						result = null;
-						break fieldloop;
-					case WARNING:
-						Misc.log("WARNING: [" + sync.getName() + ":" + keys + "] Rejecting field " + field.getName() + " since lookup " + (erroroper.getName() == null ? "" : "[" + erroroper.getName() + "] ") + "failed: " + (erroroper.getMessage() == null ? "" : erroroper.getMessage() + ": ") + result);
-					case REJECT_FIELD:
-						if (iskey)
-							result.put(name,"");
-						else
-							result.remove(name);
-						continue;
-					case EXCEPTION:
-						throw new AdapterException("[" + sync.getName() + ":" + keys + "] Invalid lookup " + (erroroper.getName() == null ? "" : "[" + erroroper.getName() + "] ") + "for field " + field.getName() + ": " + (erroroper.getMessage() == null ? "" : erroroper.getMessage() + ": ") + result);
+					if (Misc.isLog(30)) Misc.log("Field: " + name + " is valid");
+
+					try {
+						SyncLookupResultErrorOperation erroroper = lookup.check(new FieldResult(sync,field,result));
+						if (Misc.isLog(30)) Misc.log("Lookup check result " + erroroper.getType());
+						switch(erroroper.getType())
+						{
+						case NONE:
+							if (iskey && value == null && field.getOnEmpty() == null) continue; // Skip not updated keys
+							break;
+						case NEWVALUE:
+							value = result.get(name);
+							break;
+						case ERROR:
+							Misc.log("ERROR: [" + sync.getName() + ":" + keys + "] Rejecting record since lookup " + (erroroper.getName() == null ? "" : "[" + erroroper.getName() + "] ") + "for field " + field.getName() + " failed: " + (erroroper.getMessage() == null ? "" : erroroper.getMessage() + ": ") + result);
+						case REJECT_RECORD:
+							result = null;
+							break fieldloop;
+						case WARNING:
+							Misc.log("WARNING: [" + sync.getName() + ":" + keys + "] Rejecting field " + field.getName() + " since lookup " + (erroroper.getName() == null ? "" : "[" + erroroper.getName() + "] ") + "failed: " + (erroroper.getMessage() == null ? "" : erroroper.getMessage() + ": ") + result);
+						case REJECT_FIELD:
+							if (iskey)
+								result.put(name,"");
+							else
+								result.remove(name);
+							continue;
+						case EXCEPTION:
+							throw new AdapterException("[" + sync.getName() + ":" + keys + "] Invalid lookup " + (erroroper.getName() == null ? "" : "[" + erroroper.getName() + "] ") + "for field " + field.getName() + ": " + (erroroper.getMessage() == null ? "" : erroroper.getMessage() + ": ") + result);
+						}
+					} catch (Exception ex) {
+						Misc.rethrow(ex);
 					}
-				} catch (Exception ex) {
-					Misc.rethrow(ex);
-				}
+				} else if (value == null) continue; // Skip field if already ignored during pre-processing
 
 				if (value == null) value = "";
-				boolean emptyvalueforced = field.isForceEmpty(value);
-				if (emptyvalueforced) value = "";
 
-				if (field.isStrip())
+				if (doprocessing)
 				{
-					String escape = "[\\s-/.,:;\\|]";
-					value = value.replaceAll(escape + "*$","").replaceAll("^" + escape + "*","");
-				}
+					boolean emptyvalueforced = field.isForceEmpty(value);
+					if (emptyvalueforced) value = "";
 
-				if (Misc.isLog(30)) Misc.log("Field: " + name + " is finally set to: " + value);
+					if (field.isStrip())
+					{
+						String escape = "[\\s-/.,:;\\|]";
+						value = value.replaceAll(escape + "*$","").replaceAll("^" + escape + "*","");
+					}
+
+					if (Misc.isLog(30)) Misc.log("Field: " + name + " is finally set to: " + value);
+				}
 
 				if (value.contains("\n"))
 				{
-					OnOper onmultiple = field.getOnMultiple();
+					OnOper onmultiple = (OnOper)getFeature(sync.getScope(),FieldFeature.FIELD_FEATURE_ONMULTIPLE,name);
+					if (onmultiple == null) throw new AdapterException("on_multiple feature null for field " + name + " scope " + sync.getScope());
 					switch(onmultiple)
 					{
-					case error:
-					case reject_record:
+					case ERROR:
+					case REJECT_RECORD:
 						OnOper onempty = field.getOnEmpty();
-						if (onempty == OnOper.reject_record || onempty == OnOper.error)
+						if (onempty == OnOper.REJECT_RECORD || onempty == OnOper.ERROR)
 						{
-							if (onmultiple == OnOper.error)
+							if (onmultiple == OnOper.ERROR)
 								Misc.log("ERROR: [" + sync.getName() + ":" + keys + "] Rejecting record since field " + field.getName() + " contains multiple values: " + value);
 							result = null;
 							break fieldloop;
 						}
 						// No break here is on purpose
-					case warning:
-					case reject_field:
-						if (onmultiple == OnOper.warning || onmultiple == OnOper.error)
+					case WARNING:
+					case REJECT_FIELD:
+						if (onmultiple == OnOper.WARNING || onmultiple == OnOper.ERROR)
 							Misc.log("WARNING: [" + sync.getName() + ":" + keys + "] Rejecting field " + field.getName() + " since it contains multiple values: " + value);
 						if (iskey)
 							result.put(name,"");
 						else
 							result.remove(name);
 						continue;
-					case merge:
+					case MERGE:
 						value = Misc.implode(value.split("\n"),",");
 						break;
 					}
@@ -494,57 +572,60 @@ class Fields
 
 				result.put(name,value);
 
-				String copyname = field.getCopyName();
-				if (copyname != null)
+				if (doprocessing)
 				{
-					if (Misc.isLog(30)) Misc.log("Field: " + name + " copied to " + copyname + ": " + value);
-					result.put(copyname,value);
-				}
+					String copyname = field.getCopyName();
+					if (copyname != null)
+					{
+						if (Misc.isLog(30)) Misc.log("Field: " + name + " copied to " + copyname + ": " + value);
+						result.put(copyname,value);
+					}
 
-				String newname = field.getNewName();
-				if (newname != null)
-				{
-					if (keyset.contains(newname)) iskey = true;
-					value = result.remove(name);
-					if (result.containsKey(newname))
-						throw new AdapterException("Renaming \"" + name + "\" to \"" + newname + "\" overwriting an existing field is not supported as it causes unexpected behaviors (use copy instead)");
-					result.put(newname,value);
-					if (Misc.isLog(30)) Misc.log("Field: " + name + " renamed to " + newname + ": " + value);
-					name = newname;
-				}
+					String newname = field.getNewName();
+					if (newname != null)
+					{
+						value = result.remove(name);
+						if (keyset.contains(newname))
+							throw new AdapterException("Renaming \"" + name + "\" to \"" + newname + "\" overwriting an existing key is not supported as it causes unexpected behaviors (use copy instead)");
+						result.put(newname,value);
+						if (Misc.isLog(30)) Misc.log("Field: " + name + " renamed to " + newname + ": " + value);
+						name = newname;
+					}
 
-				if (emptyvalueforced || !value.isEmpty())
-					continue;
+					boolean emptyvalueforced = field.isForceEmpty(value);
+					if (emptyvalueforced || !value.isEmpty())
+						continue;
 
-				// No value found...
-				switch(field.getOnEmpty())
-				{
-				case reject_field:
-					if (Misc.isLog(30)) Misc.log("REJECTED empty field: " + field.getName());
-					if (iskey)
-						result.put(name,"");
-					else
-						result.remove(name);
-					if (copyname != null) result.remove(copyname);
-					break;
-				case reject_record:
-					if (Misc.isLog(30)) Misc.log("REJECTED record: " + result);
-					result = null;
-					break fieldloop;
-				case warning:
-					Misc.log("WARNING: [" + sync.getName() + ":" + keys + "] Rejecting field " + field.getName() + " since empty: " + result);
-					if (iskey)
-						result.put(name,"");
-					else
-						result.remove(name);
-					if (copyname != null) result.remove(copyname);
-					break;
-				case error:
-					Misc.log("ERROR: [" + sync.getName() + ":" + keys + "] Rejecting record since field " + field.getName() + " is empty: " + result);
-					result = null;
-					break fieldloop;
-				case exception:
-					throw new AdapterException("Field " + field.getName() + " is empty: " + result);
+					// No value found...
+					switch(field.getOnEmpty())
+					{
+					case REJECT_FIELD:
+						if (Misc.isLog(30)) Misc.log("REJECTED empty field: " + field.getName());
+						if (iskey)
+							result.put(name,"");
+						else
+							result.remove(name);
+						if (copyname != null) result.remove(copyname);
+						break;
+					case REJECT_RECORD:
+						if (Misc.isLog(30)) Misc.log("REJECTED record: " + result);
+						result = null;
+						break fieldloop;
+					case WARNING:
+						Misc.log("WARNING: [" + sync.getName() + ":" + keys + "] Rejecting field " + field.getName() + " since empty: " + result);
+						if (iskey)
+							result.put(name,"");
+						else
+							result.remove(name);
+						if (copyname != null) result.remove(copyname);
+						break;
+					case ERROR:
+						Misc.log("ERROR: [" + sync.getName() + ":" + keys + "] Rejecting record since field " + field.getName() + " is empty: " + result);
+						result = null;
+						break fieldloop;
+					case EXCEPTION:
+						throw new AdapterException("Field " + field.getName() + " is empty: " + result);
+					}
 				}
 			}
 
@@ -554,12 +635,12 @@ class Fields
 			{
 				XML function = sync.getXML().getElement("element_function");
 				String forsync = function == null ? null : function.getAttribute("for_sync");
-				if (forsync == null || dbsync.isValidSync(forsync.split("\\s*,\\s*"),sync))
+				if (forsync == null || dbsync.isValidSync(forsync.split("\\s*,\\s*"),sync.getScope()))
 					doFunction(result,function);
 
 				function = sync.getXML().getParent().getElement("element_function");
 				forsync = function == null ? null : function.getAttribute("for_sync");
-				if (forsync == null || dbsync.isValidSync(forsync.split("\\s*,\\s*"),sync))
+				if (forsync == null || dbsync.isValidSync(forsync.split("\\s*,\\s*"),sync.getScope()))
 					doFunction(result,function);
 			}
 

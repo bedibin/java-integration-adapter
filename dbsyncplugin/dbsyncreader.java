@@ -8,12 +8,14 @@ interface Reader
 	public LinkedHashMap<String,String> next() throws Exception;
 	public Set<String> getHeader();
 	public String getName();
+	public boolean isSorted();
 }
 
 abstract class ReaderUtil implements Reader
 {
 	private Set<String> keyfields;
 	private boolean issorted = false;
+	private boolean totrim = true;
 	private LinkedHashMap<String,String> last;
 	protected DB db;
 	protected Set<String> headers;
@@ -60,11 +62,18 @@ abstract class ReaderUtil implements Reader
  		db = DB.getInstance();
 	}
 
-	public ReaderUtil(Set<String> keyfields,boolean issorted) throws Exception
+	public ReaderUtil(boolean issorted) throws Exception
+	{
+ 		db = DB.getInstance();
+		this.issorted = issorted;
+	}
+
+	public ReaderUtil(Set<String> keyfields,boolean issorted,boolean totrim) throws Exception
 	{
  		db = DB.getInstance();
 		this.keyfields = keyfields;
 		this.issorted = issorted;
+		this.totrim = totrim;
 	}
 
 	public ReaderUtil(XML xml) throws Exception
@@ -79,10 +88,13 @@ abstract class ReaderUtil implements Reader
 		if (keyfield == null) xml.getAttribute("keyfields");
 		if (keyfield == null) xml.getParent().getAttribute("keyfield");
 		if (keyfield == null) xml.getParent().getAttribute("keyfields");
+		if (keyfield != null) keyfields = Misc.arrayToSet(keyfield.split("\\s*,\\s*"));
 
 		String sorted = xml.getAttribute("sorted");
-		if (keyfield != null) keyfields = Misc.arrayToSet(keyfield.split("\\s*,\\s*"));
 		issorted = sorted != null && sorted.equals("true");
+
+		String trim = xml.getAttribute("trim");
+		if (trim != null && trim.equals("false")) totrim = false;
 
 		String fields = xml.getAttribute("fields");
 		if (fields != null)
@@ -97,7 +109,7 @@ abstract class ReaderUtil implements Reader
 		for(String keyrow:row.keySet())
 		{
 			Set<String> set = map.get(keyrow);
-			if (set == null) set = issorted ? new LinkedHashSet<String>() : new TreeSet<String>(DB.getInstance().collator);
+			if (set == null) set = issorted ? new LinkedHashSet<String>() : new TreeSet<String>(DB.getInstance().getCollator());
 
 			String rowvalue = row.get(keyrow);
 			rowvalue = XML.fixValue(rowvalue.replace("\r\n","\n"));
@@ -182,6 +194,16 @@ abstract class ReaderUtil implements Reader
 	public final String getName()
 	{
 		return instance;
+	}
+
+	public final boolean isSorted()
+	{
+		return issorted;
+	}
+
+	public final boolean toTrim()
+	{
+		return totrim;
 	}
 }
 
@@ -313,7 +335,7 @@ class ReaderCSV extends ReaderUtil
 		int i = 0;
 		for(String name:headers)
 		{
-			String value = (i >= size) ? "" : XML.fixValue(csv.get(i).trim());
+			String value = (i >= size) ? "" : XML.fixValue(toTrim() ? csv.get(i).trim() : csv.get(i));
 			row.put(name,value);
 			i++;
 		}
@@ -492,7 +514,7 @@ class ReaderSQL extends ReaderUtil
 	private void init(String conn,String sql) throws Exception
 	{
 		String sqlsub = Misc.substitute(sql,db.getConnectionByName(conn));
-		oper = db.makesqloper(conn,sqlsub);
+		oper = db.makesqloper(conn,sqlsub,toTrim());
 
 		if (headers == null) headers = oper.getHeader();
 		if (instance == null) instance = conn;
@@ -513,9 +535,9 @@ class ReaderSQL extends ReaderUtil
 		init(conn,sql);
 	}
 
-	public ReaderSQL(String conn,String sql,Set<String> keyfields,boolean issorted) throws Exception
+	public ReaderSQL(String conn,String sql,Set<String> keyfields,boolean issorted,boolean totrim) throws Exception
 	{
-		super(keyfields,issorted);
+		super(keyfields,issorted,totrim);
 		init(conn,sql);
 	}
 
@@ -560,7 +582,7 @@ class ReaderXML extends ReaderUtil
 			String name = entry.getKey();
 			if (prefix != null) name = prefix + "_" + name;
 			if (headers != null && !headers.contains(name)) continue;
-			row.put(name,value.trim());
+			row.put(name,toTrim() ? value.trim() : value);
 		}
 
 		XML[] elements = prefix == null ? xml.getElements() : xml.getElementsByPath(pathcol);
@@ -572,7 +594,7 @@ class ReaderXML extends ReaderUtil
 			if (headers != null && !headers.contains(name)) continue;
 			String value = element.getValue();
 			if (value == null) value = "";
-			row.put(name,value.trim());
+			row.put(name,toTrim() ? value.trim() : value);
 			getSubXML(row,name,element);
 		}
 	}
@@ -738,6 +760,11 @@ class CacheReader implements Reader
 		return "cache/" + sourcereader.getName();
 	}
 
+	public boolean isSorted()
+	{
+		return sourcereader.isSorted();
+	}
+
 	public void close() throws Exception
 	{
 		if (csvreader != null) csvreader.close();
@@ -780,7 +807,7 @@ class SortTable implements Reader
 		if (tablename == null || conn == null)
 		{
 			instance = "memsort/" + reader.getName();
-			sortedmap = new TreeMap<String,LinkedHashMap<String,Set<String>>>(db.collator);
+			sortedmap = new TreeMap<String,LinkedHashMap<String,Set<String>>>(db.getCollator());
 			Misc.log(7,"Initializing memory sort");
 		}
 		else
@@ -888,6 +915,11 @@ class SortTable implements Reader
 	public String getName()
 	{
 		return instance;
+	}
+
+	public boolean isSorted()
+	{
+		return true;
 	}
 
 	public TreeMap<String,LinkedHashMap<String,Set<String>>> getSortedMap()

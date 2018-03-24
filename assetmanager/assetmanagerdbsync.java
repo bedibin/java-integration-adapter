@@ -3,6 +3,7 @@ import com.peregrine.ac.AmException;
 import java.util.*;
 import java.util.regex.*;
 import java.text.*;
+import org.json.JSONObject;
 
 class AMDBOper extends DBOper
 {
@@ -248,6 +249,118 @@ class AssetManagerUpdateSubscriber extends DatabaseUpdateSubscriber
 	{
 		db = AMDB.getInstance();
 		setQuoteField("");
+	}
+}
+
+class AssetManagerRestSubscriber extends UpdateSubscriber
+{
+	protected void add(XML xmldest,XML xmloper) throws Exception
+	{
+		oper("post",xmldest,xmloper);
+	}
+
+	protected void remove(XML xmldest,XML xmloper) throws Exception
+	{
+		oper("delete",xmldest,xmloper);
+	}
+
+	protected void update(XML xmldest,XML xmloper) throws Exception
+	{
+		oper("put",xmldest,xmloper);
+	}
+
+	protected void start(XML xmldest,XML xmloper) throws Exception {}
+	protected void end(XML xmldest,XML xmloper) throws Exception {}
+
+	protected void oper(String httpoper,XML xmldest,XML xmloper) throws Exception
+	{
+		DB db = DB.getInstance();
+
+		XML xml = javaadapter.getConfiguration().getElementByPath("/configuration/connection[@type='am']");
+		if (xml == null) throw new AdapterException("No connection element with type 'am' specified");
+
+		XML pubxml = new XML();
+		XML pub = pubxml.add("publisher");
+		pub.setAttribute("name",xmloper.getParent().getAttribute("name"));
+		pub.setAttribute("username",xml.getValue("username",null));
+		pub.setAttribute("password",xml.getValue("password",null));
+		pub.setAttribute("type","http");
+		pub.setAttribute("content_type","application/json");
+
+		String table = xmldest.getAttribute("table");
+		if (table == null) throw new AdapterException(xmldest,"dbsync: destination 'table' attribute required");
+
+		XML[] customs = null;
+		String oper = xmloper.getTagName();
+		if (oper.equals("add")) customs = xmldest.getElements("customadd");
+		else if (oper.equals("remove")) customs = xmldest.getElements("customremove");
+
+		StringBuilder where = new StringBuilder("where");
+		String sep = "";
+		JSONObject js = new JSONObject();
+
+		String id = null;
+		XML idxml = xmloper.getElement("ID");
+		if (idxml != null)
+		{
+			id = idxml.getValue();
+			if (id == null) id = idxml.getValue("oldvalue",null);
+		}
+		if (id == null && !oper.equals("add")) throw new AdapterException(xmloper,"ID value required");
+		if (id == null) id = "";
+
+		XML[] fields = xmloper.getElements();
+		for(XML field:fields)
+		{
+			String name = field.getTagName();
+			String value = field.getValue();
+			if (value == null) value = "";
+			String type = field.getAttribute("type");
+			if (type != null)
+			{
+				if (type.equals("info")) continue;
+				if (type.equals("infoapi")) continue;
+				if (type.equals("key"))
+				{
+					where.append(" " + sep + db.getFieldEqualsValue(name,value));
+					sep = "and ";
+					js.put(name,value);
+					continue;
+				}
+			}
+
+			if (oper.equals("remove")) continue;
+			if (oper.equals("update"))
+			{
+				XML old = field.getElement("oldvalue");
+				if (old == null) continue;
+				String oldvalue = old.getValue();
+				if (type != null && type.equals("initial") && oldvalue != null) continue;
+			}
+			js.put(name,value);
+		}
+
+		if (customs != null && customs.length > 0)
+		{
+			httpoper = "put";
+			for(XML custom:customs)
+			{
+				String namecust = custom.getAttribute("name");
+				if (namecust == null) throw new AdapterException(custom,"Attribute 'name' required");
+				String valuecust = custom.getAttribute("value");
+				if (valuecust == null) valuecust = "";
+				js.put(namecust,valuecust);
+			}
+		}
+
+		pub.setAttribute("method",httpoper);
+		//pub.setAttribute("url",xmldest.getAttribute("url") + table + "/" + java.net.URLEncoder.encode(where.toString(),"UTF-8").replace("%","\\%"));
+		pub.setAttribute("url",xml.getValue("url") + table + "/" + id);
+
+		// Support for session persistency?
+		Publisher publisher = Publisher.getInstance();
+		String response = publisher.publish(js.toString(),pubxml);
+
 	}
 }
 

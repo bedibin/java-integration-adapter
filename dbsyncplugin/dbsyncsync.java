@@ -25,7 +25,8 @@ class Sync
 		if (xml == null) return;
 		this.xml = xml;
 
-		String fieldsattr = xml.getAttribute("fields");
+		String fieldsattr = xml.getAttribute("csv_fields");
+		if (fieldsattr == null) fieldsattr = xml.getAttribute("fields");
 		Set<String> headers = fieldsattr == null ? null : Misc.arrayToSet(fieldsattr.split("\\s*,\\s*"));
  
 		String dumpcsvfilename = xml.getAttribute("dumpcsvfilename");
@@ -53,14 +54,6 @@ class Sync
 		LinkedHashMap<String,String> result = reader == null ? null : reader.next();
 		if (result == null && !isprocessed) isprocessed = true;
 		return result;
-	}
-
-	public Set<String> getHeader() throws Exception
-	{
-		if (reader == null) return null;
-		Set<String> keyset = new LinkedHashSet<String>(reader.getHeader());
-		keyset.addAll(dbsync.getFields().getNames(this));
-		return keyset;
 	}
 
 	public XML getXML()
@@ -100,6 +93,27 @@ class Sync
 		return syncname;
 	}
 
+	public Set<String> getHeader() throws Exception
+	{
+		return getDBSync().getFields().getNames(this);
+	}
+
+	public void setPostInitReader() throws Exception
+	{
+		// This must be called after all field elements are initialized since sort/cache will use them
+		if (this instanceof SyncSql)
+		{
+			// This one is special since no sort simply means sort is already part of the SQL statement
+			// However it supports caching
+			String iscache = xml.getAttribute("cached");
+			if (iscache != null && iscache.equals("true"))
+			reader = new CacheReader(xml,reader);
+			return;
+		}
+
+		if (!reader.isSorted()) reader = new SortTable(xml,this);
+	}
+
 	public void makeDump(LinkedHashMap<String,String> result) throws Exception
 	{
 		if (csvout != null) csvout.write(result);
@@ -127,13 +141,7 @@ class SyncClass extends Sync
 	public SyncClass(DBSyncOper dbsync,XML xml) throws Exception
 	{
 		super(dbsync,xml);
-
 		reader = ReaderUtil.getReader(xml);
-
-		String sorted = xml.getAttribute("sorted");
-		if (sorted != null && sorted.equals("true")) return;
-
-		reader = new SortTable(xml,this);
 	}
 }
 
@@ -142,13 +150,7 @@ class SyncCsv extends Sync
 	public SyncCsv(DBSyncOper dbsync,XML xml) throws Exception
 	{
 		super(dbsync,xml);
-
 		reader = new ReaderCSV(xml);
-
-		String sorted = xml.getAttribute("sorted");
-		if (sorted != null && sorted.equals("true")) return;
-
-		reader = new SortTable(xml,this);
 	}
 }
 
@@ -230,11 +232,8 @@ class SyncSql extends Sync
 			db.execsql(conn,presql);
 
 		// Overwrite default reader
-		reader = new ReaderSQL(conn,sql,keys,issorted);
-
-		String iscache = xml.getAttribute("cached");
-		if (iscache != null && iscache.equals("true"))
-			reader = new CacheReader(xml,reader);
+		String trim = xml.getAttribute("trim");
+		reader = new ReaderSQL(conn,sql,keys,issorted,!(trim != null && trim.equals("false")));
 	}
 }
 
@@ -254,8 +253,6 @@ class SyncSoap extends Sync
 		Subscriber sub = new Subscriber(function);
 		XML result = sub.run(request.getElement(null).copy());
 		reader = new ReaderXML(xml,result);
-
-		reader = new SortTable(xml,this);
 	}
 }
 
@@ -268,10 +265,5 @@ class SyncXML extends Sync
 		super(dbsync,xml);
 
 		reader = new ReaderXML(xml,xmlsource);
-
-		String sorted = xml.getAttribute("sorted");
-		if (sorted != null && sorted.equals("true")) return;
-
-		reader = new SortTable(xml,this);
 	}
 }

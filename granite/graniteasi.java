@@ -453,8 +453,6 @@ class ASIobject
 				String group = uda.getGroupName();
 
 				String elementname = group + "_" + name;
-				elementname = XML.fixName(elementname);
-
 				result.put(elementname,value);
 			}
 		}

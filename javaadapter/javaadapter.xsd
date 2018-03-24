@@ -331,6 +331,7 @@ elementFormDefault="qualified">
 	<xs:attribute name="instance" type="xs:string"/>
 	<xs:attribute name="keyfield" type="xs:string"/>
 	<xs:attribute name="field" type="xs:string"/>
+	<xs:attribute name="trim" type="xs:boolean" default="true"/>
 	<xs:attribute name="sorted" type="xs:boolean" default="false"/>
 	<xs:attribute name="cached" type="xs:boolean" default="false"/>
 	<xs:attribute name="cached_directory" type="xs:string"/>
@@ -342,6 +343,7 @@ elementFormDefault="qualified">
 	<xs:attribute name="charset" type="xs:string"/>
 	<xs:attribute name="filename" type="xs:string"/>
 	<xs:attribute name="worksheet" type="xs:string"/>
+	<xs:attribute name="start_row" type="xs:integer"/>
 	<xs:attribute name="class" type="xs:string"/>
 	<xs:attribute name="url" type="xs:string"/>
 	<xs:attribute name="username" type="xs:string"/>
@@ -649,7 +651,7 @@ elementFormDefault="qualified">
 	<xs:attribute name="ignore_case" type="xs:boolean" default="false"/>
 	<xs:attribute name="if_exists" type="xs:string"/>
 	<xs:attribute name="for_sync" type="xs:string"/>
-	<xs:attribute name="min_deviation" type="xs:integer"/>
+	<xs:attribute name="min_deviation" type="xs:string"/>
 	<xs:attributeGroup ref="activate"/>
 	<xs:attributeGroup ref="filter"/>
 </xs:complexType>
@@ -728,6 +730,7 @@ elementFormDefault="qualified">
 						<xs:element name="server" type="simplestring"/>
 						<xs:element name="protocol" type="simplestring"/>
 						<xs:element name="port" type="simpleinteger" default="1521"/>
+						<xs:element name="bulksize" type="simpleinteger" default="1"/>
 					</xs:choice></xs:sequence>
 					<xs:attribute name="name" type="xs:string" use="required"/>
 					<xs:attribute name="type" type="connectiontypes" default="db"/>
@@ -838,6 +841,7 @@ elementFormDefault="qualified">
 								</xs:choice></xs:sequence>
 								<xs:attribute name="filter" type="xs:string"/>
 								<xs:attribute name="dumpcsvfilename" type="xs:string"/>
+								<xs:attribute name="csv_fields" type="xs:string"/>
 								<xs:attribute name="dumplogfile" type="xs:boolean"/>
 								<xs:attribute name="on_duplicates" type="ondupstypes" default="merge"/>
 								<xs:attribute name="on_duplicates_fields" type="xs:string"/>
@@ -868,6 +872,7 @@ elementFormDefault="qualified">
 								<xs:attribute name="table" type="xs:string"/>
 								<xs:attribute name="filter" type="xs:string"/>
 								<xs:attribute name="dumpcsvfilename" type="xs:string"/>
+								<xs:attribute name="csv_fields" type="xs:string"/>
 								<xs:attribute name="dumplogfile" type="xs:boolean"/>
 								<xs:attribute name="stop_on_error" type="xs:boolean" default="false"/>
 								<xs:attribute name="on_duplicates" type="ondupstypes" default="merge"/>

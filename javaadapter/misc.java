@@ -65,16 +65,16 @@ class Rate
 	}
 }
 
-class Tuple
+class Tuple<T>
 {
-	private Object[] list = null;
+	private T[] list = null;
 
-	public Tuple(Object... list)
+	public Tuple(T... list)
 	{
 		this.list = list;
 	}
 
-	public Object get(int idx)
+	public T get(int idx)
 	{
 		return this.list[idx];
 	}
@@ -1166,14 +1166,14 @@ class Misc
 	public static String getMessage(XML xml,String message,Object... args)
 	{
 		StringBuilder msg = new StringBuilder(getMessage(message,args));
+Misc.log("XML: " + xml.toString());
 		msg.append(" [XML ");
 		String line = xml.getLine();
 		if (line != null && !"".equals(line))
 			msg.append("(line: " + line + ") ");
 		try
 		{
-			BufferedReader br = new BufferedReader(new StringReader(xml.toString()));
-			line = br.readLine(); // Skip first line <?xml...
+			BufferedReader br = new BufferedReader(new StringReader(xml.toStringNoDeclaration()));
 			for(int i = 0;i < 3;i++)
 			{
 				line = br.readLine();

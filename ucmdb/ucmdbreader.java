@@ -22,6 +22,7 @@ class Ucmdb
 	private static Ucmdb instance;
 	private UcmdbService service;
 	private String adapterinfo;
+	private int bulksize;
 
 	private Ucmdb() throws Exception
 	{
@@ -37,6 +38,8 @@ class Ucmdb
 		int port = new Integer(portstr);
 		String username = xml.getValue("username","admin");
 		String password = xml.getValueCrypt("password");
+		String bulkstr = xml.getValue("bulksize","1");
+		bulksize = new Integer(bulkstr);
 
 		UcmdbServiceProvider serviceProvider = UcmdbServiceFactory.getServiceProvider(protocol,host,port);
 		ClientContext clientContext = serviceProvider.createClientContext(adapterinfo);
@@ -77,6 +80,11 @@ class Ucmdb
 		if (instance == null)
 			instance = new Ucmdb();
 		return instance;
+	}
+
+	public int getBulkSize()
+	{
+		return bulksize;
 	}
 
 	static final Pattern causedbypattern = Pattern.compile("Caused by:\\s.*?:\\s+(\\S.+)$",Pattern.MULTILINE);
@@ -271,6 +279,8 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 
 	private TopologyUpdateService update;
 	private TopologyUpdateFactory factory;
+	private TopologyModificationBulk bulk;
+	private int bulkcount = 0;
 	private ClassModelService classmodel;
 	private HashMap<String,AttributeType> attrtypes = new HashMap<String,AttributeType>();
 	private Ucmdb ucmdb;
@@ -491,6 +501,28 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 		}
 	}
 
+	private void push(TopologyModificationData data,TopologyModificationAction action)
+	{
+		if (bulk == null) bulk = factory.createTopologyModificationBulk(adapterinfo);
+		int bulksize = ucmdb.getBulkSize();
+		bulkcount++;
+		TopologyModificationBulkElement element = factory.createTopologyModificationBulkElement(data,action);
+		bulk.addTopologyModificationElement(element);
+		if (bulkcount >= bulksize)
+			flush();
+	}
+
+	private void flush()
+	{
+		if (bulk == null) return;
+
+		TopologyModificationBulk currentbulk = bulk;
+		bulk = null;
+		bulkcount = 0;
+
+		update.execute(currentbulk);
+	}
+
 	protected void add(XML xmldest,XML xml) throws Exception
 	{
 		TopologyModificationData data = factory.createTopologyModificationData(adapterinfo + "/add");
@@ -526,13 +558,13 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 				xml.setValue("END1",end1value);
 				xml.setValue("END2",end2value);
 				FillUpdateData(data,xml,DBSyncOper.OPER.add);
-				update.create(data,CreateMode.UPDATE_EXISTING);
+				push(data,TopologyModificationAction.CREATE_OR_UPDATE);
 			}
 			return;
 		}
 
 		FillUpdateData(data,xml,DBSyncOper.OPER.add);
-		update.create(data,CreateMode.UPDATE_EXISTING);
+		push(data,TopologyModificationAction.CREATE_OR_UPDATE);
 	}
 
 	private String getAddValue(XML xml) throws Exception
@@ -578,13 +610,13 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 				idxml.setValue(id);
 
 				FillUpdateData(data,xml,DBSyncOper.OPER.update);
-				update.update(data);
+				push(data,TopologyModificationAction.UPDATE_IF_EXISTS);
 			}
 			return;
 		}
 
 		FillUpdateData(data,xml,DBSyncOper.OPER.update);
-		update.update(data);
+		push(data,TopologyModificationAction.UPDATE_IF_EXISTS);
 	}
 
 	protected void remove(XML xmldest,XML xml) throws Exception
@@ -627,7 +659,7 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 				delete.add("INFO",xml.getValue("INFO",null));
 
 				FillUpdateData(data,delete,DBSyncOper.OPER.remove);
-				update.delete(data,DeleteMode.IGNORE_NON_EXISTING);
+				push(data,TopologyModificationAction.DELETE_IF_EXISTS);
 			}
 			return;
 		}
@@ -644,14 +676,14 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 					delete.add("ID",id);
 
 					FillUpdateData(data,delete,DBSyncOper.OPER.remove);
-					update.delete(data,DeleteMode.IGNORE_NON_EXISTING);
+					push(data,TopologyModificationAction.DELETE_IF_EXISTS);
 				}
 				return;
 			}
 		}
 
 		FillUpdateData(data,xml,DBSyncOper.OPER.remove);
-		update.delete(data,DeleteMode.IGNORE_NON_EXISTING);
+		push(data,TopologyModificationAction.DELETE_IF_EXISTS);
 	}
 
 	protected void update(XML xmldest,XML xml) throws Exception
@@ -675,7 +707,7 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 
 				TopologyModificationData data = factory.createTopologyModificationData(adapterinfo + "/replace");
 				FillUpdateData(data,delete,DBSyncOper.OPER.remove);
-				update.delete(data,DeleteMode.IGNORE_NON_EXISTING);
+				push(data,TopologyModificationAction.DELETE_IF_EXISTS);
 			}
 			add(xmldest,xml);
 			return;
@@ -685,7 +717,11 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 	}
 
 	protected void start(XML xmldest,XML xml) throws Exception {}
-	protected void end(XML xmldest,XML xml) throws Exception {}
+
+	protected void end(XML xmldest,XML xml) throws Exception
+	{
+		flush();
+	}
 
 	@Override
 	protected void setKeyValue(XML xml) throws Exception
@@ -725,5 +761,36 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 		Topology topology = queryService.executeQuery(executableQuery);
 		Collection<TopologyCI> allcis = topology.getAllCIs();
 		System.out.println(allcis.size());
+	}
+}
+
+class UcmdbLongName
+{
+	public static String fixLongName(String longName)
+	{
+		String newName = longName;
+		if (longName.length() > getMaxNameLengthAllow())
+			newName = cutLongName(longName);
+		String res = newName.toUpperCase();
+		if (res.indexOf("-") >= 0)
+			res = res.replaceAll("-", "_");
+		return res;
+	}
+  
+	public static String cutLongName(String longName)
+	{
+		return longName.substring(0, getMaxNameLengthAllow() - 12) + "_" + String.valueOf(Math.abs(longName.hashCode()));
+	}
+
+	public static int getMaxNameLengthAllow()
+	{
+		return 30 - 1;
+	}
+
+	public static void main(String[] args) throws Exception
+	{
+		// java -cp ucmdbreader.jar UcmdbLongName A_desj_asset_maintenance_contract
+		// Return: A_DESJ_ASSET_MAIN_1137851210
+		System.out.println(fixLongName(args[0]));
 	}
 }

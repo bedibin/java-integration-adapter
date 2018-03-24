@@ -88,17 +88,17 @@ class SyncLookup
 				catch(FileNotFoundException ex)
 				{
 					xml.setAttributeDeprecated("on_not_found","on_file_not_found");
-					OnOper onnotfound = Field.getOnOper(xml,"on_file_not_found",OnOper.exception,EnumSet.of(OnOper.exception,OnOper.ignore,OnOper.warning,OnOper.error));
+					OnOper onnotfound = Field.getOnOper(xml,"on_file_not_found",OnOper.EXCEPTION,EnumSet.of(OnOper.EXCEPTION,OnOper.IGNORE,OnOper.WARNING,OnOper.ERROR));
 					switch(onnotfound)
 					{
-					case exception:
+					case EXCEPTION:
 						Misc.rethrow(ex);
-					case ignore:
+					case IGNORE:
 						return;
-					case warning:
+					case WARNING:
 						Misc.log("WARNING: Ignoring lookup operation since file not found: " + ex.getMessage());
 						return;
-					case error:
+					case ERROR:
 						Misc.log("ERROR: Ignoring lookup operation since file not found: " + ex.getMessage());
 						return;
 					}
@@ -120,7 +120,7 @@ class SyncLookup
 				table.put(key,value);
 			}
 
-			void doInitialLoading(LinkedHashMap<String,String> values) throws Exception
+			void doInitialLoading(FieldResult fieldresult) throws Exception
 			{
 				LinkedHashMap<String,String> result;
 				if (reader != null) while((result = reader.next()) != null)
@@ -151,11 +151,12 @@ class SyncLookup
 							datevalue = result.get(datefield);
 							fields.remove(datefield);
 						}
-						if (values != null) fields.retainAll(values.keySet()); // Lookup only on common fields
+						if (fieldresult != null) fields.retainAll(fieldresult.getSync().getHeader()); // Lookup only on common fields
+
 						if (Misc.isLog(15))
 						{
 							Misc.log("Lookup fields are: " + result.keySet());
-							if (values != null) Misc.log("Available fields are: " + values.keySet());
+							if (fieldresult != null) Misc.log("Available fields are: " + fieldresult.getSync().getHeader());
 							Misc.log("Common lookup fields are: " + fields);
 						}
 						if (fields.isEmpty())
@@ -195,20 +196,20 @@ class SyncLookup
 				loadingdone = true;
 			}
 
-			public String addValue(LinkedHashMap<String,String> values) throws Exception
+			public String addValue(FieldResult result) throws Exception
 			{
-				XML xmladd = new XML(new StringBuilder(Misc.substitute(xml.toString(),values)));
+				XML xmladd = new XML(new StringBuilder(Misc.substitute(xml.toString(),result.getValues())));
 				reader = ReaderUtil.getReader(xmladd);
-				doInitialLoading(values);
-				return getValue(values);
+				doInitialLoading(result);
+				return getValue(result);
 			}
 
-			public String getValue(LinkedHashMap<String,String> values) throws Exception
+			public String getValue(FieldResult fieldresult) throws Exception
 			{
 				// Delay preloading until first use
-				if (!loadingdone) doInitialLoading(values);
+				if (!loadingdone) doInitialLoading(fieldresult);
 
-				if (values == null)
+				if (fieldresult == null)
 				{
 					if (table == null) return null;
 					Iterator<String> iter = table.values().iterator();
@@ -216,6 +217,7 @@ class SyncLookup
 				}
 
 				if (fields == null) return null;
+				LinkedHashMap<String,String> values = fieldresult.getValues();
 				String keyvalue = Misc.getKeyValue(fields,values);
 				if (keyvalue == null) return ""; // If key is null, do not reject or throw an error
 
@@ -249,7 +251,7 @@ class SyncLookup
 							{
 								if (discardedlist.size() > 0)
 									Misc.log("WARNING: Discarded entries when looking up multiple values for field " + fieldname + ": " + Misc.implode(discardedlist));
-								Collections.sort(resultlist,db.collator);
+								Collections.sort(resultlist,db.getCollator());
 								result = Misc.implode(resultlist,"\n");
 							}
 						}
@@ -308,25 +310,25 @@ class SyncLookup
 			String attr = xml.getAttributeDeprecated("use_key_when_not_found");
 			if ("true".equals(attr)) onlookupusekey = true;
 
-			OnOper onlookuperror = Field.getOnOper(xml,"on_lookup_error",OnOper.ignore,EnumSet.of(OnOper.use_key,OnOper.ignore,OnOper.exception,OnOper.error,OnOper.warning,OnOper.reject_record,OnOper.reject_field));
+			OnOper onlookuperror = Field.getOnOper(xml,"on_lookup_error",OnOper.IGNORE,EnumSet.of(OnOper.USE_KEY,OnOper.IGNORE,OnOper.EXCEPTION,OnOper.ERROR,OnOper.WARNING,OnOper.REJECT_RECORD,OnOper.REJECT_FIELD));
 			switch(onlookuperror)
 			{
-			case use_key:
+			case USE_KEY:
 				onlookupusekey = true;
 				break;
-			case reject_field:
+			case REJECT_FIELD:
 				erroroperation = SyncLookupResultErrorOperationTypes.REJECT_FIELD;
 				break;
-			case reject_record:
+			case REJECT_RECORD:
 				erroroperation = SyncLookupResultErrorOperationTypes.REJECT_RECORD;
 				break;
-			case exception:
+			case EXCEPTION:
 				erroroperation = SyncLookupResultErrorOperationTypes.EXCEPTION;
 				break;
-			case error:
+			case ERROR:
 				erroroperation = SyncLookupResultErrorOperationTypes.ERROR;
 				break;
-			case warning:
+			case WARNING:
 				erroroperation = SyncLookupResultErrorOperationTypes.WARNING;
 				break;
 			}
@@ -341,41 +343,41 @@ class SyncLookup
 			this.preloadinfo = preloadinfo == null ? new Preload(xml,resultname) : preloadinfo;
 		}
 
-		protected final String add(LinkedHashMap<String,String> row) throws Exception
+		protected final String add(FieldResult result) throws Exception
 		{
 			if (preloadinfo == null) throw new AdapterException("Adding non preload is not supported");
-			return preloadinfo.addValue(row);
+			return preloadinfo.addValue(result);
 		}
 
-		protected final String lookup(LinkedHashMap<String,String> row) throws Exception
+		protected final String lookup(FieldResult result) throws Exception
 		{
 			if (preloadinfo != null)
-				return preloadinfo.getValue(row);
+				return preloadinfo.getValue(result);
 
 			if (Misc.isLog(15)) Misc.log("Lookup: Doing lookup for " + fieldname);
 
 			String sql = xmllookup.getValue();
 			String instance = xmllookup.getAttribute("instance");
 
-			String str = row == null ? sql : db.substitute(instance,sql,row);
+			String str = result == null ? sql : db.substitute(instance,sql,result.getValues());
 			DBOper oper = db.makesqloper(instance,str);
 
-			LinkedHashMap<String,String> result = oper.next();
-			if (result == null) return null;
+			LinkedHashMap<String,String> nextrow = oper.next();
+			if (nextrow == null) return null;
 
-			return Misc.getFirstValue(result);
+			return Misc.getFirstValue(nextrow);
 		}
 
-		public SyncLookupResultErrorOperation oper(LinkedHashMap<String,String> row,String name) throws Exception
+		public SyncLookupResultErrorOperation oper(FieldResult result) throws Exception
 		{
-			String previous = row.get(name);
+			String previous = result.getValue();
 			if (previous != null && !previous.isEmpty()) return new SyncLookupResultErrorOperation();
 
-			String value = lookup(row);
+			String value = lookup(result);
 			if (value == null)
 				return new SyncLookupResultErrorOperation(erroroperation);
 
-			row.put(name,value);
+			result.setValue(value);
 			return new SyncLookupResultErrorOperation(SyncLookupResultErrorOperationTypes.NEWVALUE);
 		}
 
@@ -409,13 +411,13 @@ class SyncLookup
 		}
 
 		@Override
-		public SyncLookupResultErrorOperation oper(LinkedHashMap<String,String> row,String name) throws Exception
+		public SyncLookupResultErrorOperation oper(FieldResult result) throws Exception
 		{
-			String value = lookup(row);
+			String value = lookup(result);
 			if (value == null)
 				return new SyncLookupResultErrorOperation(erroroperation);
 
-			row.put(name,value);
+			result.setValue(value);
 			return new SyncLookupResultErrorOperation(SyncLookupResultErrorOperationTypes.NEWVALUE);
 		}
 	}
@@ -428,16 +430,16 @@ class SyncLookup
 		}
 
 		@Override
-		public SyncLookupResultErrorOperation oper(LinkedHashMap<String,String> row,String name) throws Exception
+		public SyncLookupResultErrorOperation oper(FieldResult result) throws Exception
 		{
-			String previous = row.get(name);
+			String previous = result.getValue();
 			if (previous != null && !previous.isEmpty()) return new SyncLookupResultErrorOperation();
 
 			String value = lookup(null);
 			if (value == null)
 				return new SyncLookupResultErrorOperation(erroroperation);
 
-			row.put(name,value);
+			result.setValue(value);
 			return new SyncLookupResultErrorOperation(SyncLookupResultErrorOperationTypes.NEWVALUE);
 		}
 	}
@@ -450,31 +452,31 @@ class SyncLookup
 		{
 			super(xml,null,null);
 
-			OnOper scope = Field.getOnOper(xml,"on_exclude",OnOper.reject_record,EnumSet.of(OnOper.ignore,OnOper.reject_field,OnOper.error,OnOper.warning,OnOper.exception));
+			OnOper scope = Field.getOnOper(xml,"on_exclude",OnOper.REJECT_RECORD,EnumSet.of(OnOper.IGNORE,OnOper.REJECT_FIELD,OnOper.ERROR,OnOper.WARNING,OnOper.EXCEPTION));
 			switch(scope)
 			{
-			case ignore:
+			case IGNORE:
 				onexclude = SyncLookupResultErrorOperationTypes.NONE;
 				break;
-			case reject_field:
+			case REJECT_FIELD:
 				onexclude = SyncLookupResultErrorOperationTypes.REJECT_FIELD;
 				break;
-			case error:
+			case ERROR:
 				onexclude = SyncLookupResultErrorOperationTypes.ERROR;
 				break;
-			case warning:
+			case WARNING:
 				onexclude = SyncLookupResultErrorOperationTypes.WARNING;
 				break;
-			case exception:
+			case EXCEPTION:
 				onexclude = SyncLookupResultErrorOperationTypes.EXCEPTION;
 				break;
 			}
 		}
 
 		@Override
-		public SyncLookupResultErrorOperation oper(LinkedHashMap<String,String> row,String name) throws Exception
+		public SyncLookupResultErrorOperation oper(FieldResult result) throws Exception
 		{
-			String value = lookup(row);
+			String value = lookup(result);
 			if (value == null || value.isEmpty())
 				return new SyncLookupResultErrorOperation();
 			return new SyncLookupResultErrorOperation(onexclude);
@@ -489,9 +491,9 @@ class SyncLookup
 		}
 
 		@Override
-		public SyncLookupResultErrorOperation oper(LinkedHashMap<String,String> row,String name) throws Exception
+		public SyncLookupResultErrorOperation oper(FieldResult result) throws Exception
 		{
-			String value = lookup(row);
+			String value = lookup(result);
 			if (value == null)
 				return new SyncLookupResultErrorOperation(onexclude);
 			return new SyncLookupResultErrorOperation();
@@ -506,12 +508,12 @@ class SyncLookup
 		}
 
 		@Override
-		public SyncLookupResultErrorOperation oper(LinkedHashMap<String,String> row,String name) throws Exception
+		public SyncLookupResultErrorOperation oper(FieldResult result) throws Exception
 		{
-			String value = lookup(row);
-			if (value == null) value = add(row);
+			String value = lookup(result);
+			if (value == null) value = add(result);
 			if (value == null) return new SyncLookupResultErrorOperation();
-			row.put(name,value);
+			result.setValue(value);
 			return new SyncLookupResultErrorOperation(SyncLookupResultErrorOperationTypes.NEWVALUE);
 		}
 	}
@@ -524,35 +526,35 @@ class SyncLookup
 		{
 			xmllookup = xml;
 
-			OnOper scope = Field.getOnOper(xml,"on_exception",OnOper.warning,EnumSet.of(OnOper.warning,OnOper.ignore,OnOper.reject_field,OnOper.error,OnOper.reject_record,OnOper.exception));
+			OnOper scope = Field.getOnOper(xml,"on_exception",OnOper.WARNING,EnumSet.of(OnOper.WARNING,OnOper.IGNORE,OnOper.REJECT_FIELD,OnOper.ERROR,OnOper.REJECT_RECORD,OnOper.EXCEPTION));
 			switch(scope)
 			{
-			case ignore:
+			case IGNORE:
 				onexception = SyncLookupResultErrorOperationTypes.NONE;
 				break;
-			case reject_field:
+			case REJECT_FIELD:
 				onexception = SyncLookupResultErrorOperationTypes.REJECT_FIELD;
 				break;
-			case error:
+			case ERROR:
 				onexception = SyncLookupResultErrorOperationTypes.ERROR;
 				break;
-			case reject_record:
+			case REJECT_RECORD:
 				onexception = SyncLookupResultErrorOperationTypes.REJECT_RECORD;
 				break;
-			case exception:
+			case EXCEPTION:
 				onexception = SyncLookupResultErrorOperationTypes.EXCEPTION;
 				break;
 			}
 		}
 
 		@Override
-		public SyncLookupResultErrorOperation oper(LinkedHashMap<String,String> row,String name) throws Exception
+		public SyncLookupResultErrorOperation oper(FieldResult result) throws Exception
 		{
 			try {
-				String value = Script.execute(xmllookup.getValue(),row);
+				String value = Script.execute(xmllookup.getValue(),result.getValues());
 				if (value != null)
 				{
-					row.put(name,value);
+					result.setValue(value);
 					return new SyncLookupResultErrorOperation(SyncLookupResultErrorOperationTypes.NEWVALUE);
 				}
 			} catch (AdapterScriptException ex) {
@@ -611,12 +613,12 @@ class SyncLookup
 		}
 	}
 
-	public SyncLookupResultErrorOperation check(LinkedHashMap<String,String> row,String name) throws Exception
+	public SyncLookupResultErrorOperation check(FieldResult result) throws Exception
 	{
 		SyncLookupResultErrorOperationTypes oper = SyncLookupResultErrorOperationTypes.NONE;
 		for(SimpleLookup lookup:lookups)
 		{
-			SyncLookupResultErrorOperation erroroperation = lookup.oper(row,name);
+			SyncLookupResultErrorOperation erroroperation = lookup.oper(result);
 			if (Misc.isLog(25)) Misc.log("Lookup operation " + lookup.getNameDebug() + " returning " + erroroperation.getType() + " oper " + oper);
 			if (oper != SyncLookupResultErrorOperationTypes.NEWVALUE || erroroperation.getType() != SyncLookupResultErrorOperationTypes.NONE)
 				oper = erroroperation.getType();
@@ -629,10 +631,10 @@ class SyncLookup
 
 		if (defaultvalue != null)
 		{
-			String value = row.get(name);
+			String value = result.getValue();
 			if  (value == null || value.isEmpty())
 			{
-				row.put(name,Misc.substitute(defaultvalue,row));
+				result.setValue(Misc.substitute(defaultvalue,result.getValues()));
 				return new SyncLookupResultErrorOperation(SyncLookupResultErrorOperationTypes.NEWVALUE);
 			}
 		}

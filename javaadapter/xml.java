@@ -246,13 +246,14 @@ class XML
 		xformer.transform(source,result);
 	}
 
-	public String toString(Node node)
+	public String toString(Node node,boolean omit_declaration)
 	{
 		try
 		{
 			TransformerFactory tf = TransformerFactory.newInstance();
 			Transformer transformer = tf.newTransformer();
-			//transformer.setOutputProperty(OutputKeys.OMIT_XML_DECLARATION,"yes");
+			if (omit_declaration)
+				transformer.setOutputProperty(OutputKeys.OMIT_XML_DECLARATION,"yes");
 			StringWriter writer = new StringWriter();
 			if (node == null || node == dom)
 				transformer.transform(new DOMSource(dom),new StreamResult(writer));
@@ -271,14 +272,19 @@ class XML
 		return null;
 	}
 
+	public String toStringNoDeclaration()
+	{
+		return toString(node,true);
+	}
+
 	public String toString()
 	{
-		return toString(node);
+		return toString(node,false);
 	}
 
 	public String rootToString()
 	{
-		return toString(dom);
+		return toString(dom,false);
 	}
 
 	public String getLine()
@@ -793,13 +799,15 @@ class XML
 		el.removeAttribute(name);
 	}
 
-	public void setAttribute(String name,String value)
+	public XML setAttribute(String name,String value)
 	{
-		if (!isElement(node)) return;
-		if (value == null) return;
+		if (!isElement(node)) return this;
+		if (value == null) return this;
 
 		Element el = (Element)node;
 		el.setAttribute(name,value);
+
+		return this;
 	}
 
 	public void setValueByPath(String name,String value) throws AdapterException
@@ -860,7 +868,7 @@ class XML
 	{
 		if (node == null || node == dom.getDocumentElement()) throw new AdapterException("Cannot insert before on an empty node");
 
-		Element element = dom.createElement(fixName(name));
+		Element element = CreateElement(name);
 		Node newnode = node.getParentNode().insertBefore(element,node);
 		return new XML(dom,newnode);
 	}
@@ -878,7 +886,7 @@ class XML
 	public XML addAfter(String name) throws AdapterException
 	{
 		if (node == null || node == dom.getDocumentElement()) throw new AdapterException("Cannot insert after on an empty node");
-		Element element = dom.createElement(fixName(name));
+		Element element = CreateElement(name);
 
 		Node newnode;
 		Node nextnode = node.getNextSibling();
@@ -933,7 +941,7 @@ class XML
 
 	public XML add(String name)
 	{
-		Element element = dom.createElement(fixName(name));
+		Element element = CreateElement(name);
 
 		Node newnode;
 		if (node == null)
@@ -949,7 +957,7 @@ class XML
 
 	public XML add(String name,String value)
 	{
-		Element element = dom.createElement(fixName(name));
+		Element element = CreateElement(name);
 
 		Node newnode;
 		if (node == null)
@@ -994,7 +1002,7 @@ class XML
 
 	public XML addCDATA(String name,String value)
 	{
-		Element element = dom.createElement(fixName(name));
+		Element element = CreateElement(name);
 		Node newnode;
 		if (node == null)
 		{
@@ -1127,19 +1135,26 @@ class XML
 		return false;
 	}
 
-	static public String fixName(String name)
+	private Element CreateElement(String name)
 	{
 		StringBuilder newname = new StringBuilder();
+		boolean isFixed = false;
 		for(int i = 0;i < name.length();i++)
 		{
 			if (isNameChar(name.charAt(i),i == 0))
 				newname.append(name.charAt(i));
-			else
+			else {
 				newname.append('_');
+				isFixed = true;
+			}
 		}
 
-		if (newname.length() == 0) return "_";
-		return newname.toString();
+		Element element = dom.createElement(newname.length() == 0 ? "_" : newname.toString());
+
+		if (isFixed || newname.length() == 0)
+			element.setAttribute("javaadapter_name",name);
+
+		return element;
 	}
 
 	static public String fixValue(String str)

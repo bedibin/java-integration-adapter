@@ -12,7 +12,7 @@ class CsvWriter
 	private Collection<String> headers;
 	private char enclosure = '"';
 	private char delimiter = ',';
-	private char list_delimiter = 0;
+	private char list_delimiter = '\n';
 	private boolean forceenclosure = false;
 	private String charset = "ISO-8859-1";
 	private boolean do_header = true;
@@ -35,6 +35,11 @@ class CsvWriter
 	{
 		this(filename,xml.getAttribute("charset"));
 		setDelimiters(xml);
+	}
+
+	public CsvWriter(String filename,String... headers) throws Exception
+	{
+		this(filename,Arrays.asList(headers));
 	}
 
 	public CsvWriter(String filename,Collection<String> headers) throws Exception
@@ -68,14 +73,30 @@ class CsvWriter
 
 	public void setDelimiters(XML xml) throws Exception
 	{
-		String delimiter = Misc.unescape(xml.getAttribute("delimiter"));
-		if (delimiter != null) this.delimiter = delimiter.charAt(0);
+		final String DELIMITER = "delimiter";
+		final String ENCLOSURE = "enclosure";
+		final String LIST_DELIMITER = "list_delimiter";
 
-		String enclosure = Misc.unescape(xml.getAttribute("enclosure"));
-		if (enclosure != null) this.enclosure = enclosure.charAt(0);
+		if (xml.isAttribute(DELIMITER))
+		{
+			this.delimiter = 0;
+			String delimiter = Misc.unescape(xml.getAttribute(DELIMITER));
+			if (delimiter != null) this.delimiter = delimiter.charAt(0);
+		}
 
-		String list_delimiter = Misc.unescape(xml.getAttribute("list_delimiter"));
-		if (list_delimiter != null) this.list_delimiter = list_delimiter.charAt(0);
+		if (xml.isAttribute(ENCLOSURE))
+		{
+			this.enclosure = 0;
+			String enclosure = Misc.unescape(xml.getAttribute(ENCLOSURE));
+			if (enclosure != null) this.enclosure = enclosure.charAt(0);
+		}
+
+		if (xml.isAttribute(LIST_DELIMITER))
+		{
+			this.list_delimiter = 0;
+			String list_delimiter = Misc.unescape(xml.getAttribute(LIST_DELIMITER));
+			if (list_delimiter != null) this.list_delimiter = list_delimiter.charAt(0);
+		}
 
 		String forceenclosure = xml.getAttribute("force_enclosure");
 		this.forceenclosure = forceenclosure != null && forceenclosure.equals("true");
@@ -107,10 +128,14 @@ class CsvWriter
 			value = Misc.dateformat.format(date);
 		}
 
-		value = value.replace("" + enclosure,"" + enclosure + enclosure);
-		if (forceenclosure || (value.contains("" + delimiter) || value.contains("" + enclosure) || value.contains("\n") || value.contains("\r")))
-			value = enclosure + value + enclosure;
-		if (list_delimiter != 0) value = value.replace('\n',list_delimiter);
+		if (enclosure != 0)
+		{
+			value = value.replace("" + enclosure,"" + enclosure + enclosure);
+			if (forceenclosure || (value.contains("" + delimiter) || value.contains("" + enclosure) || value.contains("\n") || value.contains("\r")))
+				value = enclosure + value + enclosure;
+		}
+		if (list_delimiter == 0) value = value.replace("\n","");
+		else if (list_delimiter != '\n') value = value.replace('\n',list_delimiter);
 		return value;
 	}
 
@@ -137,6 +162,11 @@ class CsvWriter
 		return out;
 	}
 
+	public void write(String... row) throws Exception
+	{
+		write(getOut(null),Arrays.asList(row));
+	}
+
 	public void write(Collection<String> row) throws Exception
 	{
 		write(getOut(null),row);
@@ -157,6 +187,8 @@ class CsvWriter
 			String entry = escape(value);
 			if (line == null)
 				line = entry;
+			else if (delimiter == 0)
+				line += entry;
 			else
 				line += delimiter + entry;
 		}
@@ -185,6 +217,8 @@ class CsvWriter
 			String entry = escape(row.get(key));
 			if (line == null)
 				line = entry;
+			else if (delimiter == 0)
+				line += entry;
 			else
 				line += delimiter + entry;
 		}

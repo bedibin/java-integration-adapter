@@ -70,6 +70,107 @@ class ReaderServiceManager extends ReaderXML
 	}
 }
 
+class ReaderServiceManagerRelations extends ReaderUtil
+{
+	TreeMap<String,TreeMap<String,ChildExtract>> all_next = new TreeMap<String,TreeMap<String,ChildExtract>>(db.getCollator());
+	Iterator<String> next_iterator;
+	Iterator<Map.Entry<String,ChildResult>> child_iterator;
+	String current_parent;
+
+	final String ParentLabel = "parent_ci";
+	final String ChildLabel = "child_ci";
+	final String RelTypeLabel = "relation_name";
+	final String RelCiLabel = "relation_ci";
+	final String LevelLabel = "level";
+
+	class ChildExtract {
+		ChildExtract(String type) {
+			this.type = type;
+		}
+		String type;
+	};
+
+	class ChildResult {
+		ChildResult(int level,String type,String ci) {
+			this.level = level;
+			this.type = type;
+			this.ci = ci;
+		};
+		int level;
+		String type;
+		String ci;
+	};
+
+	public ReaderServiceManagerRelations(XML xml) throws Exception
+	{
+		super(true);
+
+		String conn = xml.getAttribute("instance");
+		String sql = 
+"select m.logical_name " + ParentLabel + ",c.logical_name " + ChildLabel + ",m.relationship_name " + RelTypeLabel + " " +
+"from cirelationsm1 m " +
+"inner join device2m1 p on m.logical_name = p.logical_name and p.istatus != 'Retired' " +
+"inner join cirelationsa1 a on a.logical_name = m.logical_name and a.relationship_name = m.relationship_name " +
+"inner join device2m1 c on a.related_cis = c.logical_name and c.istatus != 'Retired' " +
+"order by 1,2,3";
+		DBOper oper = db.makesqloper(conn,sql);
+
+		if (headers == null) headers = oper.getHeader();
+		if (instance == null) instance = conn;
+
+		LinkedHashMap<String,String> row;
+		while((row = oper.next()) != null) {
+			String parent = row.get(ParentLabel);
+			String child = row.get(ChildLabel);
+			String reltype = row.get(RelTypeLabel);
+
+			if (all_next.containsKey(parent)) {
+				all_next.get(parent).put(child,new ChildExtract(reltype));
+			} else {
+				TreeMap<String,ChildExtract> map = new TreeMap<String,ChildExtract>(db.getCollator());
+				map.put(child,new ChildExtract(reltype));
+				all_next.put(parent,map);
+			}
+		}
+
+		next_iterator = all_next.keySet().iterator();
+		child_iterator = (new TreeMap<String,ChildResult>(db.getCollator())).entrySet().iterator();
+	}
+
+	private TreeMap<String,ChildResult> getAllChildren(TreeMap<String,TreeMap<String,ChildExtract>> all_next,TreeMap<String,ChildResult> map,int level,String ci) throws Exception
+	{
+		TreeMap<String,ChildExtract> children = all_next.get(ci);
+		if (children == null) return map;
+		for(String child:children.keySet()) {
+			if (map.containsKey(child)) continue;
+			map.put(child,new ChildResult(level,children.get(child).type,ci));
+			getAllChildren(all_next,map,level+1,child);
+		}
+		return map;
+	}
+
+	@Override
+	public LinkedHashMap<String,String> nextRaw() throws Exception
+	{
+		if (!child_iterator.hasNext()) {
+			if (!next_iterator.hasNext()) return null;
+			current_parent = next_iterator.next();
+			TreeMap<String,ChildResult> children = getAllChildren(all_next,new TreeMap<String,ChildResult>(),1,current_parent);
+			child_iterator = children.entrySet().iterator();
+		}
+
+		Map.Entry<String,ChildResult> child = child_iterator.next();
+		LinkedHashMap<String,String> row = new LinkedHashMap<String,String>();
+		row.put(ParentLabel,current_parent);
+		row.put(ChildLabel,child.getKey());
+		row.put(RelTypeLabel,child.getValue().type);
+		row.put(RelCiLabel,child.getValue().ci);
+		row.put(LevelLabel,"" + child.getValue().level);
+
+		return row;
+	}
+}
+
 class ServiceManagerUpdateSubscriber extends UpdateSubscriber
 {
 	public ServiceManagerUpdateSubscriber() throws Exception
@@ -351,7 +452,7 @@ class ServiceManagerDBProcessor implements DBProcessor
 
 	public String getFieldValue(byte[] bytes) throws Exception
 	{
-		if (!Misc.startsWith(bytes,SMBINARRAY)) return null;
+		if (!Misc.startsWith(bytes,SMBINARRAY)) return new String(bytes,"iso-8859-1");
 
 		//Misc.log(Misc.toHexString(bytes));
 		//Misc.log(new String(bytes));

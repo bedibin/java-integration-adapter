@@ -390,7 +390,7 @@ class DatabaseUpdateSubscriber extends UpdateSubscriber
 		String ondupsmatch = xmldest.getAttribute("on_duplicates_match");
 		if (ondupsmatch != null) ondupspattern = Pattern.compile(ondupsmatch);
 
-		if ((ondupspattern != null && ondupspattern.matcher(message).find()) || (ondupspattern == null && (message.contains("unique constraint") || message.contains("contrainte unique") || message.contains("ORA-00001:") || message.contains("duplicate key") || message.contains("NoDupIndexTriggered"))))
+		if ((ondupspattern != null && ondupspattern.matcher(message).find()) || (ondupspattern == null && (message.contains("unique constraint") || message.contains("contrainte unique") || message.contains("ORA-00001:") || message.contains("duplicate key") || message.contains("NoDupIndexTriggered") || message.contains("already exists") || message.contains("existe déjà"))))
 		{
 			if (Misc.isLog(15))
 			{
@@ -401,9 +401,9 @@ class DatabaseUpdateSubscriber extends UpdateSubscriber
 
 			if (!isretry)
 			{
-				switch(Field.getOnOper(xmldest,"on_duplicates",OnOper.merge,EnumSet.of(OnOper.merge,OnOper.clear,OnOper.suffix,OnOper.recreate,OnOper.warning,OnOper.error,OnOper.ignore)))
+				switch(Field.getOnOper(xmldest,"on_duplicates",OnOper.MERGE,EnumSet.of(OnOper.MERGE,OnOper.CLEAR,OnOper.SUFFIX,OnOper.RECREATE,OnOper.WARNING,OnOper.ERROR,OnOper.IGNORE)))
 				{
-				case merge:
+				case MERGE:
 					String mergefields = xmldest.getAttribute("merge_fields");
 					String[] attrs = mergefields == null ? null : mergefields.split("\\s*,\\s*");
 
@@ -438,7 +438,7 @@ class DatabaseUpdateSubscriber extends UpdateSubscriber
 					Misc.log(1,"WARNING: Record already present." + Misc.CR + "Updating record information with XML message: " + updxml);
 					update(xmldest,updxml,true);
 					break;
-				case clear:
+				case CLEAR:
 					String clearfields = xmldest.getAttribute("clear_fields");
 					if (clearfields == null) throw new AdapterException(xmldest,"clear on_duplicates requires clear_fields attribute");
 					Misc.log(1,"WARNING: [" + getKeyValue() + "] Record already present. Clearing fields " + clearfields + ": " + xml);
@@ -452,7 +452,7 @@ class DatabaseUpdateSubscriber extends UpdateSubscriber
 					sqlclear += " " + getWhereClause(xmldest,xml);
 					db.execsql(instance,sqlclear);
 					break;
-				case suffix:
+				case SUFFIX:
 					String suffixfields = xmldest.getAttribute("suffix_fields");
 					if (suffixfields == null) throw new AdapterException(xmldest,"suffix on_duplicates requires suffix_fields attribute");
 					Misc.log(1,"WARNING: [" + getKeyValue() + "] Record already present. Adding suffix '_' to fields " + suffixfields + ": " + xml);
@@ -466,15 +466,15 @@ class DatabaseUpdateSubscriber extends UpdateSubscriber
 					sqlsuf += " " + getWhereClause(xmldest,xml);
 					db.execsql(instance,sqlsuf);
 					break;
-				case recreate:
+				case RECREATE:
 					Misc.log(1,"WARNING: [" + getKeyValue() + "] Record already present. Record will be automatically recreated with XML message: " + xml);
 					remove(xmldest,xml);
 					add(xmldest,xml,true);
 					break;
-				case warning:
+				case WARNING:
 					Misc.log(1,"WARNING: [" + getKeyValue() + "] Record already present. Error: " + message + Misc.CR + "Ignored XML message: " + xml);	
 					break;
-				case error:
+				case ERROR:
 					Misc.log(1,"ERROR: [" + getKeyValue() + "] Record already present. Error: " + message + Misc.CR + "Ignored XML message: " + xml);
 				}
 				return;

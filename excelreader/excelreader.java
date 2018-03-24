@@ -22,6 +22,7 @@ class ReaderExcel extends ReaderUtil
 
 		String filename = xml.getAttribute("filename");
 		File file = new File(filename);
+		if (!file.exists()) throw new FileNotFoundException("File not found: " + filename);
 		if (instance == null) instance = file.getName();
 
 		String sheetname = xml.getAttribute("worksheet");
@@ -36,10 +37,22 @@ class ReaderExcel extends ReaderUtil
 			worksheet = sheetname == null ? workbook.getSheetAt(0) : workbook.getSheet(sheetname);
 		}
 
-		if (worksheet == null) throw new AdapterException(xml,"Worksheet not found");
+		if (worksheet == null) throw new FileNotFoundException("Worksheet " + (sheetname == null ? "" : sheetname + " ") + "not found in file: " + filename);
 
 		rows = worksheet.rowIterator();
 		Row row = null;
+
+		String startstr = xml.getAttribute("start_row");
+		if (startstr != null)
+		{
+			int startrow = Integer.parseInt(startstr);
+			while(rows.hasNext() && startrow > 1)
+			{
+				row = rows.next();
+				startrow--;
+			}
+		}
+
 		while(rows.hasNext())
 		{
 			row = rows.next();

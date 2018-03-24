@@ -251,6 +251,7 @@ class Publisher
 			}
 			catch(IOException ex)
 			{
+				if (Misc.isLog(3)) Misc.log("HTTP exception: " + ex);
 				// Not sure if Service Manager needs this: setSessionID(url.toString(),null);
 				InputStream es = rc.getErrorStream();
 				if (es == null)
@@ -268,6 +269,10 @@ class Publisher
 			}
 
 			String response = sb.toString();
+
+			int code = rc.getResponseCode();
+			if (code < 200 || code >= 300)
+				throw new AdapterException("HTTP error code " + code + ": " + response);
 
 			String header;
 			for(int i=1;(header = rc.getHeaderFieldKey(i)) != null;i++)

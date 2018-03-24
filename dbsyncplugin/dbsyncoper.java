@@ -37,7 +37,7 @@ class DBSyncOper
 	private LinkedHashSet<String> displayfields;
 	private Set<String> comparefields;
 	private HashSet<String> tracekeys;
-	private ArrayList<String> ignorefields;
+	private LinkedHashSet<String> ignorefields;
 	private Fields fields;
 	private boolean iscache = false;
 
@@ -120,23 +120,27 @@ class DBSyncOper
 		return set.size() == 0 ? null : Misc.implode(set,"/");
 	}
 
-	public boolean isValidSync(String[] synclist,Sync sync) throws Exception
+	public boolean isValidSync(String[] synclist,Scope scope) throws Exception
 	{
-		if (sync == null) return false;
 		if (synclist == null) return true;
 		if (Misc.isLog(30)) Misc.log("Field: Doing validation against " + Misc.implode(synclist));
-
-		String name = sync.getName();
-		if (name == null) return false;
-		if (Misc.indexOf(synclist,name) != -1) return true;
 
 		String sourcename = sourcesync == null ? null : sourcesync.getName();
 		String destname = destinationsync == null ? null : destinationsync.getName();
 
+		if (scope == Scope.SCOPE_SOURCE || scope == Scope.SCOPE_GLOBAL)
+		{
+			if (sourcename == null) return false;
+			if (Misc.indexOf(synclist,sourcename) != -1) return true;
+		} else if (scope == Scope.SCOPE_DESTINATION || scope == Scope.SCOPE_GLOBAL) {
+			if (destname == null) return false;
+			if (Misc.indexOf(synclist,destname) != -1) return true;
+		} else throw new AdapterException("Invalid isValidSync scope " + scope);
+
 		if (sourcename != null && destname != null)
 			return Misc.indexOf(synclist,sourcename + "-" + destname) != -1;
 
-		if (Misc.isLog(30)) Misc.log("Field: Validation not found in: " + name + "," + sourcename + "," + destname);
+		if (Misc.isLog(30)) Misc.log("Field: Validation not found in: " + scope + "," + sourcename + "," + destname);
 		return false;
 	}
 
@@ -250,34 +254,30 @@ class DBSyncOper
 			boolean isinfo = destinationheader == null ? false : (sourcevalue == null || !destinationheader.contains(key));
 			if (isinfo) xmlrow.setAttribute("type","info");
 
-			boolean ignorecase = false;
+			OnOper ignorecase = (OnOper)fields.getFeature(Scope.SCOPE_GLOBAL,FieldFeature.FIELD_FEATURE_IGNORE_CASE,key);
+			if (ignorecase == null) throw new AdapterException("ignore_case feature is null for field " + key);
 
-			for(Field field:fields.getFields())
+			OnOper type = (OnOper)fields.getFeature(Scope.SCOPE_GLOBAL,FieldFeature.FIELD_FEATURE_TYPE,key);
+			if (type != null)
 			{
-				String fieldname = field.getName();
-				if (!key.equals(fieldname)) continue;
-				if (!field.isValid(sourcesync) && !field.isValid(destinationsync)) continue;
-				if (!field.isValidFilter(row,key)) continue;
-
-				if (Misc.isLog(30)) Misc.log("Matched field " + fieldname + " with key " + key);
-				String type = field.getType();
-				if (type != null)
+				if (type == OnOper.KEY && rowold != null && "".equals(newvalue))
 				{
-					if (type.equals("key") && rowold != null && "".equals(newvalue))
-					{
-						String oldvalue = rowold.get(key);
-						if (oldvalue != null)
-							xmlrow.setValue(oldvalue);
-					}
-					if (type.equals("infonull") && "".equals(newvalue))
-						xmlrow.setAttribute("type","info");
-					else if (isinfo && type.equals("noinfo"))
-						xmlrow.removeAttribute("type");
-					else if (!isinfo || !type.equals("infoapi"))
-						xmlrow.setAttribute("type",type);
+					String oldvalue = rowold.get(key);
+					if (oldvalue != null)
+						xmlrow.setValue(oldvalue);
 				}
-				ignorecase = field.isIgnoreCase();
-				if (rowold != null && field.checkDeviation(rowold.get(key),newvalue))
+				if (type == OnOper.INFONULL && "".equals(newvalue))
+					xmlrow.setAttribute("type","info");
+				else if (isinfo && type == OnOper.NOINFO)
+					xmlrow.removeAttribute("type");
+				else if (!isinfo || type != OnOper.INFOAPI)
+					xmlrow.setAttribute("type",type.toString().toLowerCase());
+			}
+
+			if (rowold != null)
+			{
+				FieldDeviation deviation = (FieldDeviation)fields.getFeature(Scope.SCOPE_GLOBAL,FieldFeature.FIELD_FEATURE_DEVIATION,key);
+				if (deviation != null && deviation.check(rowold.get(key),newvalue))
 					xmlrow.setAttribute("type","info");
 			}
 
@@ -288,7 +288,7 @@ class DBSyncOper
 				boolean oldmulti = oldvalue.indexOf("\n") != -1;
 				if (oldmulti) oldvalue = Misc.trimLines(oldvalue);
 
-				boolean issame = ignorecasefields || ignorecase ? oldvalue.equalsIgnoreCase(newvalue) : oldvalue.equals(newvalue);
+				boolean issame = ignorecasefields || ignorecase == OnOper.TRUE ? oldvalue.equalsIgnoreCase(newvalue) : oldvalue.equals(newvalue);
 				if (!issame && (!isinfo || oldvalue.length() > 0))
 				{
 					if (oldmulti)
@@ -361,7 +361,6 @@ class DBSyncOper
 			if (!dbsyncplugin.preview_mode && destinationsync != null) update.oper(destinationxml,xml);
 			return;
 		}
-
 		xmloperlist.add(xml);
 
 		if (xmloperlist.size() >= maxqueuelength)
@@ -428,24 +427,34 @@ class DBSyncOper
 		return key.toString();
 	}
 
+	private void getSyncFileNotFound(Exception ex,XML xml) throws Exception
+	{
+		xml.setAttributeDeprecated("on_not_found","on_file_not_found");
+		OnOper onnotfound = Field.getOnOper(xml,"on_file_not_found",OnOper.EXCEPTION,EnumSet.of(OnOper.EXCEPTION,OnOper.IGNORE,OnOper.WARNING,OnOper.ERROR));
+		switch(onnotfound)
+		{
+		case EXCEPTION:
+			Misc.rethrow(ex);
+		case WARNING:
+			Misc.log("WARNING: Ignoring sync operation since file not found: " + ex.getMessage());
+			break;
+		case ERROR:
+			Misc.log("ERROR: Ignoring sync operation since file not found: " + ex.getMessage());
+			break;
+		}
+	}
+
 	private Sync getSync(XML xml,XML xmlextra,XML xmlsource) throws Exception
 	{
 		try {
 			return getSyncSub(xml,xmlextra,xmlsource);
 		} catch(FileNotFoundException ex) {
-			xml.setAttributeDeprecated("on_not_found","on_file_not_found");
-			OnOper onnotfound = Field.getOnOper(xml,"on_file_not_found",OnOper.exception,EnumSet.of(OnOper.exception,OnOper.ignore,OnOper.warning,OnOper.error));
-			switch(onnotfound)
-			{
-			case exception:
+			getSyncFileNotFound(ex,xml);
+		} catch(java.lang.reflect.InvocationTargetException ex) {
+			if (ex.getCause() instanceof FileNotFoundException)
+				getSyncFileNotFound((Exception)ex.getCause(),xml);
+			else
 				Misc.rethrow(ex);
-			case warning:
-				Misc.log("WARNING: Ignoring sync operation since file not found: " + ex.getMessage());
-				break;
-			case error:
-				Misc.log("ERROR: Ignoring sync operation since file not found: " + ex.getMessage());
-				break;
-			}
 		}
 		return null;
 	}
@@ -484,6 +493,7 @@ class DBSyncOper
 	private void compare() throws Exception
 	{
 		final String traceid = "COMPARE";
+		final ComparatorIgnoreCase<String> collator = db.getCollator();
 		xmloperlist = new ArrayList<XML>();
 		counter = new RateCounter();
 
@@ -551,7 +561,7 @@ class DBSyncOper
 
 			if (Misc.isLog(11)) Misc.log("Key source: " + sourcekey + " dest: " + destkey);
 
-			if (rowdest != null && (row == null || (ignorecasekeys ? db.collator.compareIgnoreCase(sourcekey,destkey) : db.collator.compare(sourcekey,destkey)) > 0))
+			if (rowdest != null && (row == null || (ignorecasekeys ? collator.compareIgnoreCase(sourcekey,destkey) : collator.compare(sourcekey,destkey)) > 0))
 			{
 				remove(rowdest);
 
@@ -561,7 +571,7 @@ class DBSyncOper
 				continue;
 			}
 
-			if (row != null && (rowdest == null || (ignorecasekeys ? db.collator.compareIgnoreCase(sourcekey,destkey) : db.collator.compare(sourcekey,destkey)) < 0))
+			if (row != null && (rowdest == null || (ignorecasekeys ? collator.compareIgnoreCase(sourcekey,destkey) : collator.compare(sourcekey,destkey)) < 0))
 			{
 				add(row);
 
@@ -571,7 +581,7 @@ class DBSyncOper
 				continue;
 			}
 
-			if (row != null && (ignorecasekeys ? db.collator.compareIgnoreCase(sourcekey,destkey) : db.collator.compare(sourcekey,destkey)) == 0)
+			if (row != null && (ignorecasekeys ? collator.compareIgnoreCase(sourcekey,destkey) : collator.compare(sourcekey,destkey)) == 0)
 			{
 				for(String key:comparefields)
 				{
@@ -678,31 +688,28 @@ class DBSyncOper
 		doresult = getOperationFlag(xml,"do_update");
 		if (doresult != null) doupdate = doresult;
 
-		String casestr = xml.getAttribute("ignore_case");
-		if (casestr != null)
+		OnOper ignorecaseoper = Field.getOnOper(xml,"ignore_case",null,EnumSet.of(OnOper.TRUE,OnOper.FALSE,OnOper.KEYS_ONLY,OnOper.NON_KEYS_ONLY));
+		if (ignorecaseoper != null)
 		{
-			if (casestr.equals("true"))
+			switch(ignorecaseoper)
 			{
+			case TRUE:
 				ignorecasekeys = true;
 				ignorecasefields = true;
-			}
-			else if (casestr.equals("false"))
-			{
+				break;
+			case FALSE:
 				ignorecasekeys = false;
 				ignorecasefields = false;
-			}
-			else if (casestr.equals("keys_only"))
-			{
+				break;
+			case KEYS_ONLY:
 				ignorecasekeys = true;
 				ignorecasefields = false;
-			}
-			else if (casestr.equals("non_keys_only"))
-			{
+				break;
+			case NON_KEYS_ONLY:
 				ignorecasekeys = false;
 				ignorecasefields = true;
+				break;
 			}
-			else
-				throw new AdapterException(xml,"Invalid ignore_case attribute");
 		}
 	}
 
@@ -847,31 +854,19 @@ class DBSyncOper
 					if (keyfield_source == null) keyfield_source = source.getAttribute("keyfields");
 					if (keyfield_source != null) keyfield = keyfield_source;
 					if (keyfield == null) throw new AdapterException(xmlsync,"keyfield is mandatory");
+					Set<String> keyfields = new LinkedHashSet<String>(Arrays.asList(keyfield.split("\\s*,\\s*")));
 
 					String ignoreattr = source.getAttribute("ignore_fields");
-					ignorefields = ignoreattr == null ? null : new ArrayList<String>(Arrays.asList(ignoreattr.split("\\s*,\\s*")));
+					ignorefields = ignoreattr == null ? null : new LinkedHashSet<String>(Arrays.asList(ignoreattr.split("\\s*,\\s*")));
 
 					int k = 0;
 					for(;k < destinations.length;k++)
 					{
 						if (destinations[k] == null) continue;
 
-						sourcesync = new Sync(this,source); // Set to a dummy sync since SortTable may call getName before sourcesync is initialised
-						destinationsync = new Sync(this,destinations[k]);
-
-						fields = new Fields(this,keyfield.split("\\s*,\\s*"));
+						fields = new Fields(this,keyfields);
 						XML[] varsxml = source.getElements("variable");
 						for(XML var:varsxml) fields.addDefaultVar(var);
-						if (iscache)
-						{
-							for(Field globalfield:globalfields) fields.add(globalfield);
-							for(Field sourcefield:sourcefields) fields.add(sourcefield);
-						} else {
-							for(XML globalfieldxml:globalfieldsxml) fields.add(new Field(globalfieldxml,Scope.SCOPE_GLOBAL));
-							for(XML sourcefieldxml:sourcefieldsxml) fields.add(new Field(sourcefieldxml,Scope.SCOPE_SOURCE));
-						}
-						XML[] fieldsxml = destinations[k].getElements("field");
-						for(XML field:fieldsxml) fields.add(new Field(field,Scope.SCOPE_DESTINATION));
 
 						doadd = doupdate = doremove = doTypes.TRUE;
 						ignorecasekeys = ignorecasefields = false;
@@ -881,22 +876,10 @@ class DBSyncOper
 
 						sourcesync = getSync(source,destinations[k],xmlsource);
 						if (sourcesync == null) continue;
-						destinationsync = getSync(destinations[k],source,xmlsource);
-						if (destinationsync == null) continue;
+						destinationsync = new Sync(this,destinations[k]);
 
-						compare();
+						fields.setDefaultFields(sourcesync.getReader().getHeader(),Scope.SCOPE_SOURCE);
 
-						sourcesync = destinationsync = null;
-						for(XML var:varsxml) fields.removeDefaultVar(var);
-					}
-
-					if (k == 0)
-					{
-						sourcesync = new Sync(this,source);
-
-						fields = new Fields(this,keyfield.split("\\s*,\\s*"));
-						XML[] varsxml = source.getElements("variable");
-						for(XML var:varsxml) fields.addDefaultVar(var);
 						if (iscache)
 						{
 							for(Field globalfield:globalfields) fields.add(globalfield);
@@ -906,9 +889,46 @@ class DBSyncOper
 							for(XML sourcefieldxml:sourcefieldsxml) fields.add(new Field(sourcefieldxml,Scope.SCOPE_SOURCE));
 						}
 
+						sourcesync.setPostInitReader();
+
+						destinationsync = getSync(destinations[k],source,xmlsource);
+						if (destinationsync == null) continue;
+						fields.setDefaultFields(destinationsync.getReader().getHeader(),Scope.SCOPE_DESTINATION);
+
+						XML[] fieldsxml = destinations[k].getElements("field");
+						for(XML field:fieldsxml) fields.add(new Field(field,Scope.SCOPE_DESTINATION));
+
+						destinationsync.setPostInitReader();
+
+						compare();
+
+						sourcesync = destinationsync = null;
+						for(XML var:varsxml) fields.removeDefaultVar(var);
+					}
+
+					if (k == 0)
+					{
+						fields = new Fields(this,keyfields);
+						XML[] varsxml = source.getElements("variable");
+						for(XML var:varsxml) fields.addDefaultVar(var);
+
 						sourcesync = getSync(source,null,xmlsource);
 						if (sourcesync == null) continue;
 						destinationsync = null;
+
+						fields.setDefaultFields(sourcesync.getReader().getHeader(),Scope.SCOPE_SOURCE);
+
+						if (iscache)
+						{
+							for(Field globalfield:globalfields) fields.add(globalfield);
+							for(Field sourcefield:sourcefields) fields.add(sourcefield);
+						} else {
+							for(XML globalfieldxml:globalfieldsxml) fields.add(new Field(globalfieldxml,Scope.SCOPE_GLOBAL));
+							for(XML sourcefieldxml:sourcefieldsxml) fields.add(new Field(sourcefieldxml,Scope.SCOPE_SOURCE));
+						}
+
+						sourcesync.setPostInitReader();
+
 						try
 						{
 							compare();
@@ -930,10 +950,9 @@ class DBSyncOper
 				sourcesync = new Sync(this,null);
 				for(XML destination:getFilenamePatterns(rawdestination))
 				{
-					final String operkey = "OPERATION";
+					if (destinationsync == null) continue;
 
-					if (destination == null) continue;
-					destinationsync = new Sync(this,destination);
+					final String operkey = "OPERATION";
 
 					String keyfield_destination = destination.getAttribute("keyfield");
 					if (keyfield_destination == null) keyfield_destination = destination.getAttribute("keyfields");
@@ -941,7 +960,18 @@ class DBSyncOper
 					if (keyfield == null) throw new AdapterException(xmlsync,"keyfield is mandatory");
 					keyfield += "," + operkey;
 
-					fields = new Fields(this,keyfield.split("\\s*,\\s*"));
+					Set<String> keyfields = new LinkedHashSet<String>(Arrays.asList(keyfield.split("\\s*,\\s*")));
+					fields = new Fields(this,keyfields);
+
+					if (destination == null) continue;
+					destination.add("field").setAttribute("name",operkey).setAttribute("type","info");
+
+					destinationsync = getSync(destination,null,xmlsource);
+
+					fields.setDefaultFields(sourcesync.getReader().getHeader(),Scope.SCOPE_DESTINATION);
+					comparefields = destinationsync.getHeader();
+					if (ignorefields != null) comparefields.removeAll(ignorefields);
+
 					if (iscache)
 						for(Field globalfield:globalfields) fields.add(globalfield);
 					else
@@ -950,13 +980,10 @@ class DBSyncOper
 					XML[] fieldsxml = destination.getElements("field");
 					for(XML field:fieldsxml) fields.add(new Field(field,Scope.SCOPE_DESTINATION));
 
-					destinationsync = getSync(destination,null,xmlsource);
-					if (destinationsync == null) continue;
-
-					comparefields = destinationsync.getHeader();
-					if (ignorefields != null) comparefields.removeAll(ignorefields);
 					counter = new RateCounter();
 					xmloperlist = new ArrayList<XML>();
+
+					destinationsync.setPostInitReader();
 
 					push(OPER.start);
 					LinkedHashMap<String,String> row;
