@@ -296,7 +296,7 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 		adapterinfo = ucmdb.getInfo();
 	}
 
-	private void FillUpdateData(TopologyModificationData data,XML xml,DBSyncOper.OPER oper) throws Exception
+	private void FillUpdateData(TopologyModificationData data,XML xml,SyncOper oper) throws Exception
 	{
 		final int debug = 15;
 		HashMap<String,Element> elements = new HashMap<String,Element>();
@@ -391,19 +391,19 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 		// Third populate all attributes
 		for(XML field:fields)
 		{
-			String type = field.getAttribute("type");
-			if ("info".equals(type)) continue;
-			if ("infoapi".equals(type)) continue;
+			OnOper type = Field.getOnOper(field,"type");
+			if (type == OnOper.INFO) continue;
+			if (type == OnOper.INFOAPI) continue;
 
-			if (!"key".equals(type))
+			if (type != OnOper.KEY)
 			{
-				if (oper == DBSyncOper.OPER.remove) continue;
-				if (oper == DBSyncOper.OPER.update)
+				if (oper == SyncOper.REMOVE) continue;
+				if (oper == SyncOper.UPDATE)
 				{
 					XML old = field.getElement("oldvalue");
 					if (old == null) continue;
 					String oldvalue = old.getValue();
-					if ("initial".equals(type) && oldvalue != null) continue;
+					if (type == OnOper.INITIAL && oldvalue != null) continue;
 				}
 			}
 
@@ -540,7 +540,7 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 
 		if (customs.length > 0)
 		{
-			updatemulti(DBSyncOper.OPER.add,xml);
+			updatemulti(SyncOper.ADD,xml);
 			return;
 		}
 
@@ -557,13 +557,13 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 			{
 				xml.setValue("END1",end1value);
 				xml.setValue("END2",end2value);
-				FillUpdateData(data,xml,DBSyncOper.OPER.add);
+				FillUpdateData(data,xml,SyncOper.ADD);
 				push(data,TopologyModificationAction.CREATE_OR_UPDATE);
 			}
 			return;
 		}
 
-		FillUpdateData(data,xml,DBSyncOper.OPER.add);
+		FillUpdateData(data,xml,SyncOper.ADD);
 		push(data,TopologyModificationAction.CREATE_OR_UPDATE);
 	}
 
@@ -597,7 +597,7 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 		return getUpdateValue(idxml);
 	}
 
-	private void updatemulti(DBSyncOper.OPER oper,XML xml) throws Exception
+	private void updatemulti(SyncOper oper,XML xml) throws Exception
 	{
 		TopologyModificationData data = factory.createTopologyModificationData(adapterinfo + "/" + oper);
 		XML idxml = xml.getElement("ID");
@@ -609,13 +609,13 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 			{
 				idxml.setValue(id);
 
-				FillUpdateData(data,xml,DBSyncOper.OPER.update);
+				FillUpdateData(data,xml,SyncOper.UPDATE);
 				push(data,TopologyModificationAction.UPDATE_IF_EXISTS);
 			}
 			return;
 		}
 
-		FillUpdateData(data,xml,DBSyncOper.OPER.update);
+		FillUpdateData(data,xml,SyncOper.UPDATE);
 		push(data,TopologyModificationAction.UPDATE_IF_EXISTS);
 	}
 
@@ -637,7 +637,7 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 
 		if (customs.length > 0)
 		{
-			updatemulti(DBSyncOper.OPER.remove,xml);
+			updatemulti(SyncOper.REMOVE,xml);
 			return;
 		}
 		
@@ -658,7 +658,7 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 				delete.add("END2",end2value);
 				delete.add("INFO",xml.getValue("INFO",null));
 
-				FillUpdateData(data,delete,DBSyncOper.OPER.remove);
+				FillUpdateData(data,delete,SyncOper.REMOVE);
 				push(data,TopologyModificationAction.DELETE_IF_EXISTS);
 			}
 			return;
@@ -675,14 +675,14 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 					XML delete = xml.copy();
 					delete.add("ID",id);
 
-					FillUpdateData(data,delete,DBSyncOper.OPER.remove);
+					FillUpdateData(data,delete,SyncOper.REMOVE);
 					push(data,TopologyModificationAction.DELETE_IF_EXISTS);
 				}
 				return;
 			}
 		}
 
-		FillUpdateData(data,xml,DBSyncOper.OPER.remove);
+		FillUpdateData(data,xml,SyncOper.REMOVE);
 		push(data,TopologyModificationAction.DELETE_IF_EXISTS);
 	}
 
@@ -706,14 +706,14 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 				delete.add("INFO",xml.getValue("INFO",null));
 
 				TopologyModificationData data = factory.createTopologyModificationData(adapterinfo + "/replace");
-				FillUpdateData(data,delete,DBSyncOper.OPER.remove);
+				FillUpdateData(data,delete,SyncOper.REMOVE);
 				push(data,TopologyModificationAction.DELETE_IF_EXISTS);
 			}
 			add(xmldest,xml);
 			return;
 		}
 
-		updatemulti(DBSyncOper.OPER.update,xml);
+		updatemulti(SyncOper.UPDATE,xml);
 	}
 
 	protected void start(XML xmldest,XML xml) throws Exception {}

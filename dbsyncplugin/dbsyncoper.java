@@ -1,11 +1,12 @@
 import java.util.*;
 import java.util.regex.*;
 import java.io.*;
-import com.esotericsoftware.wildcard.Paths;
+import java.nio.file.*;
+
+enum SyncOper { ADD, UPDATE, REMOVE, END, START};
 
 class DBSyncOper
 {
-	enum OPER { add, update, remove, end, start};
 
 	class RateCounter
 	{
@@ -178,13 +179,13 @@ class DBSyncOper
 		xmloperlist.clear();
 	}
 
-	private void push(OPER oper) throws Exception
+	private void push(SyncOper oper) throws Exception
 	{
 		if (destinationsync == null) return;
 
 		XML xml = new XML();
 		XML node = xml.add(oper.toString());
-		if (oper == OPER.end)
+		if (oper == SyncOper.END)
 		{
 			node.setAttribute("total","" + counter.total);
 			node.setAttribute("add","" + counter.add);
@@ -201,7 +202,7 @@ class DBSyncOper
 		xmloperlist.add(xml);
 	}
 
-	private void push(OPER oper,LinkedHashMap<String,String> row,LinkedHashMap<String,String> rowold) throws Exception
+	private void push(SyncOper oper,LinkedHashMap<String,String> row,LinkedHashMap<String,String> rowold) throws Exception
 	{
 		if (destinationsync == null) return;
 
@@ -215,12 +216,19 @@ class DBSyncOper
 		Set<String> allfields = comparefields;
 		if (allfields == null) allfields = row.keySet(); // If destination null, use source fields
 
+		ArrayList<String> changes = new ArrayList<String>();
+		HashMap<String,String> cachevalues = new HashMap<String,String>();
+		int updatecount = 0;
+
 		for(String key:allfields)
 		{
 			String sourcevalue = row.get(key);
 
 			String newvalue = sourcevalue;
 			if (newvalue == null) newvalue = "";
+
+			String oldvalue = null;
+			boolean oldvalueset = false;
 
 			XML xmlrow;
 			if (newvalue.indexOf("\n") == -1)
@@ -258,32 +266,33 @@ class DBSyncOper
 			if (ignorecase == null) throw new AdapterException("ignore_case feature is null for field " + key);
 
 			OnOper type = (OnOper)fields.getFeature(Scope.SCOPE_GLOBAL,FieldFeature.FIELD_FEATURE_TYPE,key);
+			if (type == null && isinfo) type = OnOper.INFO;
 			if (type != null)
 			{
 				if (type == OnOper.KEY && rowold != null && "".equals(newvalue))
 				{
-					String oldvalue = rowold.get(key);
-					if (oldvalue != null)
-						xmlrow.setValue(oldvalue);
+					String rowoldvalue = rowold.get(key);
+					if (rowoldvalue != null) xmlrow.setValue(rowoldvalue);
 				}
 				if (type == OnOper.INFONULL && "".equals(newvalue))
-					xmlrow.setAttribute("type","info");
+					type = OnOper.INFO;
 				else if (isinfo && type == OnOper.NOINFO)
 					xmlrow.removeAttribute("type");
 				else if (!isinfo || type != OnOper.INFOAPI)
 					xmlrow.setAttribute("type",type.toString().toLowerCase());
 			}
+			if (type == OnOper.INFO) xmlrow.setAttribute("type","info");
 
 			if (rowold != null)
 			{
 				FieldDeviation deviation = (FieldDeviation)fields.getFeature(Scope.SCOPE_GLOBAL,FieldFeature.FIELD_FEATURE_DEVIATION,key);
 				if (deviation != null && deviation.check(rowold.get(key),newvalue))
+				{
+					isinfo = true;
 					xmlrow.setAttribute("type","info");
-			}
+				}
 
-			if (rowold != null)
-			{
-				String oldvalue = rowold.get(key);
+				oldvalue = rowold.get(key);
 				if (oldvalue == null) oldvalue = "";
 				boolean oldmulti = oldvalue.indexOf("\n") != -1;
 				if (oldmulti) oldvalue = Misc.trimLines(oldvalue);
@@ -295,46 +304,34 @@ class DBSyncOper
 						xmlrow.addCDATA("oldvalue",oldvalue);
 					else
 						xmlrow.add("oldvalue",oldvalue);
+					oldvalueset = true;
 				}
 			}
-		}
 
-		ArrayList<String> changes = new ArrayList<String>();
-		HashMap<String,String> newvalues = new HashMap<String,String>();
-
-		for(XML entry:xml.getElements())
-		{
-			String tag = entry.getTagName();
-			String value = entry.getValue();
-			if (value == null) value = "";
-			String type = entry.getAttribute("type");
-			if (oper == OPER.update && "key".equals(type))
+			if (oper == SyncOper.UPDATE && type == OnOper.KEY)
 				;
-			else if ("info".equals(type))
+			else if (type == OnOper.INFO)
 				;
-			else if (oper == OPER.update)
+			else if (oper == SyncOper.UPDATE)
 			{
-				if (ignorefields != null && ignorefields.contains(tag)) continue;
-				XML old = entry.getElement("oldvalue");
-				if (old != null)
+				if (ignorefields != null && ignorefields.contains(key)) continue;
+				if (oldvalueset && (type != OnOper.INITIAL || (type == OnOper.INITIAL && oldvalue == null)))
 				{
-					String oldvalue = old.getValue();
-					boolean initial = "initial".equals(type);
-					if (!initial || ("initial".equals(type) && oldvalue == null))
-					{
-						if (oldvalue == null) oldvalue = "";
-						changes.add(tag + "[" + oldvalue + "->" + value + "]");
-						newvalues.put(tag,value);
-					}
+					if (oldvalue == null) oldvalue = "";
+					changes.add(key + "[" + oldvalue + "->" + newvalue + "]");
+					cachevalues.put(key,newvalue);
+					if (type != OnOper.IFUPDATE) updatecount++;
 				}
 			}
 			else
 			{
-				changes.add(tag + ":" + value);
-				if (oper == OPER.add) newvalues.put(tag,value);
+				changes.add(key + ":" + newvalue);
+				if (oper == SyncOper.ADD) cachevalues.put(key,newvalue);
 			}
 			
 		}
+
+		if (Misc.isLog(30)) Misc.log("Presend XML: " + xml);
 
 		String prevkeys = getDisplayKey(fields.getKeys(),row);
 		if (prevkeys == null)
@@ -343,17 +340,17 @@ class DBSyncOper
 			return;
 		}
 
-		if (oper == OPER.update && changes.isEmpty())
+		if (oper == SyncOper.UPDATE && updatecount == 0)
 		{
 			if (Misc.isLog(25)) Misc.log("Discarting update because nothing to do: " + xml);
 			return;
 		}
 		if (Misc.isLog(2)) Misc.log(oper + ": " + prevkeys + " " + Misc.implode(changes,", "));
-		fields.updateCache(newvalues);
+		fields.updateCache(cachevalues);
 
-		if (oper == OPER.update) counter.update++;
-		else if (oper == OPER.add) counter.add++;
-		else if (oper == OPER.remove) counter.remove++;
+		if (oper == SyncOper.UPDATE) counter.update++;
+		else if (oper == SyncOper.ADD) counter.add++;
+		else if (oper == SyncOper.REMOVE) counter.remove++;
 		xmlop.setAttribute("position","" + (counter.add + counter.remove + counter.update));
 
 		if (directmode)
@@ -372,7 +369,7 @@ class DBSyncOper
 		if (doremove == doTypes.ERROR) Misc.log("ERROR: [" + getDisplayKey(fields.getKeys(),row) + "] removing entry rejected: " + row);
 		if (doremove != doTypes.TRUE) return;
 		if (Misc.isLog(4)) Misc.log("quick_remove: " + row);
-		push(OPER.remove,row,null);
+		push(SyncOper.REMOVE,row,null);
 	}
 
 	private void add(LinkedHashMap<String,String> row) throws Exception
@@ -381,7 +378,7 @@ class DBSyncOper
 		if (doadd != doTypes.TRUE) return;
 		if (destinationsync == null) return;
 		if (Misc.isLog(4)) Misc.log("quick_add: " + row);
-		push(OPER.add,row,null);
+		push(SyncOper.ADD,row,null);
 	}
 
 	private void update(LinkedHashMap<String,String> rowold,LinkedHashMap<String,String> rownew) throws Exception
@@ -407,7 +404,7 @@ class DBSyncOper
 
 			Misc.log("quick_update: " + getDisplayKey(fields.getKeys(),rownew) + " " + delta);
 		}
-		push(OPER.update,rownew,rowold);
+		push(SyncOper.UPDATE,rownew,rowold);
 	}
 
 	public String getKey(LinkedHashMap<String,String> row)
@@ -420,7 +417,7 @@ class DBSyncOper
 			/* Use exclamation mark since it is the lowest ASCII character */
 			/* This code must match db.getOrderBy logic */
 			String keyvalue = row.get(keyfield);
-			if (keyvalue != null) key.append(keyvalue.trim().replace(' ','!').replace('_','!'));
+			if (keyvalue != null) key.append(keyvalue.trim().replace(' ','!').replace('_','!').replace('\t','!'));
 			key.append("!");
 		}
 
@@ -510,7 +507,7 @@ class DBSyncOper
 			}
 		}
 
-		push(OPER.start);
+		push(SyncOper.START);
 
 		LinkedHashMap<String,String> row = fields.getNext(sourcesync);
 		LinkedHashMap<String,String> rowdest = (destinationsync == null) ? null : fields.getNext(destinationsync);
@@ -606,7 +603,7 @@ class DBSyncOper
 			}
 		}
 
-		push(OPER.end);
+		push(SyncOper.END);
 		flush();
 	}
 
@@ -733,18 +730,18 @@ class DBSyncOper
 			if (Misc.isLog(10)) Misc.log("File extract: " + fileextract);
 			Pattern patternextract = Pattern.compile(fileextract);
 
-			Paths paths = new Paths(".",fileglob);
-			String[] files = paths.getRelativePaths();
-			if (files.length == 0) results.add(sync);
+			Set<Path> paths = Misc.glob(fileglob);
+			if (paths.size() == 0) results.add(sync);
 
-			for(String file:files)
+			for(Path path:paths)
 			{
 				XML newsync = sync.copy();
+				String pathname = path.toString();
 
-				if (Misc.isLog(10)) Misc.log("Filename: " + file);
-				newsync.setAttribute("filename",file);
+				if (Misc.isLog(10)) Misc.log("Filename: " + pathname);
+				newsync.setAttribute("filename",pathname);
 
-				Matcher matcherextract = patternextract.matcher(file);
+				Matcher matcherextract = patternextract.matcher(pathname);
 				matchervar.reset();
 				matchervar.find();
 				int y = 0;
@@ -985,17 +982,17 @@ class DBSyncOper
 
 					destinationsync.setPostInitReader();
 
-					push(OPER.start);
+					push(SyncOper.START);
 					LinkedHashMap<String,String> row;
 					while((row = fields.getNext(destinationsync)) != null)
 					{
 						String operstr = row.get(operkey);
 						if (operstr == null) throw new AdapterException("OPERATION is mandatory for destination only processing: " + Misc.implode(row));
-						OPER oper = Enum.valueOf(OPER.class,operstr.toLowerCase());
+						SyncOper oper = Enum.valueOf(SyncOper.class,operstr.toUpperCase());
 						row.remove(operkey);
 
 						LinkedHashMap<String,String> oldrow = null;
-						if (oper == OPER.update)
+						if (oper == SyncOper.UPDATE)
 						{
 							oldrow = new LinkedHashMap<String,String>();
 							for(Map.Entry<String,String> entry:row.entrySet())
@@ -1007,7 +1004,7 @@ class DBSyncOper
 
 						push(oper,row,oldrow);
 					}
-					push(OPER.end);
+					push(SyncOper.END);
 					flush();
 
 					destinationsync = null;

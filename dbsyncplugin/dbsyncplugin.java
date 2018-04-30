@@ -245,12 +245,25 @@ abstract class UpdateSubscriber extends Subscriber
 	{
 		try
 		{
-			String oper = xmloper.getTagName();
-			if (oper.equals("update")) updateOper(xmldest,xmloper);
-			else if (oper.equals("add")) addOper(xmldest,xmloper);
-			else if (oper.equals("remove")) removeOper(xmldest,xmloper);
-			else if (oper.equals("start")) startOper(xmldest,xmloper);
-			else if (oper.equals("end")) endOper(xmldest,xmloper);
+			SyncOper oper = Enum.valueOf(SyncOper.class,xmloper.getTagName().toUpperCase());
+			switch(oper)
+			{
+			case UPDATE:
+				updateOper(xmldest,xmloper);
+				break;
+			case ADD:
+				addOper(xmldest,xmloper);
+				break;
+			case REMOVE:
+				removeOper(xmldest,xmloper);
+				break;
+			case START:
+				startOper(xmldest,xmloper);
+				break;
+			case END:
+				endOper(xmldest,xmloper);
+				break;
+			}
 		}
 		catch(Exception ex)
 		{
@@ -507,8 +520,8 @@ class DatabaseUpdateSubscriber extends UpdateSubscriber
 		XML[] fields = xml.getElements();
 		for(XML field:fields)
 		{
-			String type = field.getAttribute("type");
-			if (type != null && (type.equals("info") || type.equals("infoapi"))) continue;
+			OnOper type = Field.getOnOper(field,"type");
+			if (type != null && (type == OnOper.INFO || type == OnOper.INFOAPI)) continue;
 
 			if (fieldnames == null)
 				fieldnames = "";
@@ -523,8 +536,8 @@ class DatabaseUpdateSubscriber extends UpdateSubscriber
 		ArrayList<String> list = new ArrayList<String>();
 		for(XML field:fields)
 		{
-			String type = field.getAttribute("type");
-			if (type != null && (type.equals("info") || type.equals("infoapi"))) continue;
+			OnOper type = Field.getOnOper(field,"type");
+			if (type != null && (type == OnOper.INFO || type == OnOper.INFOAPI)) continue;
 
 			sql += sep + DB.replacement;
 			list.add(field.getValue());
@@ -599,8 +612,8 @@ class DatabaseUpdateSubscriber extends UpdateSubscriber
 			if (old == null) continue;
 
 			String oldvalue = old.getValue();
-			String type = field.getAttribute("type");
-			if (type != null && (type.equals("info") || type.equals("infoapi") || type.equals("key") || (type.equals("initial") && oldvalue != null))) continue;
+			OnOper type = Field.getOnOper(field,"type");
+			if (type != null && (type == OnOper.INFO || type == OnOper.INFOAPI || type == OnOper.KEY || (type == OnOper.INITIAL && oldvalue != null))) continue;
 
 			sql += " " + sep + " " + quotefield + field.getTagName() + quotefield + " = " + DB.replacement;
 			list.add(field.getValue());

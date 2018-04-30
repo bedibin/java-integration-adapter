@@ -304,7 +304,7 @@ class directory
 				Misc.log("WARNING: " + root + " operation cannot be done since " + dn + " doesn't exist");
 				return null;
 			}
-			SearchResult entry = (SearchResult)results.next();
+			SearchResult entry = results.next();
 
 			dn = entry.getName();
 			if (basedn != null && !Misc.endsWithIgnoreCase(dn,basedn))

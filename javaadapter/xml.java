@@ -776,7 +776,7 @@ class XML
 		if (result == null) result = (String)expr.evaluate(node,XPathConstants.STRING);
 		if (result == null) return "";
 
-		return (String)result;
+		return result;
 	}
 
 	public void setAttributeByPath(String path,String name,String value) throws AdapterException

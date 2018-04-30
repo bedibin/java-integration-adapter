@@ -4,6 +4,8 @@ import java.text.*;
 import java.lang.reflect.*;
 import java.net.*;
 import java.util.regex.*;
+import java.nio.file.*;
+import java.nio.file.attribute.BasicFileAttributes;
 
 class AdapterException extends Exception
 {
@@ -69,6 +71,7 @@ class Tuple<T>
 {
 	private T[] list = null;
 
+	@SafeVarargs
 	public Tuple(T... list)
 	{
 		this.list = list;
@@ -166,8 +169,10 @@ class Misc
 	private static boolean trace = false;
 	private static HashSet<String> tracearray = new HashSet<String>();
 	private static long maxsize = 0;
-	private static String logcharset;
-	private static String logfile;
+	private static String loglevelprop = System.getProperty("javaadapter.log.level");
+	private static String logmaxsizeprop = System.getProperty("javaadapter.log.maxsize");
+	private static String logcharset = System.getProperty("javaadapter.log.charset");
+	private static String logfile = System.getProperty("javaadapter.log.filename");
 	private static String hostname = System.getProperty("javaadapter.hostname");
 	private static String logtag;
 
@@ -198,18 +203,16 @@ class Misc
 	static private void setLogInfo(XML xmlconfig) throws Exception
 	{
 		XML logxml = xmlconfig.getElement("logfile");
-		if (logxml == null) return;
+		if (logxml != null)
+		{
+			if (logfile == null) logfile = logxml.getValue();
+			if (logcharset == null) logcharset = logxml.getAttribute("charset");
+			if (loglevelprop == null) loglevelprop = logxml.getAttribute("level");
+			if (logmaxsizeprop == null) logmaxsizeprop = logxml.getAttribute("maxsize");
+		}
 
-		logfile = logxml.getValue();
-		String level = logxml.getAttribute("level");
-		if (level != null)
-			loglevel = new Integer(level);
-
-		String max = logxml.getAttribute("maxsize");
-		if (max != null)
-			maxsize = new Long(max);
-
-		logcharset = logxml.getAttribute("charset");
+		if (loglevelprop != null) loglevel = new Integer(loglevelprop);
+		if (logmaxsizeprop != null) maxsize = new Long(logmaxsizeprop);
 	}
 
 	static public void initXML(XML xmlconfig) throws Exception
@@ -1166,7 +1169,6 @@ class Misc
 	public static String getMessage(XML xml,String message,Object... args)
 	{
 		StringBuilder msg = new StringBuilder(getMessage(message,args));
-Misc.log("XML: " + xml.toString());
 		msg.append(" [XML ");
 		String line = xml.getLine();
 		if (line != null && !"".equals(line))
@@ -1360,5 +1362,48 @@ Misc.log("XML: " + xml.toString());
 		} finally {
 			Runtime.getRuntime().halt(status);
 		}
+	}
+
+	public static Set<Path> glob(String glob) throws IOException
+	{
+		return glob(glob,null);
+	}
+
+	public static Set<Path> glob(String glob,String dir) throws IOException
+	{
+		if (dir == null) dir = "";
+
+		final TreeSet<Path> paths = new TreeSet<Path>();
+		final PathMatcher matcher = FileSystems.getDefault().getPathMatcher("glob:" + glob);
+
+		Files.walkFileTree(Paths.get(dir),new SimpleFileVisitor<Path>() {
+			@Override
+			public FileVisitResult visitFile(Path path,BasicFileAttributes attrs) throws IOException
+			{
+				if (matcher.matches(path)) paths.add(path);
+				return FileVisitResult.CONTINUE;
+			}
+
+			@Override
+			public FileVisitResult visitFileFailed(Path path,IOException exc) throws IOException
+			{
+				return FileVisitResult.CONTINUE;
+			}
+		});
+
+		if (paths.size() == 0)
+		{
+			File file = new File(glob,dir);
+			if (file.exists())
+				paths.add(file.toPath());
+			else if (File.separatorChar == '\\') // Windows
+			{
+				file = new File(glob.replace(File.separator,"/"),dir.replace(File.separator,"/"));
+				if (file.exists()) paths.add(file.toPath());
+			}
+		}
+
+		if (Misc.isLog(30)) Misc.log("Glob for " + glob + ": " + paths);
+		return paths;
 	}
 }

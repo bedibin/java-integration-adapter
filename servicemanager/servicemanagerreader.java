@@ -142,7 +142,12 @@ class ReaderServiceManagerRelations extends ReaderUtil
 		TreeMap<String,ChildExtract> children = all_next.get(ci);
 		if (children == null) return map;
 		for(String child:children.keySet()) {
-			if (map.containsKey(child)) continue;
+			ChildResult duplicatechild = map.get(child);
+			if (duplicatechild != null)
+			{
+				if (level < duplicatechild.level) duplicatechild.level = level;
+				continue;
+			}
 			map.put(child,new ChildResult(level,children.get(child).type,ci));
 			getAllChildren(all_next,map,level+1,child);
 		}
@@ -247,10 +252,11 @@ class ServiceManagerUpdateSubscriber extends UpdateSubscriber
 		pub.setAttribute("type","soap");
 
 		XML[] customs = null;
-		String oper = xmloper.getTagName();
+		SyncOper oper = Enum.valueOf(SyncOper.class,xmloper.getTagName().toUpperCase());
 		String soapoper;
-		if (oper.equals("add"))
+		switch(oper)
 		{
+		case ADD:
 			customs = xmldest.getElements("customadd");
 			if (customs.length > 0)
 			{
@@ -259,9 +265,8 @@ class ServiceManagerUpdateSubscriber extends UpdateSubscriber
 			}
 			else
 				soapoper = "Create";
-		}
-		else if (oper.equals("remove"))
-		{
+			break;
+		case REMOVE:
 			customs = xmldest.getElements("customremove");
 			if (customs.length > 0)
 			{
@@ -270,9 +275,8 @@ class ServiceManagerUpdateSubscriber extends UpdateSubscriber
 			}
 			else
 				soapoper = "Delete";
-		}
-		else if (oper.equals("update"))
-		{
+			break;
+		case UPDATE:
 			soapoper = "Update";
 			if ("Relationship".equals(object))
 			{
@@ -306,8 +310,10 @@ class ServiceManagerUpdateSubscriber extends UpdateSubscriber
 				}
 				if (doremove) oper(object,xmldest,xmlremove);
 			}
+			break;
+		default:
+			return;
 		}
-		else return;
 
 		pub.setAttribute("action",soapoper);
 		SoapRequest soap = new SoapRequest(soapoper + object + "Request");
@@ -320,24 +326,24 @@ class ServiceManagerUpdateSubscriber extends UpdateSubscriber
 			String value = field.getValue();
 			String name = field.getTagName();
 			if (value == null) value = "";
-			String type = field.getAttribute("type");
+			OnOper type = Field.getOnOper(field,"type");
 			if (type != null)
 			{
-				if (type.equals("info")) continue;
-				if (type.equals("infoapi")) continue;
-				if (type.equals("key"))
+				if (type == OnOper.INFO) continue;
+				if (type == OnOper.INFOAPI) continue;
+				if (type == OnOper.KEY)
 				{
 					keys.add(name,value);
 					instance.add(name,value);
 					continue;
 				}
-				if (oper.equals("remove")) continue;
-				if (oper.equals("update"))
+				if (oper == SyncOper.REMOVE) continue;
+				if (oper == SyncOper.UPDATE)
 				{
 					XML old = field.getElement("oldvalue");
 					if (old == null) continue;
 					String oldvalue = old.getValue();
-					if (type.equals("initial") && oldvalue != null) continue;
+					if (type == OnOper.INITIAL && oldvalue != null) continue;
 				}
 			}
 
@@ -408,7 +414,7 @@ class ServiceManagerUpdateSubscriber extends UpdateSubscriber
 		if (ondupsmatch != null) ondupspattern = Pattern.compile(ondupsmatch);
 
 		String message = getMessage(result);
-		if (message != null && oper.equals("add") && ((ondupspattern != null && ondupspattern.matcher(message).find()) || (ondupspattern == null && (message.contains("duplicate key") || message.contains("already associated") || message.contains("d\u00e9j\u00e0 associ\u00e9")))))
+		if (message != null && oper == SyncOper.ADD && ((ondupspattern != null && ondupspattern.matcher(message).find()) || (ondupspattern == null && (message.contains("duplicate key") || message.contains("already associated") || message.contains("d\u00e9j\u00e0 associ\u00e9")))))
 		{
 			soap.renameTag("Update" + object + "Request");
 			publisher.setAttribute("action","Update");

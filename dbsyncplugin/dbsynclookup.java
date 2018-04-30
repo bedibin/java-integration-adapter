@@ -551,7 +551,14 @@ class SyncLookup
 		public SyncLookupResultErrorOperation oper(FieldResult result) throws Exception
 		{
 			try {
-				String value = Script.execute(xmllookup.getValue(),result.getValues());
+				HashMap<String,String> fields = new HashMap<String,String>(result.getValues());
+				for(String key:result.getSync().getHeader())
+				{
+					String value = fields.get(key);
+					if (value == null)
+						fields.put(key,"");
+				}
+				String value = Script.execute(xmllookup.getValue(),fields);
 				if (value != null)
 				{
 					result.setValue(value);

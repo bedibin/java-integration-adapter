@@ -5,6 +5,8 @@ import org.mozilla.javascript.*;
 
 class AdapterScriptException extends AdapterException
 {
+	private static final long serialVersionUID = -6121204203128410513L;
+
         public AdapterScriptException(String message)
         {
                 super(message);

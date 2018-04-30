@@ -3,7 +3,7 @@ import java.io.*;
 
 enum Scope { SCOPE_GLOBAL, SCOPE_SOURCE, SCOPE_DESTINATION };
 enum FieldFeature { FIELD_FEATURE_ONMULTIPLE, FIELD_FEATURE_IGNORE_CASE, FIELD_FEATURE_TYPE, FIELD_FEATURE_DEVIATION };
-enum OnOper { IGNORE, WARNING, ERROR, REJECT_FIELD, REJECT_RECORD, USE_KEY, EXCEPTION, MERGE, RECREATE, SUFFIX, CLEAR, TRUE, FALSE, KEYS_ONLY, NON_KEYS_ONLY, KEY, INFO, INFONULL, NOINFO, INFOAPI, INITIAL };
+enum OnOper { IGNORE, WARNING, ERROR, REJECT_FIELD, REJECT_RECORD, USE_KEY, EXCEPTION, MERGE, RECREATE, SUFFIX, CLEAR, TRUE, FALSE, KEYS_ONLY, NON_KEYS_ONLY, KEY, INFO, INFONULL, NOINFO, INFOAPI, INITIAL, IFUPDATE };
 enum DeviationType { ABSOLUTE, PERCENTAGE };
 
 class FieldDeviation
@@ -131,6 +131,11 @@ class Field
 	public boolean isAttributeNoDefault(String attr)
 	{
 		return xmlfield.isAttributeNoDefault(attr);
+	}
+
+	static public OnOper getOnOper(XML xml,String attr) throws AdapterException
+	{
+		return getOnOper(xml,attr,null,null);
 	}
 
 	static public OnOper getOnOper(XML xml,String attr,OnOper def,EnumSet<OnOper> validset) throws AdapterException
@@ -298,28 +303,28 @@ class Fields
 		for(String name:set)
 		{
 			boolean exists = false;
-			Iterator<Field> it = fields.iterator();
-			while (it.hasNext())
+			int replacepos = -1;
+			int pos = 0;
+			for(Field field:fields)
 			{
-				Field field = it.next();
-				if (name.equals(field.getName()) && (field.getScope() == Scope.SCOPE_GLOBAL || field.getScope() == scope))
+				if (name.equals(field.getName()) && (field.getScope() == Scope.SCOPE_GLOBAL || field.getScope() == scope) && field.isDefault())
 				{
 					exists = true;
 					break;
 				}
 				else if (name.equals(field.getName()) && field.getScope() != scope && field.isDefault())
 				{
-					it.remove();
-					scope = Scope.SCOPE_GLOBAL;
+					replacepos = pos;
 					break;
 				}
+				pos++;
 			}
 			if (exists) continue;
 
 			xml.setAttribute("name",name);
 			xml.setAttribute("hasvalue","true");
 			xml.setAttribute("isdefault","true");
-			add(new Field(xml,scope));
+			add(new Field(xml,replacepos == -1 ? scope : Scope.SCOPE_GLOBAL),replacepos);
 		}
 	}
 
@@ -346,6 +351,11 @@ class Fields
 
 	public void add(Field field) throws Exception
 	{
+		add(field,-1);
+	}
+
+	public void add(Field field,int pos) throws Exception
+	{
 		addName(namefields,field);
 
 		Scope scope = field.getScope();
@@ -358,7 +368,7 @@ class Fields
 		OnOper ignorecaseoper = field.getOnOper(ignorecaseattr,OnOper.FALSE,EnumSet.of(OnOper.TRUE,OnOper.FALSE,OnOper.KEYS_ONLY,OnOper.NON_KEYS_ONLY));
 
 		final String typeattr = "type";
-		OnOper typeoper = field.getOnOper(typeattr,field.isKey() ? OnOper.KEY : null,EnumSet.of(OnOper.KEY,OnOper.INFONULL,OnOper.NOINFO,OnOper.INFOAPI,OnOper.INFO,OnOper.INITIAL));
+		OnOper typeoper = field.getOnOper(typeattr,field.isKey() ? OnOper.KEY : null,EnumSet.of(OnOper.KEY,OnOper.INFONULL,OnOper.NOINFO,OnOper.INFOAPI,OnOper.INFO,OnOper.INITIAL,OnOper.IFUPDATE));
 
 		final String deviationattr = "min_deviation";
 		String deviationstr = field.getAttribute(deviationattr);
@@ -381,7 +391,10 @@ class Fields
 			setFeature(Scope.SCOPE_GLOBAL,FieldFeature.FIELD_FEATURE_DEVIATION,field,deviation,field.isAttributeNoDefault(deviationattr));
 		}
 
-		fields.add(field);
+		if (pos == -1)
+			fields.add(field);
+		else
+			fields.set(pos,field);
 	}
 
 	public Set<String> getNames()
@@ -484,7 +497,7 @@ class Fields
 				{
 					SyncLookup lookup = field.getLookup();
 
-					if (Misc.isLog(30)) Misc.log("Field: [" + keys + "] Check " + name + ":" + value + ":" + sync.getXML().getTagName() + ":" + (dbsync.getSourceSync() == null ? "NOSRC" : dbsync.getSourceSync().getName()) + ":" + (dbsync.getDestinationSync() == null ? "NODEST" : dbsync.getDestinationSync().getName()) + ":" + result);
+					if (Misc.isLog(30)) Misc.log("Field: [" + keys + "] Check " + name + ":" + value + ":" + sync.getXML().getTagName() + ":" + (dbsync.getSourceSync() == null ? "NOSRC" : dbsync.getSourceSync().getName()) + ":" + (dbsync.getDestinationSync() == null ? "NODEST" : dbsync.getDestinationSync().getName()) + ":" + (field.isKey() ? "iskey" : field.getXML().getAttributes()) + ":" + field.getScope() + ":" + result);
 					if (!field.isValid(sync)) continue;
 					if (!field.isValidFilter(result,name)) continue;
 

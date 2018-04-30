@@ -72,6 +72,7 @@ elementFormDefault="qualified">
 		<xs:enumeration value="infonull"/> <!-- Set to info if new value is null only -->
 		<xs:enumeration value="initial"/> <!-- Field use on add or if empty in destination -->
 		<xs:enumeration value="noinfo"/> <!-- Field always used by API value changed or not -->
+		<xs:enumeration value="ifupdate"/> <!-- Field won't be used by comparison but will be updated if other updates are needed -->
 	</xs:restriction>
 </xs:simpleType>
 
