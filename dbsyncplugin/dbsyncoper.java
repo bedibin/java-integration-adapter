@@ -315,9 +315,8 @@ class DBSyncOper
 			else if (oper == SyncOper.UPDATE)
 			{
 				if (ignorefields != null && ignorefields.contains(key)) continue;
-				if (oldvalueset && (type != OnOper.INITIAL || (type == OnOper.INITIAL && oldvalue == null)))
+				if (oldvalueset && (type != OnOper.INITIAL || (type == OnOper.INITIAL && oldvalue.isEmpty())))
 				{
-					if (oldvalue == null) oldvalue = "";
 					changes.add(key + "[" + oldvalue + "->" + newvalue + "]");
 					cachevalues.put(key,newvalue);
 					if (type != OnOper.IFUPDATE) updatecount++;
@@ -345,7 +344,7 @@ class DBSyncOper
 			if (Misc.isLog(25)) Misc.log("Discarting update because nothing to do: " + xml);
 			return;
 		}
-		if (Misc.isLog(2)) Misc.log(oper + ": " + prevkeys + " " + Misc.implode(changes,", "));
+		if (Misc.isLog(2)) Misc.log(oper.toString().toLowerCase() + ": " + prevkeys + " " + Misc.implode(changes,", "));
 		fields.updateCache(cachevalues);
 
 		if (oper == SyncOper.UPDATE) counter.update++;

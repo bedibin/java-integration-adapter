@@ -395,7 +395,7 @@ class ldap extends directory
 		else
 		{
 			dns resolve = new dns();
-			Pattern urlpat = Pattern.compile("^(\\S+://)([^/]+)(.*)$");
+			Pattern urlpat = Pattern.compile("^(\\S+):\\/\\/([^\\/:]+)(:\\d+)?\\/(.*)$");
 			Matcher urlmatch = urlpat.matcher(url);
 			if (urlmatch.find())
 			{

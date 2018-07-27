@@ -270,6 +270,7 @@ abstract class UpdateSubscriber extends Subscriber
 			if (stoponerror) Misc.rethrow(ex);
 			String key = getKeyValue();
 			Misc.log("ERROR: " + (keyvalue == null ? "" : "[" + keyvalue + "] ") + getExceptionMessage(ex) + Misc.CR + "XML message was: " + xmloper);
+			if (Misc.isLog(30)) Misc.log(ex);
 		}
 	}
 }
@@ -403,7 +404,7 @@ class DatabaseUpdateSubscriber extends UpdateSubscriber
 		String ondupsmatch = xmldest.getAttribute("on_duplicates_match");
 		if (ondupsmatch != null) ondupspattern = Pattern.compile(ondupsmatch);
 
-		if ((ondupspattern != null && ondupspattern.matcher(message).find()) || (ondupspattern == null && (message.contains("unique constraint") || message.contains("contrainte unique") || message.contains("ORA-00001:") || message.contains("duplicate key") || message.contains("NoDupIndexTriggered") || message.contains("already exists") || message.contains("existe déjà"))))
+		if ((ondupspattern != null && ondupspattern.matcher(message).find()) || (ondupspattern == null && (message.contains("unique constraint") || message.contains("contrainte unique") || message.contains("ORA-00001:") || message.contains("duplicate key") || message.contains("NoDupIndexTriggered") || message.contains("already exists") || message.contains("existe d\u00e9j\u00e0"))))
 		{
 			if (Misc.isLog(15))
 			{

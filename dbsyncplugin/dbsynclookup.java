@@ -452,7 +452,7 @@ class SyncLookup
 		{
 			super(xml,null,null);
 
-			OnOper scope = Field.getOnOper(xml,"on_exclude",OnOper.REJECT_RECORD,EnumSet.of(OnOper.IGNORE,OnOper.REJECT_FIELD,OnOper.ERROR,OnOper.WARNING,OnOper.EXCEPTION));
+			OnOper scope = Field.getOnOper(xml,"on_exclude",OnOper.REJECT_RECORD,EnumSet.of(OnOper.REJECT_RECORD,OnOper.IGNORE,OnOper.REJECT_FIELD,OnOper.ERROR,OnOper.WARNING,OnOper.EXCEPTION));
 			switch(scope)
 			{
 			case IGNORE:

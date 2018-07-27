@@ -285,7 +285,7 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 	private HashMap<String,AttributeType> attrtypes = new HashMap<String,AttributeType>();
 	private Ucmdb ucmdb;
 	private String adapterinfo;
-	private final Pattern relationTagPattern = Pattern.compile("^((([^:¸]+):)?([^:¸]*):((REL|RREL)(_(\\d+))*)):INFO$");
+	private final Pattern relationTagPattern = Pattern.compile("^((([^:]+):)?([^:]*):((REL|RREL)(_(\\d+))*)):INFO$");
 
 	public UCMDBUpdateSubscriber() throws Exception
 	{

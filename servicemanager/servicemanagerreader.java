@@ -346,6 +346,7 @@ class ServiceManagerUpdateSubscriber extends UpdateSubscriber
 					if (type == OnOper.INITIAL && oldvalue != null) continue;
 				}
 			}
+			else if (oper == SyncOper.REMOVE) continue;
 
 			if (name.startsWith("TABLE_"))
 			{

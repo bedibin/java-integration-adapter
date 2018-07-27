@@ -249,6 +249,7 @@ class ReaderCSV extends ReaderUtil
 	private char enclosure = '"';
 	private char delimiter = ',';
 	private BufferedReader in;
+	private Set<String> csvheaders;
 
 	private void setValue(ArrayList<String> result,StringBuilder sb) throws Exception
 	{
@@ -333,7 +334,7 @@ class ReaderCSV extends ReaderUtil
 		LinkedHashMap<String,String> row = new LinkedHashMap<String,String>();
 		int size = csv.size();
 		int i = 0;
-		for(String name:headers)
+		for(String name:csvheaders)
 		{
 			String value = (i >= size) ? "" : XML.fixValue(toTrim() ? csv.get(i).trim() : csv.get(i));
 			row.put(name,value);
@@ -356,18 +357,44 @@ class ReaderCSV extends ReaderUtil
 	private void initFile(File file,String charset) throws Exception
 	{
 		in = Misc.getFileReader(file,charset);
-		if (headers == null)
+
+		ArrayList<String> row = readCSV();
+		if (row != null && row.size() > 0)
 		{
-			ArrayList<String> row = readCSV();
-			if (row == null || row.size() == 0)
-				throw new AdapterException("CSV file \"" + file.getName() + "\" requires at least one header line or \"fields\" attribute must be specified");
 			// Ignore last empty columns
 			for(int x = row.size() - 1;x >= 0;x--)
 				if (row.get(x).trim().isEmpty()) row.remove(x); else break;
-			headers = new LinkedHashSet<String>(row);
-			if (row.size() != headers.size())
-				throw new AdapterException("Duplicated header values in CSV file " + file.getName() + ": " + Misc.findDuplicates(row));
+
+			if (headers == null)
+			{
+				// Autodetect headers
+				headers = csvheaders = new LinkedHashSet<String>(row);
+				if (row.size() != csvheaders.size())
+					throw new AdapterException("Duplicated header values in CSV file " + file.getName() + ": " + Misc.findDuplicates(row));
+			}
+			else
+			{
+				ArrayList<String> commonheaders = new ArrayList<String>(row);
+				commonheaders.retainAll(headers);
+				if (commonheaders.size() == 0)
+				{
+					// No common header, file has no header, use fields attribute based on positions
+					in = Misc.getFileReader(file,charset);
+					csvheaders = headers;
+					
+				}
+				else
+				{
+					// Case where fields attribute is for limiting extracted columns
+					csvheaders = new LinkedHashSet<String>(row);
+					if (row.size() != csvheaders.size())
+						throw new AdapterException("Duplicated header values in CSV file " + file.getName() + ": " + Misc.findDuplicates(row));
+				}
+			}
 		}
+		else if (headers == null)
+			throw new AdapterException("CSV file \"" + file.getName() + "\" requires at least one header line or \"fields\" attribute must be specified");
+		else csvheaders = headers;
 
 		if (instance == null) instance = file.getName();
 	}
@@ -378,7 +405,7 @@ class ReaderCSV extends ReaderUtil
 		if (headers == null)
 		{
 			ArrayList<String> row = readCSV();
-			headers = new LinkedHashSet<String>(row);
+			headers = csvheaders = new LinkedHashSet<String>(row);
 			if (row.size() != headers.size())
 				throw new AdapterException("Duplicated header values in CSV reader: " + Misc.findDuplicates(row));
 		}
