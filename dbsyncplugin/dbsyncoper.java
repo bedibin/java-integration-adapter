@@ -147,7 +147,7 @@ class DBSyncOper
 
 	private void flush() throws Exception
 	{
-		if (dbsyncplugin.preview_mode || directmode || destinationsync == null)
+		if (dbsyncplugin.preview_mode || directmode)
 		{
 			xmloperlist.clear();
 			return;
@@ -164,8 +164,9 @@ class DBSyncOper
 			xmlop.setAttribute("display_keyfield",Misc.implode(displayfields));
 
 		String[] attrs = {"instance","table","type","on_duplicates","merge_fields"};
-		for(String attr:attrs)
-			xmlop.setAttribute(attr,destinationsync.getXML().getAttribute(attr));
+		if (destinationsync != null)
+			for(String attr:attrs)
+				xmlop.setAttribute(attr,destinationsync.getXML().getAttribute(attr));
 
 		if ((counter.add + counter.update + counter.remove) > 0)
 		{
@@ -181,10 +182,8 @@ class DBSyncOper
 
 	private void push(SyncOper oper) throws Exception
 	{
-		if (destinationsync == null) return;
-
 		XML xml = new XML();
-		XML node = xml.add(oper.toString());
+		XML node = xml.add(oper.toString().toLowerCase());
 		if (oper == SyncOper.END)
 		{
 			node.setAttribute("total","" + counter.total);
@@ -204,15 +203,13 @@ class DBSyncOper
 
 	private void push(SyncOper oper,LinkedHashMap<String,String> row,LinkedHashMap<String,String> rowold) throws Exception
 	{
-		if (destinationsync == null) return;
-
 		XML sourcexml = sourcesync.getXML();
-		XML destinationxml = destinationsync.getXML();
+		XML destinationxml = destinationsync == null ? null : destinationsync.getXML();
 
 		XML xml = new XML();
-		XML xmlop = xml.add(oper.toString());
+		XML xmlop = xml.add(oper.toString().toLowerCase());
 
-		Set<String> destinationheader = destinationsync.getHeader();
+		Set<String> destinationheader = destinationsync == null ? null : destinationsync.getHeader();
 		Set<String> allfields = comparefields;
 		if (allfields == null) allfields = row.keySet(); // If destination null, use source fields
 
@@ -262,10 +259,7 @@ class DBSyncOper
 			boolean isinfo = destinationheader == null ? false : (sourcevalue == null || !destinationheader.contains(key));
 			if (isinfo) xmlrow.setAttribute("type","info");
 
-			OnOper ignorecase = (OnOper)fields.getFeature(Scope.SCOPE_GLOBAL,FieldFeature.FIELD_FEATURE_IGNORE_CASE,key);
-			if (ignorecase == null) throw new AdapterException("ignore_case feature is null for field " + key);
-
-			OnOper type = (OnOper)fields.getFeature(Scope.SCOPE_GLOBAL,FieldFeature.FIELD_FEATURE_TYPE,key);
+			OnOper type = fields.getFeature(Scope.SCOPE_GLOBAL,FieldFeature.FIELD_FEATURE_TYPE,key,row);
 			if (type == null && isinfo) type = OnOper.INFO;
 			if (type != null)
 			{
@@ -285,7 +279,7 @@ class DBSyncOper
 
 			if (rowold != null)
 			{
-				FieldDeviation deviation = (FieldDeviation)fields.getFeature(Scope.SCOPE_GLOBAL,FieldFeature.FIELD_FEATURE_DEVIATION,key);
+				FieldDeviation deviation = fields.getFeature(Scope.SCOPE_GLOBAL,FieldFeature.FIELD_FEATURE_DEVIATION,key,row);
 				if (deviation != null && deviation.check(rowold.get(key),newvalue))
 				{
 					isinfo = true;
@@ -297,7 +291,8 @@ class DBSyncOper
 				boolean oldmulti = oldvalue.indexOf("\n") != -1;
 				if (oldmulti) oldvalue = Misc.trimLines(oldvalue);
 
-				boolean issame = ignorecasefields || ignorecase == OnOper.TRUE ? oldvalue.equalsIgnoreCase(newvalue) : oldvalue.equals(newvalue);
+				OnOper ignorecase = fields.getFeature(Scope.SCOPE_GLOBAL,FieldFeature.FIELD_FEATURE_IGNORE_CASE,key,row);
+				boolean issame = ignorecasefields || (ignorecase != null && ignorecase == OnOper.TRUE) ? oldvalue.equalsIgnoreCase(newvalue) : oldvalue.equals(newvalue);
 				if (!issame && (!isinfo || oldvalue.length() > 0))
 				{
 					if (oldmulti)
@@ -365,7 +360,7 @@ class DBSyncOper
 
 	private void remove(LinkedHashMap<String,String> row) throws Exception
 	{
-		if (doremove == doTypes.ERROR) Misc.log("ERROR: [" + getDisplayKey(fields.getKeys(),row) + "] removing entry rejected: " + row);
+		if (doremove == doTypes.ERROR) Misc.log("ERROR: [" + destinationsync.getName() + ':' + getDisplayKey(fields.getKeys(),row) + "] removing entry rejected: " + row);
 		if (doremove != doTypes.TRUE) return;
 		if (Misc.isLog(4)) Misc.log("quick_remove: " + row);
 		push(SyncOper.REMOVE,row,null);
@@ -373,16 +368,16 @@ class DBSyncOper
 
 	private void add(LinkedHashMap<String,String> row) throws Exception
 	{
-		if (doadd == doTypes.ERROR) Misc.log("ERROR: [" + getDisplayKey(fields.getKeys(),row) + "] adding entry rejected: " + row);
+		if (doadd == doTypes.ERROR) Misc.log("ERROR: [" + sourcesync.getName() + ':' + getDisplayKey(fields.getKeys(),row) + "] adding entry rejected: " + row);
 		if (doadd != doTypes.TRUE) return;
-		if (destinationsync == null) return;
+		if (destinationsync == null && !xmlsync.isElementNoDefault("publisher")) return;
 		if (Misc.isLog(4)) Misc.log("quick_add: " + row);
 		push(SyncOper.ADD,row,null);
 	}
 
 	private void update(LinkedHashMap<String,String> rowold,LinkedHashMap<String,String> rownew) throws Exception
 	{
-		if (doupdate == doTypes.ERROR) Misc.log("ERROR: [" + getDisplayKey(fields.getKeys(),rownew) + "] updating entry rejected: " + rownew);
+		if (doupdate == doTypes.ERROR) Misc.log("ERROR: [" + sourcesync.getName() + ':' + getDisplayKey(fields.getKeys(),rownew) + "] updating entry rejected: " + rownew);
 		if (doupdate != doTypes.TRUE) return;
 		if (Misc.isLog(4))
 		{
@@ -416,7 +411,7 @@ class DBSyncOper
 			/* Use exclamation mark since it is the lowest ASCII character */
 			/* This code must match db.getOrderBy logic */
 			String keyvalue = row.get(keyfield);
-			if (keyvalue != null) key.append(keyvalue.trim().replace(' ','!').replace('_','!').replace('\t','!'));
+			if (keyvalue != null) key.append(keyvalue.replace('\t',' ').trim().replace(' ','!').replace('_','!'));
 			key.append("!");
 		}
 
@@ -489,7 +484,8 @@ class DBSyncOper
 	private void compare() throws Exception
 	{
 		final String traceid = "COMPARE";
-		final ComparatorIgnoreCase<String> collator = db.getCollator();
+		final Comparator<String> collator = db.getCollator();
+		final Comparator<String> collator_ignore_case = db.getCollatorIgnoreCase();
 		xmloperlist = new ArrayList<XML>();
 		counter = new RateCounter();
 
@@ -557,7 +553,7 @@ class DBSyncOper
 
 			if (Misc.isLog(11)) Misc.log("Key source: " + sourcekey + " dest: " + destkey);
 
-			if (rowdest != null && (row == null || (ignorecasekeys ? collator.compareIgnoreCase(sourcekey,destkey) : collator.compare(sourcekey,destkey)) > 0))
+			if (rowdest != null && (row == null || (ignorecasekeys ? collator_ignore_case.compare(sourcekey,destkey) : collator.compare(sourcekey,destkey)) > 0))
 			{
 				remove(rowdest);
 
@@ -567,7 +563,7 @@ class DBSyncOper
 				continue;
 			}
 
-			if (row != null && (rowdest == null || (ignorecasekeys ? collator.compareIgnoreCase(sourcekey,destkey) : collator.compare(sourcekey,destkey)) < 0))
+			if (row != null && (rowdest == null || (ignorecasekeys ? collator_ignore_case.compare(sourcekey,destkey) : collator.compare(sourcekey,destkey)) < 0))
 			{
 				add(row);
 
@@ -577,7 +573,7 @@ class DBSyncOper
 				continue;
 			}
 
-			if (row != null && (ignorecasekeys ? collator.compareIgnoreCase(sourcekey,destkey) : collator.compare(sourcekey,destkey)) == 0)
+			if (row != null && (ignorecasekeys ? collator_ignore_case.compare(sourcekey,destkey) : collator.compare(sourcekey,destkey)) == 0)
 			{
 				for(String key:comparefields)
 				{
@@ -739,6 +735,8 @@ class DBSyncOper
 
 				if (Misc.isLog(10)) Misc.log("Filename: " + pathname);
 				newsync.setAttribute("filename",pathname);
+				sync.getParent().copyAttribute("keyfield",newsync);
+				sync.getParent().copyAttribute("keyfields",newsync);
 
 				Matcher matcherextract = patternextract.matcher(pathname);
 				matchervar.reset();
@@ -907,6 +905,11 @@ class DBSyncOper
 						fields = new Fields(this,keyfields);
 						XML[] varsxml = source.getElements("variable");
 						for(XML var:varsxml) fields.addDefaultVar(var);
+
+						doadd = doupdate = doremove = doTypes.TRUE;
+						ignorecasekeys = ignorecasefields = false;
+						setOperationFlags(xmlsync);
+						setOperationFlags(source);
 
 						sourcesync = getSync(source,null,xmlsource);
 						if (sourcesync == null) continue;

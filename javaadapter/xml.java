@@ -551,7 +551,7 @@ class XML
 	public String getAttribute(String name) throws AdapterException
 	{
 		if (!isElement(node)) return null;
-		Element el = (Element)node;
+		Element	el = (Element)node;
 		Attr attr = el.getAttributeNode(name);
 		String value = el.getAttribute(name);
 
@@ -584,12 +584,49 @@ class XML
 		return value;
 	}
 
+	public <E extends Enum<E>> E getAttributeEnum(String name,Class<E> type) throws AdapterException
+	{
+		return getAttributeEnum(name,null,null,type);
+	}
+
+	public <E extends Enum<E>> E getAttributeEnum(String name,E def,Class<E> type) throws AdapterException
+	{
+		return getAttributeEnum(name,def,null,type);
+	}
+
+	public <E extends Enum<E>> E getAttributeEnum(String name,E def,EnumSet<E> validset,Class<E> type) throws AdapterException
+	{
+		String value = getAttribute(name);
+		if (value == null) return def;
+
+		try {
+			E result = Enum.valueOf(type,value.toUpperCase());
+			if (validset != null && !validset.contains(result))
+				throw new AdapterException(this,"Invalid attribute '" + name + "' value: " + value);
+			return result;
+		} catch(IllegalArgumentException ex) {
+			throw new AdapterException(this,"Invalid attribute '" + name + "' value: " + value);
+		}
+	}
+
 	public String getValueCrypt() throws AdapterException
 	{
 		String value = getValue();
 		if (value == null) return null;
 
 		return javaadapter.crypter.decrypt(value);
+	}
+
+	public String getElementValue() throws AdapterException
+	{
+		if (node == null) return null;
+
+		Node firstchild = node.getFirstChild();
+		if (firstchild == null) return null;
+
+		String value = firstchild.getNodeValue();
+		if (value == null || value.length() == 0) return null;
+		return value;
 	}
 
 	public String getValue() throws AdapterException
@@ -600,12 +637,7 @@ class XML
 		if (filename != null)
 			return Misc.readFile(filename);
 
-		Node firstchild = node.getFirstChild();
-		if (firstchild == null) return null;
-
-		String value = firstchild.getNodeValue();
-		if (value == null || value.length() == 0) return null;
-		return value;
+		return getElementValue();
 	}
 
 	public String getValueCrypt(String name) throws AdapterException

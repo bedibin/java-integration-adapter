@@ -126,6 +126,20 @@ elementFormDefault="qualified">
 	</xs:restriction>
 </xs:simpleType>
 
+<xs:simpleType name="onmissingtypes"> <!-- dbsynclugin -->
+	<xs:restriction base="xs:string">
+		<xs:enumeration value="ignore"/>
+		<xs:enumeration value="exception"/>
+	</xs:restriction>
+</xs:simpleType>
+
+<xs:simpleType name="onnorowtypes"> <!-- dbsynclugin -->
+	<xs:restriction base="xs:string">
+		<xs:enumeration value="ignore"/>
+		<xs:enumeration value="exception"/>
+	</xs:restriction>
+</xs:simpleType>
+
 <xs:simpleType name="onlookuperrortypes"> <!-- dbsynclugin -->
 	<xs:restriction base="xs:string">
 		<xs:enumeration value="warning"/>
@@ -146,6 +160,13 @@ elementFormDefault="qualified">
 		<xs:enumeration value="exception"/>
 		<xs:enumeration value="reject_record"/> <!-- Field element -->
 		<xs:enumeration value="reject_field"/> <!-- Field element -->
+	</xs:restriction>
+</xs:simpleType>
+
+<xs:simpleType name="bulktypes"> <!-- ucmdbreader -->
+	<xs:restriction base="xs:string">
+		<xs:enumeration value="bulk"/>
+		<xs:enumeration value="data"/>
 	</xs:restriction>
 </xs:simpleType>
 
@@ -361,6 +382,7 @@ elementFormDefault="qualified">
 	<xs:attribute name="notrustssl" type="xs:boolean" default="false"/>
 	<xs:attribute name="resultpathrow" type="xs:string"/>
 	<xs:attribute name="resultpathcolumn" type="xs:string"/>
+	<xs:attribute name="on_no_row" type="onnorowtypes" default="ignore"/>
 	<xs:attributeGroup ref="activate"/>
 </xs:complexType>
 
@@ -647,6 +669,7 @@ elementFormDefault="qualified">
 	<xs:attribute name="type" type="fieldtypes"/>
 	<xs:attribute name="default" type="xs:string"/>
 	<xs:attribute name="on_empty" type="onrejecttypes" default="ignore"/>
+	<xs:attribute name="on_missing" type="onmissingtypes" default="ignore"/>
 	<xs:attribute name="force_empty_value" type="xs:string"/>
 	<xs:attribute name="on_multiple" type="ondupstypes" default="ignore"/>
 	<xs:attribute name="ignore_case" type="xs:boolean" default="false"/>
@@ -731,7 +754,15 @@ elementFormDefault="qualified">
 						<xs:element name="server" type="simplestring"/>
 						<xs:element name="protocol" type="simplestring"/>
 						<xs:element name="port" type="simpleinteger" default="1521"/>
-						<xs:element name="bulksize" type="simpleinteger" default="1"/>
+						<xs:element name="bulksize" default="1">
+							<xs:complexType> 
+								<xs:simpleContent> 
+									<xs:extension base="simpleinteger"> 
+										<xs:attribute name="type" type="bulktypes" default="bulk"/> 
+									</xs:extension> 
+								</xs:simpleContent> 
+							</xs:complexType> 
+						</xs:element>
 					</xs:choice></xs:sequence>
 					<xs:attribute name="name" type="xs:string" use="required"/>
 					<xs:attribute name="type" type="connectiontypes" default="db"/>
@@ -884,6 +915,7 @@ elementFormDefault="qualified">
 								<xs:attribute name="suffix_fields" type="xs:string"/>
 								<xs:attribute name="ignore_fields" type="xs:string"/>
 								<xs:attribute name="on_file_not_found" type="onnotfoundtypes" default="exception"/>
+								<xs:attribute name="instance_write" type="xs:string"/> <!-- dbsyncplugin -->
 								<xs:attributeGroup ref="operation"/>
 								<!-- archivage -->
 								<xs:attribute name="reftable" type="xs:string"/>

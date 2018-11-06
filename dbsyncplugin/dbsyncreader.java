@@ -17,6 +17,8 @@ abstract class ReaderUtil implements Reader
 	private boolean issorted = false;
 	private boolean totrim = true;
 	private LinkedHashMap<String,String> last;
+	private OnOper onempty;
+	private int rowcount;
 	protected DB db;
 	protected Set<String> headers;
 	protected boolean skipnormalize = true;
@@ -85,9 +87,9 @@ abstract class ReaderUtil implements Reader
 			instance = xml.getAttribute("name");
 
 		String keyfield = xml.getAttribute("keyfield");
-		if (keyfield == null) xml.getAttribute("keyfields");
-		if (keyfield == null) xml.getParent().getAttribute("keyfield");
-		if (keyfield == null) xml.getParent().getAttribute("keyfields");
+		if (keyfield == null) keyfield = xml.getAttribute("keyfields");
+		if (keyfield == null) keyfield = xml.getParent().getAttribute("keyfield");
+		if (keyfield == null) keyfield = xml.getParent().getAttribute("keyfields");
 		if (keyfield != null) keyfields = Misc.arrayToSet(keyfield.split("\\s*,\\s*"));
 
 		String sorted = xml.getAttribute("sorted");
@@ -102,6 +104,9 @@ abstract class ReaderUtil implements Reader
 			headers = Misc.arrayToSet(fields.split("\\s*,\\s*"));
 			skipnormalize = false;
 		}
+
+		onempty = Field.getOnOper(xml,"on_no_row",OnOper.IGNORE,EnumSet.of(OnOper.EXCEPTION,OnOper.IGNORE));
+		rowcount = 0;
 	}
 
 	static final public void pushCurrent(Map<String,String> row,Map<String,Set<String>> map,boolean issorted) throws Exception
@@ -109,7 +114,7 @@ abstract class ReaderUtil implements Reader
 		for(String keyrow:row.keySet())
 		{
 			Set<String> set = map.get(keyrow);
-			if (set == null) set = issorted ? new LinkedHashSet<String>() : new TreeSet<String>(DB.getInstance().getCollator());
+			if (set == null) set = issorted ? new LinkedHashSet<String>() : new TreeSet<String>(DB.getInstance().getCollatorIgnoreCase());
 
 			String rowvalue = row.get(keyrow);
 			rowvalue = XML.fixValue(rowvalue.replace("\r\n","\n"));
@@ -120,18 +125,30 @@ abstract class ReaderUtil implements Reader
 
 	abstract public LinkedHashMap<String,String> nextRaw() throws Exception;
 
+	private void CheckEmpty() throws AdapterException
+	{
+		if (rowcount == 0 && onempty == OnOper.EXCEPTION)
+			throw new AdapterException("Reader " + getName() + " didn't return any record");
+	}
+
 	public final LinkedHashMap<String,String> next() throws Exception
 	{
-		if (keyfields == null)
-			return nextRaw();
-
 		LinkedHashMap<String,String> row;
+		if (keyfields == null)
+		{
+			row = nextRaw();
+			if (row != null) rowcount++;
+			CheckEmpty();
+			return row;
+		}
+
 		LinkedHashMap<String,String> current = last;
 		HashMap<String,Set<String>> currentmap = new HashMap<String,Set<String>>();
 		if (current != null) pushCurrent(current,currentmap,issorted);
 
 		while((row = nextRaw()) != null)
 		{
+			rowcount++;
 			if (!row.keySet().containsAll(keyfields))
 			{
 				if (Misc.isLog(3)) Misc.log("WARNING: Keys '" + Misc.implode(keyfields) + "' missing in extraction. Cannot merge multiple records sharing the same key: " + Misc.implode(row.keySet()));
@@ -163,7 +180,12 @@ abstract class ReaderUtil implements Reader
 		}
 
 		last = row;
-		if (current == null) return null;
+		if (current == null)
+		{
+			CheckEmpty();
+			return null;
+		}
+
 		for(String keyrow:current.keySet())
 			current.put(keyrow,Misc.implode(currentmap.get(keyrow),"\n"));
 
@@ -608,7 +630,7 @@ class ReaderXML extends ReaderUtil
 			if (value == null) value = "";
 			String name = entry.getKey();
 			if (prefix != null) name = prefix + "_" + name;
-			if (headers != null && !headers.contains(name)) continue;
+			if (headers != null && !headers.contains(name)) headers.add(name);
 			row.put(name,toTrim() ? value.trim() : value);
 		}
 
@@ -618,7 +640,7 @@ class ReaderXML extends ReaderUtil
 			String name = element.getTagName();
 			if (name == null) continue;
 			if (prefix != null) name = prefix + "_" + name;
-			if (headers != null && !headers.contains(name)) continue;
+			if (headers != null && !headers.contains(name)) headers.add(name);
 			String value = element.getValue();
 			if (value == null) value = "";
 			row.put(name,toTrim() ? value.trim() : value);
@@ -834,7 +856,7 @@ class SortTable implements Reader
 		if (tablename == null || conn == null)
 		{
 			instance = "memsort/" + reader.getName();
-			sortedmap = new TreeMap<String,LinkedHashMap<String,Set<String>>>(db.getCollator());
+			sortedmap = new TreeMap<String,LinkedHashMap<String,Set<String>>>(dbsync.getIgnoreCaseKeys() ? db.getCollatorIgnoreCase() : db.getCollator());
 			Misc.log(7,"Initializing memory sort");
 		}
 		else
@@ -863,7 +885,6 @@ class SortTable implements Reader
 		String key = dbsync.getKey(row);
 		if (key.length() == dbsync.getFields().getKeys().size()) return; // An empty key contains one ! per element
 
-		if (dbsync.getIgnoreCaseKeys()) key = key.toUpperCase();
 		if (sortedmap != null)
 		{
 			LinkedHashMap<String,Set<String>> prevmap = sortedmap.get(key);

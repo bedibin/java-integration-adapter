@@ -2,6 +2,8 @@ import java.util.*;
 import java.io.*;
 
 import java.io.FileInputStream;
+import java.text.DecimalFormat;
+import java.text.DecimalFormatSymbols;
 
 // Depend on library from https://poi.apache.org/
 import org.apache.poi.hssf.usermodel.HSSFWorkbook;
@@ -98,11 +100,9 @@ class ReaderExcel extends ReaderUtil
 				value = "";
 				break;
 			case NUMERIC:
-				Double num = new Double(cell.getNumericCellValue());
-				String str = num.toString();
-				if (str.endsWith(".0"))
-					str = "" + num.intValue();
-				value = str;
+				final DecimalFormat df = new DecimalFormat("0",DecimalFormatSymbols.getInstance(Locale.ENGLISH));
+				df.setMaximumFractionDigits(340);
+				value = df.format(cell.getNumericCellValue());
 				break;
 			case BOOLEAN:
 				value = cell.getBooleanCellValue() ? "true" : "false";

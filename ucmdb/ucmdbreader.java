@@ -17,12 +17,15 @@ END2:REL = END2::RREL
 If multiple relations between 2 CIs: END1:END2:REL_x
 */
 
+enum BulkType { BULK, DATA };
+
 class Ucmdb
 {
 	private static Ucmdb instance;
 	private UcmdbService service;
 	private String adapterinfo;
-	private int bulksize;
+	private int bulksize = 1;
+	private BulkType bulktype = BulkType.BULK;
 
 	private Ucmdb() throws Exception
 	{
@@ -38,8 +41,14 @@ class Ucmdb
 		int port = new Integer(portstr);
 		String username = xml.getValue("username","admin");
 		String password = xml.getValueCrypt("password");
-		String bulkstr = xml.getValue("bulksize","1");
-		bulksize = new Integer(bulkstr);
+
+		XML bulkxml = xml.getElement("bulksize");
+		if (bulkxml != null)
+		{
+			String bulkstr = bulkxml.getValue();
+			bulksize = new Integer(bulkstr);
+			bulktype = bulkxml.getAttributeEnum("type",BulkType.BULK,BulkType.class);
+		}
 
 		UcmdbServiceProvider serviceProvider = UcmdbServiceFactory.getServiceProvider(protocol,host,port);
 		ClientContext clientContext = serviceProvider.createClientContext(adapterinfo);
@@ -82,10 +91,8 @@ class Ucmdb
 		return instance;
 	}
 
-	public int getBulkSize()
-	{
-		return bulksize;
-	}
+	public int getBulkSize() { return bulksize; }
+	public BulkType getBulkType() { return bulktype; }
 
 	static final Pattern causedbypattern = Pattern.compile("Caused by:\\s.*?:\\s+(\\S.+)$",Pattern.MULTILINE);
 
@@ -109,6 +116,31 @@ class Ucmdb
 	public String getInfo()
 	{
 		return adapterinfo;
+	}
+
+	public static String implode(Element element)
+	{
+		StringBuilder out = new StringBuilder();
+		String sep = "";
+		for(Property prop:element.properties())
+		{
+			out.append(sep + prop.getName() + "=" + prop.getValue());
+			sep = ",";
+		}
+		return out.toString();
+	}
+
+	public static String implode(Iterable<? extends Element> elements)
+	{
+		StringBuilder out = new StringBuilder();
+		String sep = "";
+		for(Element element:elements)
+		{
+			String id = element.getId().getAsString();
+			out.append(sep + "[" + id + ": " + implode(element));
+			sep = " ";
+		}
+		return out.toString();
 	}
 }
 
@@ -279,8 +311,11 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 
 	private TopologyUpdateService update;
 	private TopologyUpdateFactory factory;
+	private TopologyModificationData bulkdata;
 	private TopologyModificationBulk bulk;
 	private int bulkcount = 0;
+	private SyncOper bulkoper = SyncOper.START;
+	private EnumMap<SyncOper,TopologyModificationAction> actionmap;
 	private ClassModelService classmodel;
 	private HashMap<String,AttributeType> attrtypes = new HashMap<String,AttributeType>();
 	private Ucmdb ucmdb;
@@ -294,6 +329,11 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 		factory = update.getFactory();
 		classmodel = ucmdb.getClassModel();
 		adapterinfo = ucmdb.getInfo();
+
+		actionmap = new EnumMap<SyncOper,TopologyModificationAction>(SyncOper.class);
+		actionmap.put(SyncOper.UPDATE,TopologyModificationAction.UPDATE_IF_EXISTS);
+		actionmap.put(SyncOper.ADD,TopologyModificationAction.CREATE_OR_UPDATE);
+		actionmap.put(SyncOper.REMOVE,TopologyModificationAction.DELETE_IF_EXISTS);
 	}
 
 	private void FillUpdateData(TopologyModificationData data,XML xml,SyncOper oper) throws Exception
@@ -501,31 +541,64 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 		}
 	}
 
-	private void push(TopologyModificationData data,TopologyModificationAction action)
+	private void push(XML xml,SyncOper oper) throws Exception
 	{
-		if (bulk == null) bulk = factory.createTopologyModificationBulk(adapterinfo);
+		BulkType bulktype = ucmdb.getBulkType();
+		if (bulktype == BulkType.DATA && bulkcount > 0 && oper != bulkoper) flush();
+		if (bulkdata == null) bulkdata = factory.createTopologyModificationData();
+		bulkoper = oper;
+
+		FillUpdateData(bulkdata,xml,oper);
+
+		if (bulktype == BulkType.BULK)
+		{
+			if (bulk == null) bulk = factory.createTopologyModificationBulk(adapterinfo);
+			TopologyModificationBulkElement element = factory.createTopologyModificationBulkElement(bulkdata,actionmap.get(oper));
+			bulk.addTopologyModificationElement(element);
+			bulkdata = null;
+		}
+
 		int bulksize = ucmdb.getBulkSize();
 		bulkcount++;
-		TopologyModificationBulkElement element = factory.createTopologyModificationBulkElement(data,action);
-		bulk.addTopologyModificationElement(element);
 		if (bulkcount >= bulksize)
 			flush();
 	}
 
 	private void flush()
 	{
-		if (bulk == null) return;
+		if (bulkdata != null)
+		{
+			TopologyModificationData currentbulkdata = bulkdata;
+			SyncOper currentoper = bulkoper;
+			bulkdata = null;
+			bulkcount = 0;
+			bulkoper = SyncOper.START;
 
-		TopologyModificationBulk currentbulk = bulk;
-		bulk = null;
-		bulkcount = 0;
+			SingleTopologyModification modif = factory.createSingleTopologyModification(adapterinfo + "/" + currentoper,currentbulkdata,actionmap.get(currentoper));
+			GracefulTopologyModificationOutput output = update.executeGracefully(modif);
+			if (output.isSuccessFul()) return;
 
-		update.execute(currentbulk);
+			List<TopologyModificationFailure> failures = output.getFailures();
+			for(TopologyModificationFailure failure:failures)
+			{
+				TopologyData data = failure.getTopology();
+				Exception cause = failure.getCause();
+				Misc.log("ERROR: uCMDB bulk " + currentoper.toString().toLowerCase() + " " + ucmdb.implode(data.getCIs()) + " " + ucmdb.implode(data.getRelations()) + ": " + getExceptionMessage(cause));
+				if (Misc.isLog(30)) Misc.log(cause);
+			}
+		}
+
+		if (bulk != null)
+		{
+			TopologyModificationBulk currentbulk = bulk;
+			bulk = null;
+			bulkcount = 0;
+			update.execute(currentbulk);
+		}
 	}
 
 	protected void add(XML xmldest,XML xml) throws Exception
 	{
-		TopologyModificationData data = factory.createTopologyModificationData(adapterinfo + "/add");
 		XML[] customs = xmldest.getElements("customadd");
 		for(XML custom:customs)
 		{
@@ -557,14 +630,12 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 			{
 				xml.setValue("END1",end1value);
 				xml.setValue("END2",end2value);
-				FillUpdateData(data,xml,SyncOper.ADD);
-				push(data,TopologyModificationAction.CREATE_OR_UPDATE);
+				push(xml,SyncOper.ADD);
 			}
 			return;
 		}
 
-		FillUpdateData(data,xml,SyncOper.ADD);
-		push(data,TopologyModificationAction.CREATE_OR_UPDATE);
+		push(xml,SyncOper.ADD);
 	}
 
 	private String getAddValue(XML xml) throws Exception
@@ -599,7 +670,6 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 
 	private void updatemulti(SyncOper oper,XML xml) throws Exception
 	{
-		TopologyModificationData data = factory.createTopologyModificationData(adapterinfo + "/" + oper);
 		XML idxml = xml.getElement("ID");
 		String idlist = getUpdateValue(idxml);
 		if (idlist != null)
@@ -608,20 +678,16 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 			for(String id:ids)
 			{
 				idxml.setValue(id);
-
-				FillUpdateData(data,xml,SyncOper.UPDATE);
-				push(data,TopologyModificationAction.UPDATE_IF_EXISTS);
+				push(xml,SyncOper.UPDATE);
 			}
 			return;
 		}
 
-		FillUpdateData(data,xml,SyncOper.UPDATE);
-		push(data,TopologyModificationAction.UPDATE_IF_EXISTS);
+		push(xml,SyncOper.UPDATE);
 	}
 
 	protected void remove(XML xmldest,XML xml) throws Exception
 	{
-		TopologyModificationData data = factory.createTopologyModificationData(adapterinfo + "/remove");
 		XML[] customs = xmldest.getElements("customremove");
 		for(XML custom:customs)
 		{
@@ -658,8 +724,7 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 				delete.add("END2",end2value);
 				delete.add("INFO",xml.getValue("INFO",null));
 
-				FillUpdateData(data,delete,SyncOper.REMOVE);
-				push(data,TopologyModificationAction.DELETE_IF_EXISTS);
+				push(xml,SyncOper.REMOVE);
 			}
 			return;
 		}
@@ -675,15 +740,13 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 					XML delete = xml.copy();
 					delete.add("ID",id);
 
-					FillUpdateData(data,delete,SyncOper.REMOVE);
-					push(data,TopologyModificationAction.DELETE_IF_EXISTS);
+					push(delete,SyncOper.REMOVE);
 				}
 				return;
 			}
 		}
 
-		FillUpdateData(data,xml,SyncOper.REMOVE);
-		push(data,TopologyModificationAction.DELETE_IF_EXISTS);
+		push(xml,SyncOper.REMOVE);
 	}
 
 	protected void update(XML xmldest,XML xml) throws Exception
@@ -705,9 +768,7 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 				delete.add("END2",old2value);
 				delete.add("INFO",xml.getValue("INFO",null));
 
-				TopologyModificationData data = factory.createTopologyModificationData(adapterinfo + "/replace");
-				FillUpdateData(data,delete,SyncOper.REMOVE);
-				push(data,TopologyModificationAction.DELETE_IF_EXISTS);
+				push(delete,SyncOper.REMOVE);
 			}
 			add(xmldest,xml);
 			return;

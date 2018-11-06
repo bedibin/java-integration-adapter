@@ -150,13 +150,7 @@ class Operation extends SchedulerTask
 
 	public static ResultTypes getResultType(XML xml) throws Exception
 	{
-		String resultstr = xml.getAttribute("result_type");
-		if (resultstr != null)
-		{
-			if (resultstr.equals("merge")) return ResultTypes.MERGE;
-			else if (resultstr.equals("transparent")) return ResultTypes.TRANSPARENT;
-		}
-		return ResultTypes.LAST;
+		return xml.getAttributeEnum("result_type",ResultTypes.LAST,ResultTypes.class);
 	}
 
 	protected XML runFunction(XML xml,XML function) throws Exception

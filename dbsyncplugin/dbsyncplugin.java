@@ -275,15 +275,6 @@ abstract class UpdateSubscriber extends Subscriber
 	}
 }
 
-class ParallelSubscriber extends UpdateSubscriber
-{
-	protected void start(XML xmldest,XML xml) throws Exception {}
-	protected void end(XML xmldest,XML xml) throws Exception {}
-	protected void add(XML xmldest,XML xml) throws Exception {}
-	protected void remove(XML xmldest,XML xml) throws Exception {}
-	protected void update(XML xmldest,XML xml) throws Exception {}
-}
-
 class DatabaseUpdateSubscriber extends UpdateSubscriber
 {
 	protected DB db;
@@ -301,7 +292,8 @@ class DatabaseUpdateSubscriber extends UpdateSubscriber
 
 	protected void start(XML xmldest,XML xml) throws Exception
 	{
-		String instance = xmldest.getAttribute("instance");
+		String instance = xmldest.getAttribute("instance_write");
+		if (instance == null) instance = xmldest.getAttribute("instance");
 		XML[] xmlsqllist = xmldest.getElements("preinsertsql");
 		for(XML xmlsql:xmlsqllist)
 		{
@@ -313,7 +305,8 @@ class DatabaseUpdateSubscriber extends UpdateSubscriber
 
 	protected void end(XML xmldest,XML xml) throws Exception
 	{
-		String instance = xmldest.getAttribute("instance");
+		String instance = xmldest.getAttribute("instance_write");
+		if (instance == null) instance = xmldest.getAttribute("instance");
 		XML[] xmlsqllist = xmldest.getElements("postinsertsql");
 		for(XML xmlsql:xmlsqllist)
 		{
@@ -325,7 +318,8 @@ class DatabaseUpdateSubscriber extends UpdateSubscriber
 
 	private boolean customsql(String oper,XML xmldest,XML xml) throws Exception
 	{
-		String instance = xmldest.getAttribute("instance");
+		String instance = xmldest.getAttribute("instance_write");
+		if (instance == null) instance = xmldest.getAttribute("instance");
 		XML[] sqlxmllist = xmldest.getElements("custom" + oper + "sql");
 		if (sqlxmllist.length == 0) return false;
 
@@ -373,7 +367,8 @@ class DatabaseUpdateSubscriber extends UpdateSubscriber
 		if (idfield != null)
 		{
 			String table = xmldest.getAttribute("table");
-			String instance = xmldest.getAttribute("instance");
+			String instance = xmldest.getAttribute("instance_write");
+			if (instance == null) instance = xmldest.getAttribute("instance");
 
 			String sqlid = "select " + idfield + " from " + table + sql;
 			ArrayList<LinkedHashMap<String,String>> ids = db.execsql(instance,sqlid);
@@ -393,7 +388,8 @@ class DatabaseUpdateSubscriber extends UpdateSubscriber
 	private void handleRetryException(Exception ex,XML xmldest,XML xml,boolean isretry) throws Exception
 	{
 		String table = xmldest.getAttribute("table");
-		String instance = xmldest.getAttribute("instance");
+		String instance = xmldest.getAttribute("instance_write");
+		if (instance == null) instance = xmldest.getAttribute("instance");
 		XML[] fields = xml.getElements();
 
 		String message = ex.getMessage();
@@ -505,7 +501,8 @@ class DatabaseUpdateSubscriber extends UpdateSubscriber
 
 	protected void add(XML xmldest,XML xml,boolean isretry) throws Exception
 	{
-		String instance = xmldest.getAttribute("instance");
+		String instance = xmldest.getAttribute("instance_write");
+		if (instance == null) instance = xmldest.getAttribute("instance");
 		if (customsql("add",xmldest,xml)) return;
 
 		String table = xmldest.getAttribute("table");
@@ -560,7 +557,8 @@ class DatabaseUpdateSubscriber extends UpdateSubscriber
 
 	protected void remove(XML xmldest,XML xml) throws Exception
 	{
-		String instance = xmldest.getAttribute("instance");
+		String instance = xmldest.getAttribute("instance_write");
+		if (instance == null) instance = xmldest.getAttribute("instance");
 		if (customsql("remove",xmldest,xml)) return;
 
 		String table = xmldest.getAttribute("table");
@@ -597,7 +595,8 @@ class DatabaseUpdateSubscriber extends UpdateSubscriber
 
 	protected void update(XML xmldest,XML xml,boolean isretry) throws Exception
 	{
-		String instance = xmldest.getAttribute("instance");
+		String instance = xmldest.getAttribute("instance_write");
+		if (instance == null) instance = xmldest.getAttribute("instance");
 		if (customsql("update",xmldest,xml)) return;
 
 		String table = xmldest.getAttribute("table");

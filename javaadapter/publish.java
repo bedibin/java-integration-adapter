@@ -63,7 +63,7 @@ class AliasSelectorKeyManager implements X509KeyManager
 	}
 }
 
-enum PublisherTypes { DIRECT, JMS, LDAP, SOAP, HTTP, CMD, FILE };
+enum PublisherTypes { DIRECT, JMS, LDAP, SOAP, SOAPOPER, HTTP, POST, EXEC, FILE };
 
 class Publisher
 {
@@ -97,7 +97,7 @@ class Publisher
 
 		public PublisherObject(Service service)
 		{
-			type = PublisherTypes.SOAP;
+			type = PublisherTypes.SOAPOPER;
 			this.service = service;
 		}
 
@@ -109,7 +109,7 @@ class Publisher
 
 		public PublisherObject(String command)
 		{
-			type = PublisherTypes.CMD;
+			type = PublisherTypes.EXEC;
 			this.command = command;
 		}
 
@@ -215,18 +215,19 @@ class Publisher
 				rc.setRequestProperty("Authorization","Basic " + auth);
 			}
 
-			String type = xmlpub.getAttribute("type");
-			if (type.equals("soap"))
-			{
+			PublisherTypes type = xmlpub.getAttributeEnum("type",PublisherTypes.class);
+			switch(type) {
+			case SOAP:
 				rc.setRequestProperty("Content-Type","text/xml; charset=utf-8");
 				String action = xmlpub.getAttribute("action");
 				rc.setRequestProperty("SOAPAction",action == null ? "" : action);
-			}
-			else if (type.equals("post") || type.equals("http"))
-			{
+				break;
+			case POST:
+			case HTTP:
 				String content = xmlpub.getAttribute("content_type");
 				if (content == null) content = "application/x-www-form-urlencoded";
 				rc.setRequestProperty("Content-Type",content);
+				break;
 			}
 
 			byte[] rawrequest = body.getBytes("UTF-8");
@@ -302,7 +303,7 @@ class Publisher
 			case JMS:
 				topicpublish.publish(string);
 				break;
-			case SOAP:
+			case SOAPOPER:
 				String operation = xmlpub.getAttribute("operation");
 				String port = xmlpub.getAttribute("port");
 
@@ -312,18 +313,7 @@ class Publisher
 
 				result = (String)call.invoke(new Object[] { string });
 				break;
-			case HTTP:
-				try
-				{
-					result = sendHttpRequest(string,xml,xmlpub);
-				}
-				catch(Exception ex)
-				{
-					setSessionID(publishername,null);
-					Misc.rethrow(ex,"Error publishing to " + publishername + ": " + string);
-				}
-				break;
-			case CMD:
+			case EXEC:
 				String charset = xmlpub.getAttribute("charset");
 				if (charset == null) charset = "UTF-8";
 
@@ -368,6 +358,17 @@ class Publisher
 				XML resultxml = ld.oper(xml,xmlpub);
 				if (resultxml == null) return null;
 				result = resultxml.toString();
+				break;
+			default:
+				try
+				{
+					result = sendHttpRequest(string,xml,xmlpub);
+				}
+				catch(Exception ex)
+				{
+					setSessionID(publishername,null);
+					Misc.rethrow(ex,"Error publishing to " + publishername + ": " + string);
+				}
 				break;
 			}
 
@@ -449,43 +450,40 @@ class Publisher
 
 			if (publishers.containsKey(name)) continue;
 
-			String type = el.getAttribute("type");
-			if (type == null) type = "jms";
-			System.out.print("Initializing publisher " + name + " (" + type + ")... ");
+			PublisherTypes type = el.getAttributeEnum("type",PublisherTypes.JMS,PublisherTypes.class);
+			System.out.print("Initializing publisher " + name + " (" + type.toString().toLowerCase() + ")... ");
 
 			PublisherObject pub = null;
 
-			if (type.equals("jms"))
+			switch(type) {
+			case JMS:
 				pub = new PublisherObject(new TopicPublish(name));
-			else if (type.equals("soapoper"))
-			{
+				break;
+			case SOAPOPER:
 				String wsdl = el.getAttribute("wsdl");
 				ServiceFactory factory = ServiceFactory.newInstance();
 				URL wsdlurl = new URL(wsdl);
 				Service service = factory.createService(wsdlurl,new QName(name));
 				pub = new PublisherObject(service);
-			}
-			else if (type.equals("soap") || type.equals("post") || type.equals("http"))
-				pub = new PublisherObject(PublisherTypes.HTTP);
-			else if (type.equals("exec"))
-			{
+				break;
+			case EXEC:
 				String command = el.getAttribute("command");
 				pub = new PublisherObject(command);
-			}
-			else if (type.equals("file"))
-			{
+				break;
+			case FILE:
 				String filename = el.getAttribute("filename");
 				pub = new PublisherObject(new File(javaadapter.getCurrentDir(),filename));
-			}
-			else if (type.equals("direct"))
-				pub = new PublisherObject(PublisherTypes.DIRECT);
-			else if (type.equals("ldap"))
-			{
+				break;
+			case LDAP:
 				String url = el.getAttribute("url");
 				String notrustssl = el.getAttribute("notrustssl");
 				boolean notrust = notrustssl != null && "true".equals(notrustssl);
 
 				pub = new PublisherObject(new ldap(url,el.getAttribute("username"),el.getAttributeCrypt("password"),null,el.getAttribute("authentication"),el.getAttribute("referral"),el.getAttribute("derefAliases"),notrust));
+				break;
+			default:
+				pub = new PublisherObject(type);
+				break;
 			}
 
 			if (pub != null)

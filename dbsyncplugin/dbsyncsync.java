@@ -195,7 +195,11 @@ class SyncSql extends Sync
 					sb.append(sepor + "(");
 					for(String keyname:keys)
 					{
-						sb.append(sepand + "\"" + keyname + "\"=" + db.getFieldValue(Misc.implode(entry.get(keyname),"\n")));
+						String value = Misc.implode(entry.get(keyname),"\n");
+						if (value.isEmpty())
+							sb.append(sepand + "\"" + keyname + "\" is null");
+						else
+							sb.append(sepand + "\"" + keyname + "\"=" + db.getFieldValue(value));
 						sepand = " and ";
 					}
 					sb.append(")");

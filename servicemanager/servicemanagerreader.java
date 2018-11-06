@@ -415,7 +415,7 @@ class ServiceManagerUpdateSubscriber extends UpdateSubscriber
 		if (ondupsmatch != null) ondupspattern = Pattern.compile(ondupsmatch);
 
 		String message = getMessage(result);
-		if (message != null && oper == SyncOper.ADD && ((ondupspattern != null && ondupspattern.matcher(message).find()) || (ondupspattern == null && (message.contains("duplicate key") || message.contains("already associated") || message.contains("d\u00e9j\u00e0 associ\u00e9")))))
+		if (message != null && oper == SyncOper.ADD && ((ondupspattern != null && ondupspattern.matcher(message).find()) || (ondupspattern == null && (message.contains("duplicate key") || message.contains("already associated") || message.contains("d\u00e9j\u00e0 associ\u00e9") || message.contains("already exists") || message.contains("existe d\u00e9j\u00e0")))))
 		{
 			soap.renameTag("Update" + object + "Request");
 			publisher.setAttribute("action","Update");

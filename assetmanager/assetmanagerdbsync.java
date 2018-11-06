@@ -291,8 +291,8 @@ class AssetManagerRestSubscriber extends UpdateSubscriber
 		if (table == null) throw new AdapterException(xmldest,"dbsync: destination 'table' attribute required");
 
 		XML[] customs = null;
-		String oper = xmloper.getTagName();
-		if (oper.equals("add")) customs = xmldest.getElements("customadd");
+		SyncOper oper = Enum.valueOf(SyncOper.class,xmloper.getTagName().toUpperCase());
+		if (oper == SyncOper.ADD) customs = xmldest.getElements("customadd");
 		else if (oper.equals("remove")) customs = xmldest.getElements("customremove");
 
 		StringBuilder where = new StringBuilder("where");
@@ -306,7 +306,7 @@ class AssetManagerRestSubscriber extends UpdateSubscriber
 			id = idxml.getValue();
 			if (id == null) id = idxml.getValue("oldvalue",null);
 		}
-		if (id == null && !oper.equals("add")) throw new AdapterException(xmloper,"ID value required");
+		if (id == null && oper != SyncOper.ADD) throw new AdapterException(xmloper,"ID value required");
 		if (id == null) id = "";
 
 		XML[] fields = xmloper.getElements();
@@ -324,7 +324,7 @@ class AssetManagerRestSubscriber extends UpdateSubscriber
 				{
 					where.append(" " + sep + db.getFieldEqualsValue(name,value));
 					sep = "and ";
-					js.put(name,value);
+					js.put(name,value.replace("'","''"));
 					continue;
 				}
 			}
@@ -337,7 +337,7 @@ class AssetManagerRestSubscriber extends UpdateSubscriber
 				String oldvalue = old.getValue();
 				if (type != null && type.equals("initial") && oldvalue != null) continue;
 			}
-			js.put(name,value);
+			js.put(name,value.replace("'","''"));
 		}
 
 		if (customs != null && customs.length > 0)
@@ -349,7 +349,7 @@ class AssetManagerRestSubscriber extends UpdateSubscriber
 				if (namecust == null) throw new AdapterException(custom,"Attribute 'name' required");
 				String valuecust = custom.getAttribute("value");
 				if (valuecust == null) valuecust = "";
-				js.put(namecust,valuecust);
+				js.put(namecust,valuecust.replace("'","''"));
 			}
 		}
 

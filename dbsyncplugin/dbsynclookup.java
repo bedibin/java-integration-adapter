@@ -142,7 +142,8 @@ class SyncLookup
 
 					if (fields == null)
 					{
-						fields = new TreeSet<String>(result.keySet());
+						fields = new TreeSet<String>(reader.getHeader());
+						fields.addAll(result.keySet());
 						if (resultname != null) fields.remove(resultname);
 						if (datefield != null)
 						{
@@ -151,7 +152,12 @@ class SyncLookup
 							datevalue = result.get(datefield);
 							fields.remove(datefield);
 						}
-						if (fieldresult != null) fields.retainAll(fieldresult.getSync().getHeader()); // Lookup only on common fields
+						if (fieldresult != null)
+						{
+							HashSet<String> currentfields = new HashSet<String>(fieldresult.getSync().getHeader());
+							currentfields.addAll(fieldresult.getValues().keySet());
+							fields.retainAll(currentfields); // Lookup common fields + current fields
+						}
 
 						if (Misc.isLog(15))
 						{
@@ -333,7 +339,7 @@ class SyncLookup
 				break;
 			}
 
-			if (Misc.isSubstituteDefault(xml.getValue()))
+			if (Misc.isSubstituteDefault(xml.getElementValue()))
 			{
 				String type = xmllookup.getAttribute("type");
 				if (!"db".equals(type)) throw new AdapterException(xmllookup,"Unsupported on demand lookup type " + type);

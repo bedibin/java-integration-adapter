@@ -8,11 +8,6 @@ import java.text.Collator;
 
 enum dbtype { MYSQL, MSSQL, ORACLE, DB2, OTHER };
 
-interface ComparatorIgnoreCase<T> extends Comparator<T>
-{
-	public int compareIgnoreCase(T a,T b);
-}
-
 interface DBProcessor
 {
 	public String getFieldValue(byte[] bytes) throws Exception;
@@ -240,15 +235,19 @@ class DBConnection implements VariableContext
 	}
 }
 
-class DBComparator implements ComparatorIgnoreCase<String>
+class DBComparator implements Comparator<String>
 {
 	@Override
 	public int compare(String a,String b)
 	{
 		return a.compareTo(b);
 	}
+}
 
-	public int compareIgnoreCase(String a,String b)
+class DBComparatorIgnoreCase implements Comparator<String>
+{
+	@Override
+	public int compare(String a,String b)
 	{
 		return a.compareToIgnoreCase(b);
 	}
@@ -498,7 +497,8 @@ class DBOper
 class DB
 {
 	public static final String replacement = "*@?@!";
-	private final ComparatorIgnoreCase<String> collator;
+	private final Comparator<String> collator;
+	private final Comparator<String> collator_ignore_case;
 
 	private static DB instance;
 
@@ -508,6 +508,7 @@ class DB
 	protected DB()
 	{
 		collator = new DBComparator();
+		collator_ignore_case = new DBComparatorIgnoreCase();
 		db = new HashMap<String,DBConnection>();
 	}
 
@@ -552,9 +553,14 @@ class DB
 		System.out.println("Done");
 	}
 
-	public ComparatorIgnoreCase<String> getCollator()
+	public Comparator<String> getCollator()
 	{
 		return collator;
+	}
+
+	public Comparator<String> getCollatorIgnoreCase()
+	{
+		return collator_ignore_case;
 	}
 
 	public Set<String> getConnectionInstances()
@@ -667,7 +673,7 @@ class DB
 		{
 			keyfield = dbc.getQuote() + keyfield + dbc.getQuote();
 			if (ignore_case) keyfield = "upper(" + keyfield + ")";
-			keyfield = "replace(replace(replace(rtrim(ltrim(coalesce(" + keyfield + ",''))),' ','!'),'_','!'),'\t','!')";
+			keyfield = "replace(replace(rtrim(ltrim(replace(coalesce(" + keyfield + ",''),'\t',' '))),' ','!'),'_','!')";
 			switch(dbc.getType())
 			{
 			case MYSQL:
