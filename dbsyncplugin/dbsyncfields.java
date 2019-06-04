@@ -3,7 +3,7 @@ import java.io.*;
 
 enum Scope { SCOPE_GLOBAL, SCOPE_SOURCE, SCOPE_DESTINATION };
 enum FieldFeature { FIELD_FEATURE_ONMULTIPLE, FIELD_FEATURE_IGNORE_CASE, FIELD_FEATURE_TYPE, FIELD_FEATURE_DEVIATION };
-enum OnOper { IGNORE, WARNING, ERROR, REJECT_FIELD, REJECT_RECORD, USE_KEY, EXCEPTION, MERGE, RECREATE, SUFFIX, CLEAR, TRUE, FALSE, KEYS_ONLY, NON_KEYS_ONLY, KEY, INFO, INFONULL, NOINFO, INFOAPI, INITIAL, IFUPDATE };
+enum OnOper { IGNORE, WARNING, ERROR, REJECT_FIELD, REJECT_RECORD, USE_KEY, USE_FIRST, EXCEPTION, MERGE, RECREATE, SUFFIX, CLEAR, TRUE, FALSE, KEYS_ONLY, NON_KEYS_ONLY, KEY, INFO, INFONULL, NOINFO, INFOAPI, INITIAL, IFUPDATE };
 enum DeviationType { ABSOLUTE, PERCENTAGE };
 
 class FieldDeviation
@@ -83,7 +83,7 @@ class Field
 		this.scope = scope;
 		name = xml.getAttribute("name");
 		if (name == null || name.isEmpty()) throw new AdapterException(xml,"Field name cannot be empty");
-		if (Misc.isLog(10)) Misc.log("Initializing field " + name + " " + scope);
+
 		newname = xml.getAttribute("rename");
 		String strip = xml.getAttributeDeprecated("strip");
 		if (strip != null && strip.equals("true")) dostrip = true;
@@ -108,6 +108,13 @@ class Field
 		lookup = new SyncLookup(this);
 		hasvalue = lookup.getCount() > 0 || "true".equals(xml.getAttribute("hasvalue"));
 		isdefault = "true".equals(xml.getAttribute("isdefault"));
+
+		if (Misc.isLog(10)) Misc.log("Initializing field " + name + " scope=" + scope + " hasvalue=" + hasvalue + " isdefault=" + isdefault);
+	}
+
+	public String toString()
+	{
+		return name + " (scope=" + scope + ",iskey=" + iskey + ",hasvalue=" + hasvalue + ",isdefault=" + isdefault + ")";
 	}
 
 	public Field(String name) throws Exception
@@ -328,29 +335,27 @@ class Fields
 		xml = xml.add("field");
 		for(String name:set)
 		{
-			boolean exists = false;
-			int replacepos = -1;
+			int setpos = -1;
 			int pos = 0;
+			Scope setscope = scope;
+
 			for(Field field:fields)
 			{
-				if (name.equals(field.getName()) && (field.getScope() == Scope.SCOPE_GLOBAL || field.getScope() == scope) && field.isDefault())
-				{
-					exists = true;
-					break;
-				}
-				else if (name.equals(field.getName()) && field.getScope() != scope && field.isDefault())
-				{
-					replacepos = pos;
-					break;
-				}
 				pos++;
+				if (!field.isDefault()) continue;
+				if (!name.equals(field.getName())) continue;
+				if (field.getScope() != Scope.SCOPE_SOURCE)
+					throw new AdapterException("Unexpected repeated default field " + name);
+
+				setpos = pos - 1;
+				setscope = Scope.SCOPE_GLOBAL;
+				break;
 			}
-			if (exists) continue;
 
 			xml.setAttribute("name",name);
 			xml.setAttribute("hasvalue","true");
 			xml.setAttribute("isdefault","true");
-			add(new Field(xml,replacepos == -1 ? scope : Scope.SCOPE_GLOBAL),true,replacepos);
+			add(new Field(xml,setscope),true,setpos);
 		}
 	}
 
@@ -393,7 +398,7 @@ class Fields
 		String[] synclist = field.getForSync();
 
 		final String onmultipleattr = "on_multiple";
-		OnOper onmultipleoper = field.getOnOper(onmultipleattr,OnOper.IGNORE,EnumSet.of(OnOper.IGNORE,OnOper.ERROR,OnOper.WARNING,OnOper.MERGE,OnOper.REJECT_RECORD,OnOper.REJECT_FIELD));
+		OnOper onmultipleoper = field.getOnOper(onmultipleattr,OnOper.IGNORE,EnumSet.of(OnOper.IGNORE,OnOper.ERROR,OnOper.WARNING,OnOper.MERGE,OnOper.REJECT_RECORD,OnOper.REJECT_FIELD,OnOper.USE_FIRST));
 
 		final String ignorecaseattr = "ignore_case";
 		OnOper ignorecaseoper = field.getOnOper(ignorecaseattr,OnOper.FALSE,EnumSet.of(OnOper.TRUE,OnOper.FALSE,OnOper.KEYS_ONLY,OnOper.NON_KEYS_ONLY));
@@ -409,14 +414,10 @@ class Fields
 		String forceempty = field.getAttribute(forceemptyattr);
 
 		if ((scope == Scope.SCOPE_GLOBAL || scope == Scope.SCOPE_SOURCE) && dbsync.isValidSync(synclist,Scope.SCOPE_SOURCE))
-		{
 			setFeature(Scope.SCOPE_SOURCE,FieldFeature.FIELD_FEATURE_ONMULTIPLE,new FieldValue<OnOper>(field,onmultipleoper),field.isAttributeNoDefault(onmultipleattr));
-		}
 
 		if ((scope == Scope.SCOPE_GLOBAL || scope == Scope.SCOPE_DESTINATION) && dbsync.isValidSync(synclist,Scope.SCOPE_DESTINATION))
-		{
 			setFeature(Scope.SCOPE_DESTINATION,FieldFeature.FIELD_FEATURE_ONMULTIPLE,new FieldValue<OnOper>(field,onmultipleoper),field.isAttributeNoDefault(onmultipleattr));
-		}
 
 		if (dbsync.isValidSync(synclist,Scope.SCOPE_GLOBAL))
 		{
@@ -424,6 +425,8 @@ class Fields
 			setFeature(Scope.SCOPE_GLOBAL,FieldFeature.FIELD_FEATURE_TYPE,new FieldValue<OnOper>(field,typeoper),field.isAttributeNoDefault(typeattr));
 			setFeature(Scope.SCOPE_GLOBAL,FieldFeature.FIELD_FEATURE_DEVIATION,new FieldValue<FieldDeviation>(field,deviation),field.isAttributeNoDefault(deviationattr));
 		}
+
+		if (Misc.isLog(10)) Misc.log("Setting field " + field.getName() + " to pos " + pos + " isdefault=" + isdefault);
 
 		if (pos != -1)
 			fields.set(pos,field);
@@ -436,6 +439,18 @@ class Fields
 				if (fields.get(x).isDefault())
 					break;
 			fields.add(x,field);
+		}
+
+		if (Misc.isLog(30))
+		{
+			StringBuilder sb = new StringBuilder();
+			int x = 1;
+			for(Field dumpfield:fields)
+			{
+				sb.append(": " + x + "=" + dumpfield);
+				x++;
+			}
+			Misc.log("Field list" + sb);
 		}
 	}
 
@@ -528,6 +543,7 @@ class Fields
 
 			Set<String> keyset = getKeys();
 			String keys = dbsync.getDisplayKey(keyset,result);
+			Set<String> usedset = new HashSet<String>();
 
 			fieldloop: for(Field field:fields)
 			{
@@ -539,9 +555,11 @@ class Fields
 				{
 					SyncLookup lookup = field.getLookup();
 
-					if (Misc.isLog(30)) Misc.log("Field: [" + keys + "] Check " + name + ":" + value + ":" + sync.getXML().getTagName() + ":" + (dbsync.getSourceSync() == null ? "NOSRC" : dbsync.getSourceSync().getName()) + ":" + (dbsync.getDestinationSync() == null ? "NODEST" : dbsync.getDestinationSync().getName()) + ":" + (field.isKey() ? "iskey" : field.getXML().getAttributes()) + ":" + field.getScope() + ":" + result);
+					if (Misc.isLog(30)) Misc.log("Field: [" + keys + "] Check " + field + ":" + value + ":" + sync.getXML().getTagName() + ":" + (dbsync.getSourceSync() == null ? "NOSRC" : dbsync.getSourceSync().getName()) + ":" + (dbsync.getDestinationSync() == null ? "NODEST" : dbsync.getDestinationSync().getName()) + ":" + result);
+
 					if (!field.isValid(sync)) continue;
 					if (!field.isValidFilter(result)) continue;
+					if (!field.isDefault()) usedset.add(name);
 
 					if (Misc.isLog(30)) Misc.log("Field: " + name + " is valid");
 
@@ -625,7 +643,17 @@ class Fields
 					case MERGE:
 						value = Misc.implode(value.split("\n"),",");
 						break;
+					case USE_FIRST:
+						String[] values = value.split("\n");
+						value = values.length > 0 ? values[0] : "";
+						break;
 					}
+				}
+
+				if (doprocessing && field.isDefault() && usedset.contains(name))
+				{
+					if (Misc.isLog(30)) Misc.log("Field: Skipping default field " + name + " since already used");
+					continue;
 				}
 
 				result.put(name,value);
@@ -654,7 +682,8 @@ class Fields
 						continue;
 
 					// No value found...
-					switch(field.getOnEmpty())
+					OnOper onempty = field.getOnEmpty();
+					if (onempty != null) switch(onempty)
 					{
 					case REJECT_FIELD:
 						if (Misc.isLog(30)) Misc.log("REJECTED empty field: " + field.getName());

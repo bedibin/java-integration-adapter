@@ -117,8 +117,11 @@ abstract class ReaderUtil implements Reader
 			if (set == null) set = issorted ? new LinkedHashSet<String>() : new TreeSet<String>(DB.getInstance().getCollatorIgnoreCase());
 
 			String rowvalue = row.get(keyrow);
-			rowvalue = XML.fixValue(rowvalue.replace("\r\n","\n"));
-			set.add(rowvalue);
+			if (!rowvalue.isEmpty()) // Do not insert an empty value
+			{
+				rowvalue = XML.fixValue(rowvalue.replace("\r\n","\n"));
+				set.add(rowvalue);
+			}
 			map.put(keyrow,set);
 		}
 	}
@@ -607,6 +610,7 @@ class ReaderXML extends ReaderUtil
 	protected XML[] xmltable;
 	protected int position = 0;
 	private String pathcol;
+	private String colname;
 
 	private void Read(XML xml,XML xmlsource) throws Exception
 	{
@@ -639,6 +643,7 @@ class ReaderXML extends ReaderUtil
 		{
 			String name = element.getTagName();
 			if (name == null) continue;
+			if (colname != null) name = name + "_" + element.getAttribute(colname);
 			if (prefix != null) name = prefix + "_" + name;
 			if (headers != null && !headers.contains(name)) headers.add(name);
 			String value = element.getValue();
@@ -663,12 +668,12 @@ class ReaderXML extends ReaderUtil
 
 	public ReaderXML(XML xml) throws Exception
 	{
-		init(xml,null,null);
+		init(xml,null,null,null);
 	}
 
-	public ReaderXML(XML xml,String pathrow,String pathcol) throws Exception
+	public ReaderXML(XML xml,String pathrow,String pathcol,String colname) throws Exception
 	{
-		init(xml,pathrow,pathcol);
+		init(xml,pathrow,pathcol,colname);
 	}
 
 	public ReaderXML(XML xml,XML xmlsource) throws Exception
@@ -719,12 +724,14 @@ class ReaderXML extends ReaderUtil
 			if (Misc.isLog(9)) Misc.log("XML reader " + tagname + ": " + xmlsource);
 		}
 
-		init(xmlsource,xml.getAttribute("resultpathrow"),xml.getAttribute("resultpathcolumn"));
+		init(xmlsource,xml.getAttribute("resultpathrow"),xml.getAttribute("resultpathcolumn"),xml.getAttribute("resultattributename"));
 	}
 
-	private void init(XML xml,String pathrow,String pathcol) throws Exception
+	private void init(XML xml,String pathrow,String pathcol,String colname) throws Exception
 	{
 		this.pathcol = pathcol;
+		this.colname = colname;
+
 		xmltable = xml.getElementsByPath(pathrow);
 		if (Misc.isLog(5)) Misc.log("Found " + xmltable.length + " elements with path " + pathrow);
 		if (instance == null) instance = xml.getTagName();

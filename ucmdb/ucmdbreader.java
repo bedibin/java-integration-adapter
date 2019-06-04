@@ -45,7 +45,8 @@ class Ucmdb
 		XML bulkxml = xml.getElement("bulksize");
 		if (bulkxml != null)
 		{
-			String bulkstr = bulkxml.getValue();
+			String bulkprop = System.getProperty("javaadapter.ucmdb.bulksize");
+			String bulkstr = bulkprop == null ? bulkxml.getValue() : bulkprop;
 			bulksize = new Integer(bulkstr);
 			bulktype = bulkxml.getAttributeEnum("type",BulkType.BULK,BulkType.class);
 		}

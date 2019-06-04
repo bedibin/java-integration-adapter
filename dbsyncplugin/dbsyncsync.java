@@ -4,10 +4,11 @@ import java.io.*;
 class Sync
 {
 	private XML xml;
+	private XML origxml;
 	private DBSyncOper dbsync;
 	private DB db;
-	protected Reader reader;
-	protected Set<String> keys;
+	private Reader reader;
+	private Set<String> keys;
 	private CsvWriter csvout;
 	private String syncname;
 	private boolean dumplogfile = false;
@@ -24,16 +25,7 @@ class Sync
 
 		if (xml == null) return;
 		this.xml = xml;
-
-		String fieldsattr = xml.getAttribute("csv_fields");
-		if (fieldsattr == null) fieldsattr = xml.getAttribute("fields");
-		Set<String> headers = fieldsattr == null ? null : Misc.arrayToSet(fieldsattr.split("\\s*,\\s*"));
- 
-		String dumpcsvfilename = xml.getAttribute("dumpcsvfilename");
-		if (dumpcsvfilename == null && dbsyncplugin.dumpcsv_mode)
-			dumpcsvfilename = javaadapter.getName() + "_" + dbsync.getName() + "_" + getName() + "_" + Misc.implode(keys,"_") + ".csv";
-
-		if (dumpcsvfilename != null) csvout = new CsvWriter(dumpcsvfilename,headers,xml);
+		origxml = xml.copy(); // Needed because "fields" is copied during reader initialisation
 
 		String dumplogfilestr = xml.getAttribute("dumplogfile");
 		if (dumplogfilestr != null && dumplogfilestr.equals("true"))
@@ -45,8 +37,22 @@ class Sync
 			scope = Scope.SCOPE_DESTINATION;
 		else
 			throw new AdapterException(xml,"Only source and destination tags are supported for sync elements");
+	}
 
-		// Important: reader must be set by extended constructor class
+	protected void setReader(Reader reader) throws Exception
+	{
+		this.reader = reader;
+		XML xml = origxml;
+
+		String fieldsattr = xml.getAttribute("csv_fields");
+		if (fieldsattr == null) fieldsattr = xml.getAttribute("fields");
+		Set<String> headers = fieldsattr == null ? null : Misc.arrayToSet(fieldsattr.split("\\s*,\\s*"));
+ 
+		String dumpcsvfilename = xml.getAttribute("dumpcsvfilename");
+		if (dumpcsvfilename == null && dbsyncplugin.dumpcsv_mode)
+			dumpcsvfilename = javaadapter.getName() + "_" + dbsync.getName() + "_" + getName() + "_" + Misc.implode(keys,"_") + ".csv";
+
+		if (dumpcsvfilename != null) csvout = new CsvWriter(dumpcsvfilename,headers,xml);
 	}
 
 	public LinkedHashMap<String,String> next() throws Exception
@@ -64,6 +70,11 @@ class Sync
 	public Reader getReader()
 	{
 		return reader;
+	}
+
+	protected Set<String> getKeys()
+	{
+		return keys;
 	}
 
 	public Scope getScope()
@@ -141,7 +152,7 @@ class SyncClass extends Sync
 	public SyncClass(DBSyncOper dbsync,XML xml) throws Exception
 	{
 		super(dbsync,xml);
-		reader = ReaderUtil.getReader(xml);
+		setReader(ReaderUtil.getReader(xml));
 	}
 }
 
@@ -150,7 +161,7 @@ class SyncCsv extends Sync
 	public SyncCsv(DBSyncOper dbsync,XML xml) throws Exception
 	{
 		super(dbsync,xml);
-		reader = new ReaderCSV(xml);
+		setReader(new ReaderCSV(xml));
 	}
 }
 
@@ -180,6 +191,8 @@ class SyncSql extends Sync
 			else
 				sql = "select * from (" + sql + ") d3 where " + restrictsql;
 		}
+
+		Set<String> keys = getKeys();
 
 		// Small unsorted source to large sql destination optimization
 		if (getScope() == Scope.SCOPE_DESTINATION && dbsync.getDoRemove() == DBSyncOper.doTypes.FALSE && dbsync.getSourceSync().getReader() instanceof SortTable)
@@ -237,7 +250,7 @@ class SyncSql extends Sync
 
 		// Overwrite default reader
 		String trim = xml.getAttribute("trim");
-		reader = new ReaderSQL(conn,sql,keys,issorted,!(trim != null && trim.equals("false")));
+		setReader(new ReaderSQL(conn,sql,keys,issorted,!(trim != null && trim.equals("false"))));
 	}
 }
 
@@ -256,7 +269,7 @@ class SyncSoap extends Sync
 
 		Subscriber sub = new Subscriber(function);
 		XML result = sub.run(request.getElement(null).copy());
-		reader = new ReaderXML(xml,result);
+		setReader(new ReaderXML(xml,result));
 	}
 }
 
@@ -268,6 +281,6 @@ class SyncXML extends Sync
 	{
 		super(dbsync,xml);
 
-		reader = new ReaderXML(xml,xmlsource);
+		setReader(new ReaderXML(xml,xmlsource));
 	}
 }

@@ -343,7 +343,7 @@ class Operation extends SchedulerTask
 		else if (tagname.equals("lookup"))
 			xml.lookup(element);
 		else if (tagname.equals("transformation"))
-			xml.transform(element);
+			xml = xml.transform(element.getValue());
 		else if (tagname.equals("sleep"))
 			Thread.sleep(new Integer(element.getValue()));
 		else if (tagname.equals("valuepath"))

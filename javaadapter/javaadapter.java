@@ -1,6 +1,4 @@
 import java.util.*;
-import javax.jms.*;
-import javax.naming.*;
 import java.io.File;
 
 class Shutdown extends Thread
@@ -58,6 +56,48 @@ class Shutdown extends Thread
 	{
 		closelist.add(object);
 	}
+}
+
+class AdapterExtend
+{
+	private HashMap<String,AdapterExtendBase> extendlist = new HashMap<String,AdapterExtendBase>();
+	private final String defaultname = "default";
+	protected String defaultclass;
+
+	protected AdapterExtend() {};
+
+	public void setInstance(XML xml) throws Exception
+	{
+		String classname = xml.getValue("class",defaultclass);
+		String name = xml.getValue("name",defaultname + "/" + getClass().getName());
+		AdapterExtendBase ctx = (AdapterExtendBase)Misc.newObject(classname,xml);
+		extendlist.put(name,ctx);
+	}
+
+	public void publish(String string,XML xmlpublish) throws Exception
+	{
+		String instance = xmlpublish.getAttribute("instance");
+		if (instance == null) instance = defaultname + "/" + getClass().getName();
+		AdapterExtendBase ctx = extendlist.get(instance);
+		if (ctx == null)
+		{
+			String type = xmlpublish.getAttribute("type");
+			instance = type + "ExtendBase";
+			ctx = extendlist.get(instance);
+			if (ctx == null)
+			{
+				ctx = (AdapterExtendBase)Misc.invoke(instance,"getInstance");
+				extendlist.put(instance,ctx);
+			}
+		}
+		String name = xmlpublish.getAttribute("name");
+		ctx.publish(name,string);
+	}
+}
+
+abstract class AdapterExtendBase
+{
+	abstract void publish(String name,String message) throws Exception;
 }
 
 public class javaadapter
@@ -166,28 +206,9 @@ public class javaadapter
 
 		subscriberlist = new HashMap<String,ArrayList<Subscriber>>();
 
-		XML jms = xmlconfig.getElement("jms");
-		if (jms != null)
-		{
-			System.out.print("Connection to JMS bus... ");
-			Hashtable<String,String> env = new Hashtable<String,String>();
-			env.put(Context.INITIAL_CONTEXT_FACTORY,jms.getValue("context","weblogic.jndi.WLInitialContextFactory"));
-			env.put(Context.PROVIDER_URL,jms.getValue("url"));
-			env.put(Context.SECURITY_PRINCIPAL,jms.getValue("username"));
-			env.put(Context.SECURITY_CREDENTIALS,jms.getValueCrypt("password"));
-			InitialContext jmsctx = new InitialContext(env);
-			//shutdown.setCloseList(jmsctx);
-
-			TopicConnectionFactory factory = (TopicConnectionFactory)jmsctx.lookup(jms.getValue("connectionfactory"));
-			System.out.println("Done");
-
-			JMSContext jmscontext = JMSContext.getInstance();
-			jmscontext.setContext(jmsctx,factory);
-
-			XML[] jmslist = jms.getElements("topic");
-			for(XML jmsxml:jmslist)
-				new TopicServer(jmsxml,jmsctx,factory);
-		}
+		XML[] jms = xmlconfig.getElements("jms");
+		for(XML jmsxml:jms)
+			JMS.getInstance().setInstance(jmsxml);
 
 		XML[] soapserverlist = xmlconfig.getElements("soapserver");
 		for(XML serverxml:soapserverlist)

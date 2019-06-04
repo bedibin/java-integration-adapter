@@ -29,7 +29,6 @@ elementFormDefault="qualified">
 <xs:simpleType name="publishertypes">
 	<xs:restriction base="xs:string">
 		<xs:enumeration value="jms"/>
-		<xs:enumeration value="soapoper"/>
 		<xs:enumeration value="soap"/>
 		<xs:enumeration value="exec"/>
 		<xs:enumeration value="file"/>
@@ -114,6 +113,7 @@ elementFormDefault="qualified">
 		<xs:enumeration value="recreate"/>
 		<xs:enumeration value="clear"/>
 		<xs:enumeration value="suffix"/>
+		<xs:enumeration value="use_first"/>
 	</xs:restriction>
 </xs:simpleType>
 
@@ -382,6 +382,7 @@ elementFormDefault="qualified">
 	<xs:attribute name="notrustssl" type="xs:boolean" default="false"/>
 	<xs:attribute name="resultpathrow" type="xs:string"/>
 	<xs:attribute name="resultpathcolumn" type="xs:string"/>
+	<xs:attribute name="resultattributename" type="xs:string"/>
 	<xs:attribute name="on_no_row" type="onnorowtypes" default="ignore"/>
 	<xs:attributeGroup ref="activate"/>
 </xs:complexType>
@@ -789,9 +790,17 @@ elementFormDefault="qualified">
 			<xs:element name="jms">
 				<xs:complexType>
 					<xs:sequence><xs:choice minOccurs="0" maxOccurs="unbounded">
+						<xs:element name="class" type="simplestring" default="JNDITopic"/>
 						<xs:element name="context" type="simplestring" default="weblogic.jndi.WLInitialContextFactory"/>
 						<xs:element name="connectionfactory" type="simplestring"/>
 						<xs:element name="url" type="simplestring"/>
+						<xs:element name="host" type="simplestring"/>
+						<xs:element name="port" type="simpleinteger"/>
+						<xs:element name="cipher" type="simplestring"/>
+						<xs:element name="channel" type="simplestring"/>
+						<xs:element name="qmgr" type="simplestring"/>
+						<xs:element name="keystore" type="simplestring"/>
+						<xs:element name="keystore_password" type="simplestring"/>
 						<xs:element name="username" type="simplestring"/>
 						<xs:element name="password" type="simplestring"/>
 						<xs:element name="topic">
@@ -807,6 +816,7 @@ elementFormDefault="qualified">
 						</xs:element>
 					</xs:choice></xs:sequence>
 					<xs:attributeGroup ref="activate"/>
+					<xs:attribute name="name" type="xs:string"/>
 				</xs:complexType>
 			</xs:element>
 

@@ -6,8 +6,6 @@ import java.security.Principal;
 import java.security.PrivateKey;
 import java.security.cert.X509Certificate;
 import java.security.KeyStore;
-import javax.xml.rpc.*;
-import javax.xml.namespace.*;
 
 class AliasSelectorKeyManager implements X509KeyManager
 {
@@ -63,15 +61,13 @@ class AliasSelectorKeyManager implements X509KeyManager
 	}
 }
 
-enum PublisherTypes { DIRECT, JMS, LDAP, SOAP, SOAPOPER, HTTP, POST, EXEC, FILE };
+enum PublisherTypes { DIRECT, JMS, LDAP, SOAP, HTTP, POST, EXEC, FILE };
 
 class Publisher
 {
 	class PublisherObject
 	{
 		private PublisherTypes type;
-		private TopicPublish topicpublish;
-		private Service service;
 		private URL defaulturl;
 		private String command;
 		private File file;
@@ -83,22 +79,10 @@ class Publisher
 			this.type = type;
 		}
 
-		public PublisherObject(TopicPublish topicpublish)
-		{
-			type = PublisherTypes.JMS;
-			this.topicpublish = topicpublish;
-		}
-
 		public PublisherObject(ldap ld)
 		{
 			type = PublisherTypes.LDAP;
 			this.ld = ld;
-		}
-
-		public PublisherObject(Service service)
-		{
-			type = PublisherTypes.SOAPOPER;
-			this.service = service;
 		}
 
 		public PublisherObject(URL url)
@@ -297,21 +281,11 @@ class Publisher
 
 		public String send(String string,XML xml,XML xmlpub) throws Exception
 		{
-			String result = null;
+			String result = string;
 
 			switch(type) {
 			case JMS:
-				topicpublish.publish(string);
-				break;
-			case SOAPOPER:
-				String operation = xmlpub.getAttribute("operation");
-				String port = xmlpub.getAttribute("port");
-
-				Call call = (port == null) ? service.createCall() : service.createCall(new QName(port));
-				if (operation != null)
-					call.setOperationName(new QName(operation));
-
-				result = (String)call.invoke(new Object[] { string });
+				JMS.getInstance().publish(string,xmlpub);
 				break;
 			case EXEC:
 				String charset = xmlpub.getAttribute("charset");
@@ -333,7 +307,6 @@ class Publisher
 				out.write(Misc.CR);
 				out.flush();
 				os.close();
-				result = string;
 				break;
 			case DIRECT:
 				if (xml == null) throw new AdapterException("Direct publisher only supports XML");
@@ -456,16 +429,6 @@ class Publisher
 			PublisherObject pub = null;
 
 			switch(type) {
-			case JMS:
-				pub = new PublisherObject(new TopicPublish(name));
-				break;
-			case SOAPOPER:
-				String wsdl = el.getAttribute("wsdl");
-				ServiceFactory factory = ServiceFactory.newInstance();
-				URL wsdlurl = new URL(wsdl);
-				Service service = factory.createService(wsdlurl,new QName(name));
-				pub = new PublisherObject(service);
-				break;
 			case EXEC:
 				String command = el.getAttribute("command");
 				pub = new PublisherObject(command);
@@ -534,6 +497,11 @@ class Publisher
 
 	public XML publish(XML xml,XML xmlpublisher) throws Exception
 	{
+		if (xml == null || xml.isEmpty())
+		{
+			if (Misc.isLog(5)) Misc.log("WARNING: Nothing to publish");
+			return null;
+		}
 		String str = xml.rootToString();
 		String result = publish(str,xml,xmlpublisher);
 

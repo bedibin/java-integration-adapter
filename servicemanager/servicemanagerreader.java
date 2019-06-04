@@ -72,6 +72,7 @@ class ReaderServiceManager extends ReaderXML
 
 class ReaderServiceManagerRelations extends ReaderUtil
 {
+	// all_next[parent][child] = ChildExtract
 	TreeMap<String,TreeMap<String,ChildExtract>> all_next = new TreeMap<String,TreeMap<String,ChildExtract>>(db.getCollator());
 	Iterator<String> next_iterator;
 	Iterator<Map.Entry<String,ChildResult>> child_iterator;
@@ -82,23 +83,28 @@ class ReaderServiceManagerRelations extends ReaderUtil
 	final String RelTypeLabel = "relation_name";
 	final String RelCiLabel = "relation_ci";
 	final String LevelLabel = "level";
+	final String OutageLabel = "outage";
 
 	class ChildExtract {
-		ChildExtract(String type) {
+		ChildExtract(String type,boolean outage) {
 			this.type = type;
+			this.outage = outage;
 		}
 		String type;
+		boolean outage;
 	};
 
 	class ChildResult {
-		ChildResult(int level,String type,String ci) {
+		ChildResult(int level,String type,String ci,boolean outage) {
 			this.level = level;
 			this.type = type;
 			this.ci = ci;
+			this.outage = outage;
 		};
 		int level;
 		String type;
 		String ci;
+		boolean outage;
 	};
 
 	public ReaderServiceManagerRelations(XML xml) throws Exception
@@ -107,7 +113,11 @@ class ReaderServiceManagerRelations extends ReaderUtil
 
 		String conn = xml.getAttribute("instance");
 		String sql = 
-"select m.logical_name " + ParentLabel + ",c.logical_name " + ChildLabel + ",m.relationship_name " + RelTypeLabel + " " +
+"select m.logical_name " + ParentLabel
+	+ ",c.logical_name " + ChildLabel
+	+ ",m.relationship_name " + RelTypeLabel
+	+ ",m.outage_dependency " + OutageLabel
+	+ " " +
 "from cirelationsm1 m " +
 "inner join device2m1 p on m.logical_name = p.logical_name and p.istatus != 'Retired' " +
 "inner join cirelationsa1 a on a.logical_name = m.logical_name and a.relationship_name = m.relationship_name " +
@@ -123,12 +133,13 @@ class ReaderServiceManagerRelations extends ReaderUtil
 			String parent = row.get(ParentLabel);
 			String child = row.get(ChildLabel);
 			String reltype = row.get(RelTypeLabel);
+			boolean outage = "t".equals(row.get(OutageLabel));
 
 			if (all_next.containsKey(parent)) {
-				all_next.get(parent).put(child,new ChildExtract(reltype));
+				all_next.get(parent).put(child,new ChildExtract(reltype,outage));
 			} else {
 				TreeMap<String,ChildExtract> map = new TreeMap<String,ChildExtract>(db.getCollator());
-				map.put(child,new ChildExtract(reltype));
+				map.put(child,new ChildExtract(reltype,outage));
 				all_next.put(parent,map);
 			}
 		}
@@ -137,21 +148,32 @@ class ReaderServiceManagerRelations extends ReaderUtil
 		child_iterator = (new TreeMap<String,ChildResult>(db.getCollator())).entrySet().iterator();
 	}
 
-	private TreeMap<String,ChildResult> getAllChildren(TreeMap<String,TreeMap<String,ChildExtract>> all_next,TreeMap<String,ChildResult> map,int level,String ci) throws Exception
+	private void getAllChildren(TreeMap<String,ChildResult> map,int level,String ci,boolean outage) throws Exception
 	{
 		TreeMap<String,ChildExtract> children = all_next.get(ci);
-		if (children == null) return map;
-		for(String child:children.keySet()) {
-			ChildResult duplicatechild = map.get(child);
+		if (children == null) return;
+		for(Map.Entry<String,ChildExtract> child:children.entrySet()) {
+			String childname = child.getKey();
+			ChildExtract childextract = child.getValue();
+			ChildResult duplicatechild = map.get(childname);
+			if (outage) outage = childextract.outage;
 			if (duplicatechild != null)
 			{
-				if (level < duplicatechild.level) duplicatechild.level = level;
+				// Priority is lowest level having outage
+				if (level <= duplicatechild.level && (outage || !duplicatechild.outage))
+				{
+					duplicatechild.level = level;
+					duplicatechild.ci = ci;
+					duplicatechild.outage = outage;
+					duplicatechild.type = childextract.type;
+				}
 				continue;
 			}
-			map.put(child,new ChildResult(level,children.get(child).type,ci));
-			getAllChildren(all_next,map,level+1,child);
+			ChildResult newchild = new ChildResult(level,childextract.type,ci,outage);
+			map.put(childname,newchild);
+			getAllChildren(map,level+1,childname,outage);
 		}
-		return map;
+		return;
 	}
 
 	@Override
@@ -160,17 +182,20 @@ class ReaderServiceManagerRelations extends ReaderUtil
 		if (!child_iterator.hasNext()) {
 			if (!next_iterator.hasNext()) return null;
 			current_parent = next_iterator.next();
-			TreeMap<String,ChildResult> children = getAllChildren(all_next,new TreeMap<String,ChildResult>(),1,current_parent);
+			TreeMap<String,ChildResult> children = new TreeMap<String,ChildResult>();
+			getAllChildren(children,1,current_parent,true);
 			child_iterator = children.entrySet().iterator();
 		}
 
 		Map.Entry<String,ChildResult> child = child_iterator.next();
 		LinkedHashMap<String,String> row = new LinkedHashMap<String,String>();
+		ChildResult childresult = child.getValue();
 		row.put(ParentLabel,current_parent);
 		row.put(ChildLabel,child.getKey());
-		row.put(RelTypeLabel,child.getValue().type);
-		row.put(RelCiLabel,child.getValue().ci);
-		row.put(LevelLabel,"" + child.getValue().level);
+		row.put(RelTypeLabel,childresult.type);
+		row.put(RelCiLabel,childresult.ci);
+		row.put(LevelLabel,"" + childresult.level);
+		row.put(OutageLabel,childresult.outage ? "t" : "f");
 
 		return row;
 	}

@@ -5,7 +5,8 @@ DIR =	javaadapter \
 	assetmanager \
 	ucmdb \
 	servicemanager \
-	excelreader
+	excelreader \
+	jmsplugins
 
 all:	$(DIR)
 

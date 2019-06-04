@@ -6,7 +6,6 @@ import javax.xml.transform.stream.*;
 import javax.xml.transform.dom.*;
 import javax.xml.parsers.*;
 import javax.xml.xpath.*;
-import javax.jms.*;
 import org.w3c.dom.*;
 import org.xml.sax.*;
 import org.xml.sax.helpers.DefaultHandler;
@@ -88,6 +87,11 @@ class XML
 		return node instanceof Element;
 	}
 
+	public boolean isEmpty()
+	{
+		return !isElement(node);
+	}
+
 	private Node getRootNode()
 	{
 		Node node = dom.getDocumentElement();
@@ -98,7 +102,7 @@ class XML
 	public void setNS(String url,String prefix)
 	{
 		Node node = dom.getDocumentElement();
-		if (!isElement(node)) return;
+		if (isEmpty()) return;
 
 		Element el = (Element)node;
 		el.setAttributeNS("http://www.w3.org/2000/xmlns/","xmlns:" + prefix,url);
@@ -148,22 +152,6 @@ class XML
 			Misc.rethrow(ex,"Invalid XML: " + txt);
 		}
 		node = getRootNode();
-	}
-
-	public XML(TextMessage msg) throws Exception
-	{
-		this();
-		String txt = msg.getText();
-		parser.parse(new InputSource(new StringReader(txt)),handler);
-		node = getRootNode();
-	}
-
-	public XML(TextMessage msg,String root) throws Exception
-	{
-		this();
-		String txt = msg.getText();
-		parser.parse(new InputSource(new StringReader(txt)),handler);
-		node = getElementByPath(root).node;
 	}
 
 	public XML(StringBuffer sb) throws Exception
@@ -259,7 +247,7 @@ class XML
 				transformer.transform(new DOMSource(dom),new StreamResult(writer));
 			else
 			{
-				if (!isElement(node)) return "";
+				if (isEmpty()) return "";
 				Element el = (Element)node;
 				transformer.transform(new DOMSource(el),new StreamResult(writer));
 			}
@@ -305,11 +293,12 @@ class XML
 			Result result = new DOMResult(xml.dom);
 			xformer.transform(source,result);
 			xml.node = xml.getRootNode();
-			if (!(xml.node instanceof Element))
-				throw new AdapterException("Transformation didn't return a node");
+			// Next code is commented since we allow empty XML being return
+			//if (!(xml.node instanceof Element))
+			//	throw new AdapterException("Transformation didn't return a node");
 			return xml;
 		}
-		catch(Exception ex)
+		catch(FileNotFoundException | TransformerException ex)
 		{
 			Misc.log(1,"XML transformation [" + filename + "]: " + toString());
 			throw new AdapterException(ex);
@@ -381,7 +370,7 @@ class XML
 
 	public String getTagName()
 	{
-		if (!isElement(node)) return null;
+		if (isEmpty()) return null;
 		Element el = (Element)node;
 		return el.getTagName();
 	}
@@ -478,7 +467,7 @@ class XML
 
 	public synchronized boolean isElementNoDefault(String name)
 	{
-		if (!isElement(node)) return false;
+		if (isEmpty()) return false;
 		Node currentnode = node.getFirstChild();
 		while(currentnode != null)
 		{
@@ -496,7 +485,7 @@ class XML
 
 	public synchronized boolean isAttributeNoDefault(String name)
 	{
-		if (!isElement(node)) return false;
+		if (isEmpty()) return false;
 		Element el = (Element)node;
 		Attr attr = el.getAttributeNode(name);
 		return attr != null;
@@ -504,7 +493,7 @@ class XML
 
 	public synchronized boolean isAttribute(String name) throws AdapterException
 	{
-		if (!isElement(node)) return false;
+		if (isEmpty()) return false;
 		Element el = (Element)node;
 		Attr attr = el.getAttributeNode(name);
 
@@ -533,7 +522,7 @@ class XML
 
 	public String getAttributeDeprecated(String name)
 	{
-		if (!isElement(node)) return null;
+		if (isEmpty()) return null;
 		Element el = (Element)node;
 		Attr attr = el.getAttributeNode(name);
 		if (attr == null) return null;
@@ -550,7 +539,7 @@ class XML
 
 	public String getAttribute(String name) throws AdapterException
 	{
-		if (!isElement(node)) return null;
+		if (isEmpty()) return null;
 		Element	el = (Element)node;
 		Attr attr = el.getAttributeNode(name);
 		String value = el.getAttribute(name);
@@ -825,7 +814,7 @@ class XML
 
 	public void removeAttribute(String name)
 	{
-		if (!isElement(node)) return;
+		if (isEmpty()) return;
 
 		Element el = (Element)node;
 		el.removeAttribute(name);
@@ -833,7 +822,7 @@ class XML
 
 	public XML setAttribute(String name,String value)
 	{
-		if (!isElement(node)) return this;
+		if (isEmpty()) return this;
 		if (value == null) return this;
 
 		Element el = (Element)node;

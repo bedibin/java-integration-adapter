@@ -481,7 +481,12 @@ class ldap extends directory
 	protected boolean setPagedNext(int count) throws Exception
 	{
 		byte[] cookie = null;
-		Control[] controls = ld.getResponseControls();
+		Control[] controls = null;
+		try {
+			controls = ld.getResponseControls();
+		} catch(NoInitialContextException ex) {
+			return false;
+		}
 		if (controls == null) return false;
 
 		for (Control control:controls)

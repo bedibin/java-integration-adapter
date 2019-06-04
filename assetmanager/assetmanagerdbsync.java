@@ -182,7 +182,7 @@ class AMDB extends DB
 		if (value.matches("\\d{4}-\\d{2}-\\d{2}"))
 			// Do not do timezone conversion on a simple date
 			return "#" + value + "#";
-		if (value.matches("-\\d+") || value.matches("-\\d+\\.\\d+"))
+		if (value.matches("^(-?[1-9]\\d*|0)") || value.matches("-?([1-9]\\d*|0)\\.\\d+"))
 			return value;
 		value = value.replace("'","''");
 		value = value.replace("\r","");
@@ -254,6 +254,25 @@ class AssetManagerUpdateSubscriber extends DatabaseUpdateSubscriber
 
 class AssetManagerRestSubscriber extends UpdateSubscriber
 {
+	protected String getDate(String value) throws Exception
+	{
+		Date date = Misc.gmtdateformat.parse(value);
+		return "" + date.getTime();
+	}
+
+	protected String getValue(String value) throws Exception
+	{
+		if (value == null) return "";
+		if (value.matches("\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}"))
+			return getDate(value);
+		if (value.matches("\\d{4}-\\d{2}-\\d{2}"))
+			return getDate(value + " 00:00:00");
+		value = value.replace("\r","");
+		value = value.replace("\n","\r\n");
+		value = value.replace("'","''");
+		return value;
+	}
+
 	protected void add(XML xmldest,XML xmloper) throws Exception
 	{
 		oper("post",xmldest,xmloper);
@@ -324,7 +343,7 @@ class AssetManagerRestSubscriber extends UpdateSubscriber
 				{
 					where.append(" " + sep + db.getFieldEqualsValue(name,value));
 					sep = "and ";
-					js.put(name,value.replace("'","''"));
+					js.put(name,getValue(value));
 					continue;
 				}
 			}
@@ -337,7 +356,7 @@ class AssetManagerRestSubscriber extends UpdateSubscriber
 				String oldvalue = old.getValue();
 				if (type != null && type.equals("initial") && oldvalue != null) continue;
 			}
-			js.put(name,value.replace("'","''"));
+			js.put(name,getValue(value));
 		}
 
 		if (customs != null && customs.length > 0)

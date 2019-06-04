@@ -949,7 +949,7 @@ class DBSyncOper
 				sourcesync = new Sync(this,null);
 				for(XML destination:getFilenamePatterns(rawdestination))
 				{
-					if (destinationsync == null) continue;
+					if (destination == null) continue;
 
 					final String operkey = "OPERATION";
 
@@ -966,9 +966,9 @@ class DBSyncOper
 					destination.add("field").setAttribute("name",operkey).setAttribute("type","info");
 
 					destinationsync = getSync(destination,null,xmlsource);
+					if (destinationsync == null) continue;
 
-					fields.setDefaultFields(sourcesync.getReader().getHeader(),Scope.SCOPE_DESTINATION);
-					comparefields = destinationsync.getHeader();
+					fields.setDefaultFields(destinationsync.getReader().getHeader(),Scope.SCOPE_DESTINATION);
 					if (ignorefields != null) comparefields.removeAll(ignorefields);
 
 					if (iscache)
@@ -981,6 +981,7 @@ class DBSyncOper
 
 					counter = new RateCounter();
 					xmloperlist = new ArrayList<XML>();
+					comparefields = fields.getNames();
 
 					destinationsync.setPostInitReader();
 
