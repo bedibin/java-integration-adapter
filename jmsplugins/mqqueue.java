@@ -75,7 +75,7 @@ class MQQueue extends JMSBase
 		if (username != null) cf.setStringProperty(WMQConstants.USERID,username);
 		XML password = xml.getElement("password");
 		if (password != null) cf.setStringProperty(WMQConstants.PASSWORD,password.getValueCrypt());
-		ctx = cf.createContext();
+		ctx = cf.createContext(JMSContext.CLIENT_ACKNOWLEDGE);
 		System.out.println("Done");
 
 		XML[] jmslist = xml.getElements("queue");
@@ -95,5 +95,29 @@ class MQQueue extends JMSBase
 	void setMessageListener(String name,MessageListener listener)
 	{
 		getInfo(name).getConsumer().setMessageListener(listener);
+	}
+
+	String read(String name) throws Exception
+	{
+		Message msg = getInfo(name).getConsumer().receive(1);
+		if (msg == null) return null;
+
+		String text = null;
+		if (msg instanceof BytesMessage)
+		{
+			BytesMessage message = (BytesMessage)msg;
+			int len = new Long(message.getBodyLength()).intValue();
+			byte[] textBytes = new byte[len];
+			message.readBytes(textBytes,len);
+			String codePage = message.getStringProperty(WMQConstants.JMS_IBM_CHARACTER_SET);
+			text = new String(textBytes,codePage);
+		}
+		else if (msg instanceof TextMessage)
+			text = ((TextMessage)msg).getText();
+		else
+			throw new AdapterException("Unsupported message class " + msg.getClass().getName());
+
+		msg.acknowledge();
+		return text;
 	}
 }

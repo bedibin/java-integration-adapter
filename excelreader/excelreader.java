@@ -1,7 +1,7 @@
 import java.util.*;
 import java.io.*;
+import java.nio.file.Path;
 
-import java.io.FileInputStream;
 import java.text.DecimalFormat;
 import java.text.DecimalFormatSymbols;
 
@@ -23,8 +23,9 @@ class ReaderExcel extends ReaderUtil
 		super(xml);
 
 		String filename = xml.getAttribute("filename");
-		File file = new File(filename);
-		if (!file.exists()) throw new FileNotFoundException("File not found: " + filename);
+		Set<Path> paths = Misc.glob(filename);
+		if (paths.size() != 1) throw new FileNotFoundException("File not found or multiple match: " + filename);
+		File file = new File(paths.iterator().next().toString());
 		if (instance == null) instance = file.getName();
 
 		String sheetname = xml.getAttribute("worksheet");
@@ -64,9 +65,11 @@ class ReaderExcel extends ReaderUtil
 				String value = getCellValue(cell);
 				if (!value.isEmpty()) break;
 			}
+			row = null;
 		}
 
-		if (!rows.hasNext()) throw new AdapterException("Missing header row in sheet " + worksheet.getSheetName() + ": " + instance);
+		if (row == null) throw new AdapterException("Missing header row in sheet " + worksheet.getSheetName() + ": " + instance);
+		if (!rows.hasNext()) throw new AdapterException("Missing data row in sheet " + worksheet.getSheetName() + ": " + instance);
 
 		headers = new LinkedHashSet<String>();
 		Iterator<Cell> cells = row.iterator();
@@ -88,6 +91,8 @@ class ReaderExcel extends ReaderUtil
 
 	String getCellValue(Cell cell) throws Exception
 	{
+		if (cell == null) return null;
+
 		CellType type = cell.getCellTypeEnum();
 		String value = null;
 
@@ -126,12 +131,13 @@ class ReaderExcel extends ReaderUtil
 		Row row = rows.next();
 		LinkedHashMap<String,String> result = new LinkedHashMap<String,String>();
 		int pos = 0;
+
 		for(String header:headers)
 		{
 			if (!header.isEmpty())
 			{
 				Cell cell = row.getCell(pos);
-				if (cell != null) result.put(header,getCellValue(cell));
+				result.put(header,getCellValue(cell));
 			}
 			pos++;
 		}

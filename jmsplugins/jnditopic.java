@@ -123,4 +123,14 @@ class JNDITopic extends JMSBase
 	{
 		getInfo(name).getSession().recover();
 	}
+
+	String read(String name) throws JMSException
+	{
+		Message msg = getInfo(name).getSubscriber().receive(1);
+		if (msg == null) return null;
+		String text = ((TextMessage)msg).getText();
+		msg.acknowledge();
+		return text;
+	}
+
 }

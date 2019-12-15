@@ -84,6 +84,7 @@ elementFormDefault="qualified">
 		<xs:enumeration value="soap"/>
 		<xs:enumeration value="class"/>
 		<xs:enumeration value="null"/>
+		<xs:enumeration value="jms"/>
 	</xs:restriction>
 </xs:simpleType>
 
@@ -334,6 +335,9 @@ elementFormDefault="qualified">
 
 <xs:complexType name="read" mixed="true"> <!-- dbsyncplugin -->
 	<xs:sequence><xs:choice minOccurs="0" maxOccurs="unbounded">
+		<xs:element name="function" type="function"/> <!-- Applies to XML reader only -->
+		<xs:element name="read" type="read"/> <!-- Applies to XML reader only -->
+		<xs:element name="element" type="anyxml"/> <!-- Applies to XML reader only -->
 		<xs:element name="extractsql" type="simplestringfile" minOccurs="0" maxOccurs="unbounded"/>
 		<xs:element name="row">
 			<xs:complexType>
@@ -658,6 +662,7 @@ elementFormDefault="qualified">
 				<xs:complexContent>
 					<xs:extension base="simplestringfile">
 						<xs:attribute name="on_exception" type="onrejecttypes" default="warning"/>
+						<xs:attribute name="engine" type="xs:string"/>
 					</xs:extension>
 				</xs:complexContent>
 			</xs:complexType>
@@ -755,6 +760,7 @@ elementFormDefault="qualified">
 						<xs:element name="server" type="simplestring"/>
 						<xs:element name="protocol" type="simplestring"/>
 						<xs:element name="port" type="simpleinteger" default="1521"/>
+						<xs:element name="querytimeout" type="simpleinteger"/>
 						<xs:element name="bulksize" default="1">
 							<xs:complexType> 
 								<xs:simpleContent> 

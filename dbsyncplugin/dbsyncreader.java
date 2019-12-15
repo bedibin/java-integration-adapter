@@ -2,6 +2,7 @@ import java.util.*;
 import java.io.*;
 import java.text.*;
 import java.util.regex.*;
+import java.nio.file.Path;
 
 interface Reader
 {
@@ -13,12 +14,16 @@ interface Reader
 
 abstract class ReaderUtil implements Reader
 {
+	private XML xmlreader;
 	private Set<String> keyfields;
 	private boolean issorted = false;
 	private boolean totrim = true;
 	private LinkedHashMap<String,String> last;
 	private OnOper onempty;
 	private int rowcount;
+	private String colname;
+	private String pathcol;
+	protected String pathrow;
 	protected DB db;
 	protected Set<String> headers;
 	protected boolean skipnormalize = true;
@@ -44,6 +49,8 @@ abstract class ReaderUtil implements Reader
 			reader = new ReaderLDAP(xml);
 		else if (type.equals("xml"))
 			reader = new ReaderXML(xml,xmlsource);
+		else if (type.equals("jms"))
+			reader = new ReaderJMS(xml);
 		else if (type.equals("class"))
 		{
 			String name = xml.getAttribute("class");
@@ -81,6 +88,7 @@ abstract class ReaderUtil implements Reader
 	public ReaderUtil(XML xml) throws Exception
 	{
  		db = DB.getInstance();
+		xmlreader = xml;
 
 		String tagname = xml.getTagName();
 		if (!(tagname.equals("source") || tagname.equals("destination")))
@@ -107,6 +115,10 @@ abstract class ReaderUtil implements Reader
 
 		onempty = Field.getOnOper(xml,"on_no_row",OnOper.IGNORE,EnumSet.of(OnOper.EXCEPTION,OnOper.IGNORE));
 		rowcount = 0;
+
+		pathcol = xml.getAttribute("resultpathcolumn");
+		colname = xml.getAttribute("resultattributename");
+		pathrow = xml.getAttribute("resultpathrow");
 	}
 
 	static final public void pushCurrent(Map<String,String> row,Map<String,Set<String>> map,boolean issorted) throws Exception
@@ -211,6 +223,96 @@ abstract class ReaderUtil implements Reader
 		return result;
 	}
 
+	public final void ReadXML(XML xml,XML xmlsource) throws Exception
+	{
+		Reader reader = ReaderUtil.getReader(xml,xmlsource);
+
+		LinkedHashMap<String,String> row;
+
+		XML xmltable = xmlsource.add(reader.getName());
+		xml.copyAttributes(xmltable);
+
+		while((row = reader.next()) != null)
+			if (row.size() > 0)
+				xmltable.add("row",row);
+	}
+
+	public final XML ProcessXML(XML xml,XML xmlsource) throws Exception
+	{
+		String filename = xml.getAttribute("filename");
+		if (filename == null)
+		{
+			if (xmlsource == null)
+			{
+				xmlsource = new XML();
+				xmlsource.add("root");
+			}
+		}
+		else
+			xmlsource = new XML(filename);
+
+		XML[] elements = xml.getElements(null);
+		for(XML element:elements)
+		{
+			String tagname = element.getTagName();
+
+			if (tagname.equals("element"))
+				xmlsource.add(element);
+			else if (tagname.equals("function"))
+			{
+				Subscriber sub = new Subscriber(element);
+
+				Operation.ResultTypes resulttype = Operation.getResultType(element);
+				XML xmlresult = sub.run(xmlsource);
+				switch(resulttype)
+				{
+				case LAST:
+					xmlsource = xmlresult;
+					break;
+				case MERGE:
+					xmlsource.add(xmlresult);
+					break;
+				}
+			}
+			else if (tagname.equals("read"))
+				ReadXML(element,xmlsource);
+
+			if (Misc.isLog(9)) Misc.log("XML reader " + tagname + ": " + xmlsource);
+		}
+
+		return xmlsource;
+	}
+
+	public final void getSubXML(LinkedHashMap<String,String> row,String prefix,XML xml) throws Exception
+	{
+		HashMap<String,String> attributes = xml.getAttributes();
+		if (attributes == null) return;
+
+		for(Map.Entry<String,String> entry:attributes.entrySet())
+		{
+			String value = entry.getValue();
+			if (value == null) value = "";
+			String name = entry.getKey();
+			if (prefix != null) name = prefix + "_" + name;
+			if (headers != null && !headers.contains(name)) headers.add(name);
+			row.put(name,totrim ? value.trim() : value);
+		}
+
+		XML[] elements = prefix == null ? xml.getElements() : xml.getElementsByPath(pathcol);
+		for(XML element:elements)
+		{
+			String name = element.getTagName();
+			if (name == null) continue;
+			if (colname != null) name = name + "_" + element.getAttribute(colname);
+			if (prefix != null) name = prefix + "_" + name;
+			if (headers != null && !headers.contains(name)) headers.add(name);
+			String value = element.getValue();
+			if (value == null) value = "";
+			row.put(name,totrim ? value.trim() : value);
+			getSubXML(row,name,element);
+		}
+	}
+
 	public final Set<String> getHeader()
 	{
 		return headers;
@@ -229,6 +331,11 @@ abstract class ReaderUtil implements Reader
 	public final boolean toTrim()
 	{
 		return totrim;
+	}
+
+	public final XML getXML()
+	{
+		return xmlreader;
 	}
 }
 
@@ -375,7 +482,9 @@ class ReaderCSV extends ReaderUtil
 		if (filename == null)
 			throw new AdapterException("Filename is mandatory");
 
-		File file = new File(javaadapter.getCurrentDir(),filename);
+		Set<Path> paths = Misc.glob(filename);
+		if (paths.size() != 1) throw new FileNotFoundException("File not found or multiple match: " + filename);
+		File file = new File(paths.iterator().next().toString());
 		initFile(file,charset);
 	}
 
@@ -609,49 +718,6 @@ class ReaderXML extends ReaderUtil
 {
 	protected XML[] xmltable;
 	protected int position = 0;
-	private String pathcol;
-	private String colname;
-
-	private void Read(XML xml,XML xmlsource) throws Exception
-	{
-		Reader reader = ReaderUtil.getReader(xml,xmlsource);
-
-		LinkedHashMap<String,String> row;
-
-		XML xmltable = xmlsource.add(reader.getName());
-		xml.copyAttributes(xmltable);
-
-		while((row = reader.next()) != null)
-			xmltable.add("row",row);
-	}
-
-	private void getSubXML(LinkedHashMap<String,String> row,String prefix,XML xml) throws Exception
-	{
-		HashMap<String,String> attributes = xml.getAttributes();
-		for(Map.Entry<String,String> entry:attributes.entrySet())
-		{
-			String value = entry.getValue();
-			if (value == null) value = "";
-			String name = entry.getKey();
-			if (prefix != null) name = prefix + "_" + name;
-			if (headers != null && !headers.contains(name)) headers.add(name);
-			row.put(name,toTrim() ? value.trim() : value);
-		}
-
-		XML[] elements = prefix == null ? xml.getElements() : xml.getElementsByPath(pathcol);
-		for(XML element:elements)
-		{
-			String name = element.getTagName();
-			if (name == null) continue;
-			if (colname != null) name = name + "_" + element.getAttribute(colname);
-			if (prefix != null) name = prefix + "_" + name;
-			if (headers != null && !headers.contains(name)) headers.add(name);
-			String value = element.getValue();
-			if (value == null) value = "";
-			row.put(name,toTrim() ? value.trim() : value);
-			getSubXML(row,name,element);
-		}
-	}
 
 	protected LinkedHashMap<String,String> getXML(int pos) throws Exception
 	{
@@ -668,70 +734,17 @@ class ReaderXML extends ReaderUtil
 
 	public ReaderXML(XML xml) throws Exception
 	{
-		init(xml,null,null,null);
-	}
-
-	public ReaderXML(XML xml,String pathrow,String pathcol,String colname) throws Exception
-	{
-		init(xml,pathrow,pathcol,colname);
+		init(xml);
 	}
 
 	public ReaderXML(XML xml,XML xmlsource) throws Exception
 	{
 		super(xml);
-
-		String filename = xml.getAttribute("filename");
-		if (filename == null)
-		{
-			if (xmlsource == null)
-			{
-				xmlsource = new XML();
-				xmlsource.add("root");
-			}
-		}
-		else
-			xmlsource = new XML(filename);
-
-		XML[] elements = xml.getElements(null);
-		for(XML element:elements)
-		{
-			String tagname = element.getTagName();
-
-			if (tagname.equals("element"))
-				xmlsource.add(element);
-			else if (tagname.equals("function"))
-			{
-				Subscriber sub = new Subscriber(element);
-
-				Operation.ResultTypes resulttype = Operation.getResultType(element);
-				XML xmlresult = sub.run(xmlsource);
-				switch(resulttype)
-				{
-				case LAST:
-					xmlsource = xmlresult;
-					break;
-				case MERGE:
-					xmlsource.add(xmlresult);
-					break;
-				}
-			}
-			else if (tagname.equals("read"))
-			{
-				element.copyAttribute("fields",xml);
-				Read(element,xmlsource);
-			}
-
-			if (Misc.isLog(9)) Misc.log("XML reader " + tagname + ": " + xmlsource);
-		}
-
-		init(xmlsource,xml.getAttribute("resultpathrow"),xml.getAttribute("resultpathcolumn"),xml.getAttribute("resultattributename"));
+		init(ProcessXML(xml,xmlsource));
 	}
 
-	private void init(XML xml,String pathrow,String pathcol,String colname) throws Exception
+	private void init(XML xml) throws Exception
 	{
-		this.pathcol = pathcol;
-		this.colname = colname;
-
 		xmltable = xml.getElementsByPath(pathrow);
 		if (Misc.isLog(5)) Misc.log("Found " + xmltable.length + " elements with path " + pathrow);
 		if (instance == null) instance = xml.getTagName();
@@ -983,3 +996,29 @@ class SortTable implements Reader
 	}
 }
 
+class ReaderJMS extends ReaderUtil
+{
+	private AdapterExtendBase jmsbase;
+	private String name;
+
+	public ReaderJMS(XML xml) throws Exception
+	{
+		super(xml);
+
+		jmsbase = JMS.getInstance().getInstance(xml);
+		name = xml.getAttribute("name");
+	}
+
+	@Override
+	public LinkedHashMap<String,String> nextRaw() throws Exception
+	{
+		String text = jmsbase.read(name);
+		if (text == null) return null;
+		XML xml = text.startsWith("{") && text.endsWith("}") ? new XML(new org.json.JSONObject(text)) : new XML(new StringBuilder(text));
+		xml = ProcessXML(getXML(),xml);
+		LinkedHashMap<String,String> row = new LinkedHashMap<String,String>();
+		getSubXML(row,null,xml);
+		return row;
+	}
+
+}

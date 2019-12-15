@@ -209,7 +209,7 @@ class DBSyncOper
 		XML xml = new XML();
 		XML xmlop = xml.add(oper.toString().toLowerCase());
 
-		Set<String> destinationheader = destinationsync == null ? null : destinationsync.getHeader();
+		Set<String> destinationheader = destinationsync == null ? null : destinationsync.getResultHeader();
 		Set<String> allfields = comparefields;
 		if (allfields == null) allfields = row.keySet(); // If destination null, use source fields
 
@@ -507,7 +507,7 @@ class DBSyncOper
 		LinkedHashMap<String,String> row = fields.getNext(sourcesync);
 		LinkedHashMap<String,String> rowdest = (destinationsync == null) ? null : fields.getNext(destinationsync);
 
-		comparefields = (destinationsync == null) ? null : destinationsync.getHeader();
+		comparefields = (destinationsync == null) ? null : destinationsync.getResultHeader();
 		if (comparefields != null && ignorefields != null) comparefields.removeAll(ignorefields);
 
 		/* keycheck is obsolete and should no longer be used */
@@ -705,6 +705,18 @@ class DBSyncOper
 		}
 	}
 
+	private String substituteFilename(String str,final String def) throws Exception
+	{
+		return Misc.substitute(str,new Misc.Substituer() {
+			public String getValue(String param) throws Exception
+			{
+				String value = Misc.substituteGet(param,null,null);
+				// def null returs the variable name
+				if (value == null) return def == null ? '%' + param + '%' : def;
+				return value;
+			}
+		});
+	}
 	private ArrayList<XML> getFilenamePatterns(XML sync) throws Exception
 	{
 		ArrayList<XML> results = new ArrayList<XML>();
@@ -715,15 +727,17 @@ class DBSyncOper
 		else
 		{
 			String fileescape = filename.replaceAll("\\.","\\.").replaceAll("\\*","\\*");
-			Matcher matcherglob = Misc.substitutepattern.matcher(fileescape);
-			String fileglob = matcherglob.replaceAll("*");
+			String fileglob = substituteFilename(fileescape,"*");
 			if (Misc.isLog(10)) Misc.log("File glob: " + fileglob);
 
 			fileescape = filename.replaceAll("[\\\\/]","[\\\\\\\\/]").replaceAll("\\.","\\.").replaceAll("\\*","\\.\\*");
-			Matcher matchervar = Misc.substitutepattern.matcher(fileescape);
-			String fileextract = matchervar.replaceAll("(.*)");
+			String fileextract = substituteFilename(fileescape,"(.*)");
 			if (Misc.isLog(10)) Misc.log("File extract: " + fileextract);
 			Pattern patternextract = Pattern.compile(fileextract);
+
+			String filevar = substituteFilename(fileescape,null);
+			if (Misc.isLog(10)) Misc.log("File var: " + filevar);
+			Matcher matchervar = Misc.substitutepattern.matcher(filevar);
 
 			Set<Path> paths = Misc.glob(fileglob);
 			if (paths.size() == 0) results.add(sync);

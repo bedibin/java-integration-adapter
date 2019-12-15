@@ -42,17 +42,6 @@ class Sync
 	protected void setReader(Reader reader) throws Exception
 	{
 		this.reader = reader;
-		XML xml = origxml;
-
-		String fieldsattr = xml.getAttribute("csv_fields");
-		if (fieldsattr == null) fieldsattr = xml.getAttribute("fields");
-		Set<String> headers = fieldsattr == null ? null : Misc.arrayToSet(fieldsattr.split("\\s*,\\s*"));
- 
-		String dumpcsvfilename = xml.getAttribute("dumpcsvfilename");
-		if (dumpcsvfilename == null && dbsyncplugin.dumpcsv_mode)
-			dumpcsvfilename = javaadapter.getName() + "_" + dbsync.getName() + "_" + getName() + "_" + Misc.implode(keys,"_") + ".csv";
-
-		if (dumpcsvfilename != null) csvout = new CsvWriter(dumpcsvfilename,headers,xml);
 	}
 
 	public LinkedHashMap<String,String> next() throws Exception
@@ -104,7 +93,7 @@ class Sync
 		return syncname;
 	}
 
-	public Set<String> getHeader() throws Exception
+	public Set<String> getResultHeader() throws Exception
 	{
 		return getDBSync().getFields().getNames(this);
 	}
@@ -119,10 +108,20 @@ class Sync
 			String iscache = xml.getAttribute("cached");
 			if (iscache != null && iscache.equals("true"))
 			reader = new CacheReader(xml,reader);
-			return;
 		}
+		else if (!reader.isSorted()) reader = new SortTable(xml,this);
 
-		if (!reader.isSorted()) reader = new SortTable(xml,this);
+		String dumpcsvfilename = xml.getAttribute("dumpcsvfilename");
+		if (dumpcsvfilename == null && dbsyncplugin.dumpcsv_mode)
+			dumpcsvfilename = javaadapter.getName() + "_" + dbsync.getName() + "_" + getName() + "_" + Misc.implode(keys,"_") + ".csv";
+
+		if (dumpcsvfilename != null)
+		{
+			String fieldsattr = xml.getAttribute("csv_fields");
+			if (fieldsattr == null) fieldsattr = xml.getAttribute("fields");
+			Set<String> headers = fieldsattr == null ? getResultHeader() : Misc.arrayToSet(fieldsattr.split("\\s*,\\s*"));
+			csvout = new CsvWriter(dumpcsvfilename,headers,xml);
+		}
 	}
 
 	public void makeDump(LinkedHashMap<String,String> result) throws Exception

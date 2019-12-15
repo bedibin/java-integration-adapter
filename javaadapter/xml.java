@@ -1084,6 +1084,20 @@ class XML
 				}
 			}
 		}
+
+		Properties props = System.getProperties();
+		Enumeration keys = props.keys();
+		final String KEY = "javaadapter.$";
+		while (keys.hasMoreElements())
+		{
+			String key = (String)keys.nextElement();
+			if (key.startsWith(KEY))
+			{
+				String value = (String)props.get(key);
+				String var = key.substring(KEY.length() - 1);
+				defaultvars.put(var,value);
+			}
+		}
 		
 	}
 

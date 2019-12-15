@@ -163,7 +163,10 @@ class Misc
 	public static SimpleDateFormat gmtdateformat;
 	public static final TimeZone gmttimezone = TimeZone.getTimeZone("UTC");
 	public static final String CR = System.getProperty("line.separator");
-	public static final Pattern substitutepattern = Pattern.compile("%([^%\n\\\\]*(?:\\\\.[^%\n\\\\]*)*)%");
+
+	// See regexp negative lookbehind:
+	// https://stackoverflow.com/questions/2973436/regex-lookahead-lookbehind-and-atomic-groups
+	public static final Pattern substitutepattern = Pattern.compile("(?<!\\\\)%(.*?(?<![\\n\\\\]))%");
 
 	private static int loglevel = 1;
 	private static boolean trace = false;

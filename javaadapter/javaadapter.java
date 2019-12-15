@@ -66,6 +66,25 @@ class AdapterExtend
 
 	protected AdapterExtend() {};
 
+	public AdapterExtendBase getInstance(XML xml) throws Exception
+	{
+		String instance = xml.getAttribute("instance");
+		if (instance == null) instance = defaultname + "/" + getClass().getName();
+		AdapterExtendBase ctx = extendlist.get(instance);
+		if (ctx == null)
+		{
+			String type = xml.getAttribute("type");
+			instance = type + "ExtendBase";
+			ctx = extendlist.get(instance);
+			if (ctx == null)
+			{
+				ctx = (AdapterExtendBase)Misc.invoke(instance,"getInstance");
+				extendlist.put(instance,ctx);
+			}
+		}
+		return ctx;
+	}
+
 	public void setInstance(XML xml) throws Exception
 	{
 		String classname = xml.getValue("class",defaultclass);
@@ -76,20 +95,7 @@ class AdapterExtend
 
 	public void publish(String string,XML xmlpublish) throws Exception
 	{
-		String instance = xmlpublish.getAttribute("instance");
-		if (instance == null) instance = defaultname + "/" + getClass().getName();
-		AdapterExtendBase ctx = extendlist.get(instance);
-		if (ctx == null)
-		{
-			String type = xmlpublish.getAttribute("type");
-			instance = type + "ExtendBase";
-			ctx = extendlist.get(instance);
-			if (ctx == null)
-			{
-				ctx = (AdapterExtendBase)Misc.invoke(instance,"getInstance");
-				extendlist.put(instance,ctx);
-			}
-		}
+		AdapterExtendBase ctx = getInstance(xmlpublish);
 		String name = xmlpublish.getAttribute("name");
 		ctx.publish(name,string);
 	}
@@ -98,6 +104,7 @@ class AdapterExtend
 abstract class AdapterExtendBase
 {
 	abstract void publish(String name,String message) throws Exception;
+	abstract String read(String name) throws Exception;
 }
 
 public class javaadapter

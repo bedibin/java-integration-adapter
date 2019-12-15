@@ -182,7 +182,7 @@ class AMDB extends DB
 		if (value.matches("\\d{4}-\\d{2}-\\d{2}"))
 			// Do not do timezone conversion on a simple date
 			return "#" + value + "#";
-		if (value.matches("^(-?[1-9]\\d*|0)") || value.matches("-?([1-9]\\d*|0)\\.\\d+"))
+		if (value.matches("^(-[1-9]\\d*|0)") || value.matches("-?([1-9]\\d*|0)\\.\\d+"))
 			return value;
 		value = value.replace("'","''");
 		value = value.replace("\r","");

@@ -154,7 +154,7 @@ class SyncLookup
 						}
 						if (fieldresult != null)
 						{
-							HashSet<String> currentfields = new HashSet<String>(fieldresult.getSync().getHeader());
+							HashSet<String> currentfields = new HashSet<String>(fieldresult.getSync().getResultHeader());
 							currentfields.addAll(fieldresult.getValues().keySet());
 							fields.retainAll(currentfields); // Lookup common fields + current fields
 						}
@@ -162,7 +162,7 @@ class SyncLookup
 						if (Misc.isLog(15))
 						{
 							Misc.log("Lookup fields are: " + result.keySet());
-							if (fieldresult != null) Misc.log("Available fields are: " + fieldresult.getSync().getHeader());
+							if (fieldresult != null) Misc.log("Available fields are: " + fieldresult.getSync().getResultHeader());
 							Misc.log("Common lookup fields are: " + fields);
 						}
 						if (fields.isEmpty())
@@ -558,13 +558,13 @@ class SyncLookup
 		{
 			try {
 				HashMap<String,String> fields = new HashMap<String,String>(result.getValues());
-				for(String key:result.getSync().getHeader())
+				for(String key:result.getSync().getResultHeader())
 				{
 					String value = fields.get(key);
 					if (value == null)
 						fields.put(key,"");
 				}
-				String value = Script.execute(xmllookup.getValue(),fields);
+				String value = Script.execute(xmllookup,fields);
 				if (value != null)
 				{
 					result.setValue(value);

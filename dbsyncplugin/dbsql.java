@@ -82,6 +82,7 @@ class DBConnection implements VariableContext
 	private XML xml;
 	private String name;
 	private Set<String> processors = new TreeSet<String>();
+	private int querytimeout = 0;
 
 	public static final String ORACLEJDBCDRIVER = "oracle.jdbc.driver.OracleDriver";
 	private static final String SQLSERVERJDBCDRIVER = "com.microsoft.sqlserver.jdbc.SQLServerDriver";
@@ -168,6 +169,10 @@ class DBConnection implements VariableContext
 			dbtype = dbtype.DB2;
 		}
 
+		XML timeout = xml.getElement("querytimeout");
+		if (timeout != null)
+			querytimeout = new Integer(timeout.getValue());
+
 		XML[] xmlinit = xml.getElements("initsql");
 		for(XML el:xmlinit)
 			execsql(el.getValue());
@@ -229,6 +234,11 @@ class DBConnection implements VariableContext
 		return quote;
 	}
 
+	public int getQueryTimeout()
+	{
+		return querytimeout;
+	}
+
 	public String getName()
 	{
 		return name;
@@ -277,7 +287,9 @@ class DBOper
 
 		stmt = dbc.prepareStatement(sql);
 
-		if (stmt.getQueryTimeout() <= 1) stmt.setQueryTimeout(3600);
+		int timeout = dbc.getQueryTimeout();
+		if (timeout != 0) stmt.setQueryTimeout(timeout);
+		else if (stmt.getQueryTimeout() <= 1) stmt.setQueryTimeout(3600);
 
 		if (list != null)
 		{

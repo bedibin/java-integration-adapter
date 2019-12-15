@@ -1,6 +1,8 @@
 import java.util.*;
 import java.util.regex.*;
 import java.text.SimpleDateFormat;
+import java.io.*;
+import java.util.zip.GZIPOutputStream;
 import com.hp.ucmdb.api.*;
 import com.hp.ucmdb.api.view.*;
 import com.hp.ucmdb.api.view.result.*;
@@ -368,15 +370,28 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 				idxml = xml.getElement(prefix + ":ID");
 			}
 
-			if (idxml != null)
-			{
-				id = idxml.getValue();
-				if (id == null) id = idxml.getValue("oldvalue",null);
-			}
+			if (prefix == null) continue;
 
 			String value = field.getValue();
-			if (prefix == null) continue;
 			if (value == null) throw new AdapterException(xml,"Value for element " + tagname + " cannot be empty");
+
+			if (oper == SyncOper.UPDATE)
+			{
+				XML old = field.getElement("oldvalue");
+				if (old != null)
+				{
+					OnOper type = Field.getOnOper(field,"type");
+					String oldvalue = old.getValue();
+					if (type == OnOper.INITIAL && oldvalue != null)
+						value = oldvalue;
+				}
+
+				if (idxml != null)
+				{
+					id = idxml.getValue();
+					if (id == null) id = idxml.getValue("oldvalue",null);
+				}
+			}
 
 			if (end1id != null && end2id != null)
 			{
@@ -536,8 +551,16 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 			case DATE:
 				element.setDateProperty(suffix,Misc.gmtdateformat.parse(value));
 				break;
+			case BYTES:
+				ByteArrayOutputStream bos = new ByteArrayOutputStream();
+				GZIPOutputStream gzip = new GZIPOutputStream(bos);
+				gzip.write(value.getBytes());
+				gzip.close();
+				element.setBytesProperty(suffix,bos.toByteArray());
+				bos.close();
+				break;
 			default:
-				throw new AdapterException("Unsupported uCMDB type " + attrtype + " for field " + suffix);
+				throw new AdapterException("Unsupported uCMDB type " + attrtype.type + " for field " + suffix);
 			}
 		}
 	}
