@@ -32,6 +32,19 @@ class AdapterException extends Exception
 	}
 }
 
+class AdapterNotFoundException extends AdapterException
+{
+	AdapterNotFoundException(String str)
+	{
+		super(str);
+	}
+
+	AdapterNotFoundException(Throwable ex)
+	{
+		super(ex);
+	}
+}
+
 class Rate
 {
 	private int counter;
@@ -149,7 +162,7 @@ class StreamGobbler implements Runnable
 			is.close ();
 
 		}
-		catch (Exception ex)
+		catch (IOException ex)
 		{
 			 if (Misc.isLog(5)) Misc.log("Problem reading stream " + name + ":" + ex);
 		}
@@ -166,7 +179,7 @@ class Misc
 
 	// See regexp negative lookbehind:
 	// https://stackoverflow.com/questions/2973436/regex-lookahead-lookbehind-and-atomic-groups
-	public static final Pattern substitutepattern = Pattern.compile("(?<!\\\\)%(.*?(?<![\\n\\\\]))%");
+	public static final Pattern substitutepattern = Pattern.compile("(?<![^\\\\]\\\\)%(.*?(?<![^\\\\][\\n\\\\]))%");
 
 	private static int loglevel = 1;
 	private static boolean trace = false;
@@ -203,7 +216,7 @@ class Misc
 		}
 	}
 
-	static private void setLogInfo(XML xmlconfig) throws Exception
+	static private void setLogInfo(XML xmlconfig) throws AdapterXmlException
 	{
 		XML logxml = xmlconfig.getElement("logfile");
 		if (logxml != null)
@@ -218,7 +231,7 @@ class Misc
 		if (logmaxsizeprop != null) maxsize = new Long(logmaxsizeprop);
 	}
 
-	static public void initXML(XML xmlconfig) throws Exception
+	static public void initXML(XML xmlconfig) throws AdapterXmlException
 	{
 		if (hostname == null || "".equals(hostname)) hostname = getHostName();
 
@@ -367,62 +380,70 @@ class Misc
 		log(1,error.toString());
 	}
 
-	static public void toFile(String filename,String text,String charset,boolean append) throws Exception
+	static public void toFile(String filename,String text,String charset,boolean append) throws AdapterException
 	{
-		File file = new File(javaadapter.getCurrentDir(),filename);
-		FileOutputStream stream = new FileOutputStream(file,append);
-		OutputStreamWriter out = charset == null ? new OutputStreamWriter(stream) : new OutputStreamWriter(stream,charset);
-		out.write(text,0,text.length());
-		out.close();
-		stream.close();
+		try {
+			File file = new File(javaadapter.getCurrentDir(),filename);
+			FileOutputStream stream = new FileOutputStream(file,append);
+			OutputStreamWriter out = charset == null ? new OutputStreamWriter(stream) : new OutputStreamWriter(stream,charset);
+			out.write(text,0,text.length());
+			out.close();
+			stream.close();
+		} catch(IOException ex) {
+			throw new AdapterException(ex);
+		}
 	}
 
-	static public BufferedReader getFileReader(File file,String default_charset) throws Exception
+	static public BufferedReader getFileReader(File file,String default_charset) throws AdapterException
 	{
 		byte bom[] = new byte[4];
 
-		FileInputStream fis = new FileInputStream(file);
-		int read = fis.read(bom);
+		try {
+			FileInputStream fis = new FileInputStream(file);
+			int read = fis.read(bom);
 
-		// Try to auto-detect character set. See: http://www.unicode.org/faq/utf_bom.html#bom1
-		String charset = null;
-		int bom_size = 0;
-		if (read >= 4 && bom[0] == (byte)0xFF && bom[1] == (byte)0xFE && bom[2] == (byte)0x00 && bom[3] == (byte)0x00)
-		{
-			charset = "UTF-32LE";
-			bom_size = 4;
-		}
-		else if (read >= 4 && bom[0] == (byte)0x00 && bom[1] == (byte)0x00 && bom[2] == (byte)0xFE && bom[3] == (byte)0xFF)
-		{
-			charset = "UTF-32BE";
-			bom_size = 4;
-		}
-		else if (read >= 3 && bom[0] == (byte)0xEF && bom[1] == (byte)0xBB && bom[2] == (byte)0xBF)
-		{
-			charset = "UTF-8";
-			bom_size = 3;
-		}
-		else if (read >= 2 && bom[0] == (byte)0xFF && bom[1] == (byte)0xFE)
-		{
-			charset = "UTF-16LE";
-			bom_size = 2;
-		}
-		else if (read >= 2 && bom[0] == (byte)0xFE && bom[1] == (byte)0xFF)
-		{
-			charset = "UTF-16BE";
-			bom_size = 2;
-		}
+			// Try to auto-detect character set. See: http://www.unicode.org/faq/utf_bom.html#bom1
+			String charset = null;
+			int bom_size = 0;
+			if (read >= 4 && bom[0] == (byte)0xFF && bom[1] == (byte)0xFE && bom[2] == (byte)0x00 && bom[3] == (byte)0x00)
+			{
+				charset = "UTF-32LE";
+				bom_size = 4;
+			}
+			else if (read >= 4 && bom[0] == (byte)0x00 && bom[1] == (byte)0x00 && bom[2] == (byte)0xFE && bom[3] == (byte)0xFF)
+			{
+				charset = "UTF-32BE";
+				bom_size = 4;
+			}
+			else if (read >= 3 && bom[0] == (byte)0xEF && bom[1] == (byte)0xBB && bom[2] == (byte)0xBF)
+			{
+				charset = "UTF-8";
+				bom_size = 3;
+			}
+			else if (read >= 2 && bom[0] == (byte)0xFF && bom[1] == (byte)0xFE)
+			{
+				charset = "UTF-16LE";
+				bom_size = 2;
+			}
+			else if (read >= 2 && bom[0] == (byte)0xFE && bom[1] == (byte)0xFF)
+			{
+				charset = "UTF-16BE";
+				bom_size = 2;
+			}
 
-		if (charset != null && default_charset != null && !charset.equalsIgnoreCase(default_charset))
-			throw new AdapterException("Detected charset " + charset + " for file '" + file.getName() + "' but " + default_charset + " is specified");
+			if (charset != null && default_charset != null && !charset.equalsIgnoreCase(default_charset))
+				throw new IOException("Detected charset " + charset + " for file '" + file.getName() + "' but " + default_charset + " is specified");
 
-		if (charset == null) charset = default_charset;
-		if (charset == null) charset = "ISO-8859-1";
+			if (charset == null) charset = default_charset;
+			if (charset == null) charset = "ISO-8859-1";
 
-		fis = new FileInputStream(file);
-		if (bom_size > 0) fis.skip(bom_size);
+			fis = new FileInputStream(file);
+			if (bom_size > 0) fis.skip(bom_size);
 
-		return new BufferedReader(new InputStreamReader(fis,charset));
+			return new BufferedReader(new InputStreamReader(fis,charset));
+		} catch(IOException ex) {
+			throw new AdapterException(ex);
+		}
 	}
 
 	static public String readFile(String filename)
@@ -485,12 +506,12 @@ class Misc
 		return out.toString();
 	}
 
-	static public String implode(Collection<String> strings)
+	static public String implode(Iterable<String> strings)
 	{
 		return implode(strings,",");
 	}
 
-	static public String implode(Collection<String> strings,String sep)
+	static public String implode(Iterable<String> strings,String sep)
 	{
 		StringBuilder sb = new StringBuilder();
 		String currentsep = "";
@@ -558,12 +579,12 @@ class Misc
 		return str.toString();
 	}
 
-	public static String toHexString(String text) throws Exception
+	public static String toHexString(String text) throws UnsupportedEncodingException
 	{
 		return toHexString(text,"ISO-8859-1");
 	}
 
-	public static String toHexString(String text,String charset) throws Exception
+	public static String toHexString(String text,String charset) throws UnsupportedEncodingException
 	{
 		StringBuilder str = new StringBuilder();
 		for(char ch:text.toCharArray())
@@ -620,47 +641,82 @@ class Misc
 		return str.substring(str_size - end_size).equalsIgnoreCase(end);
 	}
 
-	static public Object newObject(String object,Object... args) throws Exception
+	static public Object newObject(String object) throws AdapterException
+	{
+		try {
+			Class<?> cl = Class.forName(object);
+			return cl.newInstance();
+		} catch(IllegalAccessException | InstantiationException | ClassNotFoundException ex) {
+			throw new AdapterException(ex);
+		}
+	}
+
+	static public Object newObject(String object,Object... args) throws AdapterException
+	{
+		try {
+			Class<?>[] types = new Class[args.length];
+			for(int i = 0;i < args.length;i++)
+				types[i] = args[i].getClass();
+
+			Class<?> cl = Class.forName(object);
+			Constructor<?> ct = cl.getConstructor(types);
+			return ct.newInstance(args);
+		} catch(InvocationTargetException | IllegalAccessException | InstantiationException | NoSuchMethodException | ClassNotFoundException ex) {
+			throw new AdapterException(ex);
+		}
+	}
+
+	static public Object invokeStatic(String object,String name,Object... args) throws AdapterException
 	{
 		Class<?>[] types = new Class[args.length];
 		for(int i = 0;i < args.length;i++)
 			types[i] = args[i].getClass();
 
-		Class<?> cl = Class.forName(object);
-		Constructor<?> ct = cl.getConstructor(types);
-		return ct.newInstance(args);
+		try {
+			Class<?> cl = Class.forName(object);
+			Method method = cl.getDeclaredMethod(name,types);
+			if (method == null)
+				throw new NoSuchMethodException("Method " + name + " not found on object " + cl.getName());
+
+			return method.invoke(null,args);
+		} catch(InvocationTargetException | IllegalAccessException | ClassNotFoundException | NoSuchMethodException ex) {
+			throw new AdapterException(ex);
+		}
 	}
 
-	static public Object invokeStatic(String object,String name,Object... args) throws Exception
+	static public Object invoke(String object,String name,Object... args) throws AdapterException
+	{
+		try {
+			return invoke(Class.forName(object).newInstance(),name,args);
+		} catch(IllegalAccessException | InstantiationException | ClassNotFoundException ex) {
+			throw new AdapterException(ex);
+		}
+	}
+
+	static public Object invoke(Object object,String name,Object... args) throws AdapterException
 	{
 		Class<?>[] types = new Class[args.length];
 		for(int i = 0;i < args.length;i++)
 			types[i] = args[i].getClass();
 
-		Class<?> cl = Class.forName(object);
-		Method method = cl.getDeclaredMethod(name,types);
-		if (method == null)
-			throw new NoSuchMethodException("Method " + name + " not found on object " + cl.getName());
+		try {
+			Method method = getMethod(object,name,args);
+			if (method == null)
+				throw new NoSuchMethodException("Method " + name + " not found on object " + object.getClass().getName());
 
-		return method.invoke(null,args);
+			return method.invoke(object,args);
+		} catch(InvocationTargetException | IllegalAccessException | NoSuchMethodException ex) {
+			throw new AdapterException(ex);
+		}
 	}
 
-	static public Object invoke(String object,String name,Object... args) throws Exception
+	static public Class getClass(String name) throws AdapterException
 	{
-		return invoke(Class.forName(object).newInstance(),name,args);
-	}
-
-	static public Object invoke(Object object,String name,Object... args) throws Exception
-	{
-		Class<?>[] types = new Class[args.length];
-		for(int i = 0;i < args.length;i++)
-			types[i] = args[i].getClass();
-
-		Method method = getMethod(object,name,args);
-		if (method == null)
-			throw new NoSuchMethodException("Method " + name + " not found on object " + object.getClass().getName());
-
-		return method.invoke(object,args);
+		try {
+			return Class.forName(name);
+		} catch(ClassNotFoundException ex) {
+			throw new AdapterException(ex);
+		}
 	}
 
 	static public Method getMethod(Object object,String name,Object... args)
@@ -701,7 +757,7 @@ class Misc
 		}
 	}
 
-	static public XML checkActivate(XML xml) throws AdapterException
+	static public XML checkActivate(XML xml) throws AdapterXmlException
 	{
 		if (xml == null) return null;
 
@@ -730,7 +786,7 @@ class Misc
 		return has_positive ? null : xml;
 	}
 
-	static public boolean isFilterPass(XML xmlelement,XML xml) throws AdapterException
+	static public boolean isFilterPass(XML xmlelement,XML xml) throws AdapterXmlException
 	{
 		if (xmlelement == null) return true;
 
@@ -743,7 +799,7 @@ class Misc
 		return result == expectedresult;
 	}
 
-	static public boolean isFilterPass(XML xmlelement,String value) throws AdapterException
+	static public boolean isFilterPass(XML xmlelement,String value) throws AdapterXmlException
 	{
 		if (xmlelement == null) return true;
 
@@ -761,12 +817,12 @@ class Misc
 		return true;
 	}
 
-	static public boolean isFilterPass(XML xmlelement,Map<String,String> map) throws AdapterException
+	static public boolean isFilterPass(XML xmlelement,Map<String,String> map) throws AdapterXmlException
 	{
 		return isFilterPass(xmlelement,implode(map));
 	}
 
-	static public ArrayList<Subscriber> initSubscribers(XML xml) throws Exception
+	static public ArrayList<Subscriber> initSubscribers(XML xml) throws AdapterException
 	{
 		ArrayList<Subscriber> sublist = new ArrayList<Subscriber>();
 
@@ -788,7 +844,7 @@ class Misc
 		return sublist;
 	}
 
-	static public void initHooks(XML xml,ArrayList<Hook> hooklist) throws Exception
+	static public void initHooks(XML xml,ArrayList<Hook> hooklist) throws AdapterException
 	{
 		String interval = xml.getAttribute("interval");
 
@@ -810,7 +866,7 @@ class Misc
 		}
 	}
 
-	static public void activateSubscribers(ArrayList<Subscriber> sublist) throws Exception
+	static public void activateSubscribers(ArrayList<Subscriber> sublist) throws AdapterException
 	{
 		for(int i = 0;i < sublist.size();i++)
 		{
@@ -819,9 +875,13 @@ class Misc
 			String classname = sub.getClassName();
 			if (classname == null) continue;
 
-			Subscriber newsub = (Subscriber)Class.forName(classname).newInstance();
-			newsub.setOperation(sub);
-			sublist.set(i,newsub);
+			try {
+				Subscriber newsub = (Subscriber)Class.forName(classname).newInstance();
+				newsub.setOperation(sub);
+				sublist.set(i,newsub);
+			} catch(IllegalAccessException | InstantiationException | ClassNotFoundException ex) {
+				throw new AdapterException(ex);
+			}
 		}
 
 		javaadapter.setForShutdown(sublist);
@@ -838,7 +898,7 @@ class Misc
 		throw ex;
 	}
 
-	static public void activateHooks(ArrayList<Hook> hooklist) throws Exception
+	static public void activateHooks(ArrayList<Hook> hooklist) throws AdapterException
 	{
 		for(int i = 0;i < hooklist.size();i++)
 		{
@@ -847,9 +907,13 @@ class Misc
 			String classname = hook.getClassName();
 			if (classname == null) continue;
 
-			Hook newhook = (Hook)Class.forName(classname).newInstance();
-			newhook.setOperation(hook);
-			hooklist.set(i,newhook);
+			try {
+				Hook newhook = (Hook)Class.forName(classname).newInstance();
+				newhook.setOperation(hook);
+				hooklist.set(i,newhook);
+			} catch(IllegalAccessException | InstantiationException | ClassNotFoundException ex) {
+				throw new AdapterException(ex);
+			}
 		}
 
 		for(Hook hook:hooklist)
@@ -858,12 +922,12 @@ class Misc
 		javaadapter.setForShutdown(hooklist);
 	}
 
-	static public Process exec(String cmd) throws Exception
+	static public Process exec(String cmd) throws AdapterException
 	{
 		return exec(cmd,null);
 	}
 
-	static public String exec(String cmd,String charset,String input) throws Exception
+	static public String exec(String cmd,String charset,String input) throws IOException
 	{
 		Process process = Misc.execProcess(cmd);
 		if (process == null) return null;
@@ -887,32 +951,40 @@ class Misc
 		while((line = stderr.readLine()) != null)
 			sberr.append(line);
 
-		int exitval = process.waitFor();
+		try {
+			int exitval = process.waitFor();
 
-		if (Misc.isLog(12)) Misc.log("[out:" + cmd + ":code=" + exitval + "] " + sbout);
-		if (sberr.length() > 0 || exitval != 0)
-		{
-			Misc.log("ERROR: [" + cmd + "] " + sberr.toString());
-			return null;
+			if (Misc.isLog(12)) Misc.log("[out:" + cmd + ":code=" + exitval + "] " + sbout);
+			if (sberr.length() > 0 || exitval != 0)
+			{
+				Misc.log("ERROR: [" + cmd + "] " + sberr.toString());
+				return null;
+			}
+		} catch(InterruptedException ex) {
+			throw new IOException(ex);
 		}
 
 		return(new String(sbout));
 	}
 
-	static public Process exec(String cmd,String charset) throws Exception
+	static public Process exec(String cmd,String charset) throws AdapterException
 	{
-		Process process = execProcess(cmd);
-		if (process == null) return null;
+		try {
+			Process process = execProcess(cmd);
+			if (process == null) return null;
 
-		StreamGobbler out = new StreamGobbler("out:" + cmd,process.getInputStream(),charset);
-		StreamGobbler err = new StreamGobbler("err:" + cmd,process.getErrorStream(),charset,1);
-		out.start();
-		err.start();
+			StreamGobbler out = new StreamGobbler("out:" + cmd,process.getInputStream(),charset);
+			StreamGobbler err = new StreamGobbler("err:" + cmd,process.getErrorStream(),charset,1);
+			out.start();
+			err.start();
 
-		return process;
+			return process;
+		} catch(IOException ex) {
+			throw new AdapterException(ex);
+		}
 	}
 
-	static public Process execProcess(String cmd) throws Exception
+	static private Process execProcess(String cmd) throws IOException
 	{
 		if (cmd == null) return null;
 
@@ -1194,10 +1266,10 @@ class Misc
 
 	interface Substituer
 	{
-		String getValue(String value) throws Exception;
+		String getValue(String value) throws AdapterException;
 	}
 
-	public static String substitute(String str,Substituer sub) throws Exception
+	public static String substitute(String str,Substituer sub) throws AdapterException
 	{
 		return substitute(substitutepattern,str,sub);
 	}
@@ -1208,7 +1280,7 @@ class Misc
 		return str.replace("\\\\","\\").replace("\\%","%");
 	}
 
-	public static String substituteGet(String param,String def,VariableContext ctx) throws Exception
+	public static String substituteGet(String param,String def,VariableContext ctx) throws AdapterException
 	{
 		if (param.startsWith("$PASSWORD"))
 			return javaadapter.crypter.decrypt(XML.getDefaultVariable(param,ctx));
@@ -1221,8 +1293,12 @@ class Misc
 		}
 		else if (param.startsWith("!"))
 		{
-			String value = exec(param.substring(1),"ISO-8859-1",null);
-			return value == null ? value : value.trim();
+			try {
+				String value = exec(param.substring(1),"ISO-8859-1",null);
+				return value == null ? value : value.trim();
+			} catch(IOException ex) {
+				throw new AdapterException(ex);
+			}
 		}
 		else if (param.startsWith("@@"))
 		{
@@ -1253,7 +1329,7 @@ class Misc
 		return false;
 	}
 
-	public static String substitute(Pattern pattern,String str,Substituer sub) throws Exception
+	public static String substitute(Pattern pattern,String str,Substituer sub) throws AdapterException
 	{
 		if (str == null) return null;
 
@@ -1282,45 +1358,45 @@ class Misc
 		return sb.toString();
 	}
 
-	public static String substitute(String str,final VariableContext ctx) throws Exception
+	public static String substitute(String str,final VariableContext ctx) throws AdapterException
 	{
 		return substitute(str,new Misc.Substituer() {
-			public String getValue(String param) throws Exception
+			public String getValue(String param) throws AdapterException
 			{
 				return substituteGet(param,null,ctx);
 			}
 		});
 	}
 
-	public static String substitute(String str) throws Exception
+	public static String substitute(String str) throws AdapterException
 	{
 		return substitute(str,new Misc.Substituer() {
-			public String getValue(String param) throws Exception
+			public String getValue(String param) throws AdapterException
 			{
 				return substituteGet(param,null,null);
 			}
 		});
 	}
 
-	public static String substitute(String str,final Map<String,String> map) throws Exception
+	public static String substitute(String str,final Map<String,String> map) throws AdapterException
 	{
 		return substitute(str,new Misc.Substituer() {
-			public String getValue(String param) throws Exception
+			public String getValue(String param) throws AdapterException
 			{
 				return substituteGet(param,map.get(param),null);
 			}
 		});
 	}
 
-	public static String substitute(String str,final XML xml) throws Exception
+	public static String substitute(String str,final XML xml) throws AdapterException
 	{
 		return substitute(str,new Misc.Substituer() {
-			public String getValue(String param) throws Exception
+			public String getValue(String param) throws AdapterException
 			{
 				try {
 					String value = xml.getStringByPath(param);
 					if (value != null) return value;
-				} catch (javax.xml.xpath.XPathExpressionException ex) {}
+				} catch (AdapterXmlPathException ex) {}
 				return substituteGet(param,null,null);
 			}
 		});
@@ -1367,32 +1443,36 @@ class Misc
 		}
 	}
 
-	public static Set<Path> glob(String glob) throws IOException
+	public static Set<Path> glob(String glob) throws AdapterException
 	{
 		return glob(glob,null);
 	}
 
-	public static Set<Path> glob(String glob,String dir) throws IOException
+	public static Set<Path> glob(String glob,String dir) throws AdapterException
 	{
 		if (dir == null) dir = "";
 
 		final TreeSet<Path> paths = new TreeSet<Path>();
 		final PathMatcher matcher = FileSystems.getDefault().getPathMatcher("glob:" + glob);
 
-		Files.walkFileTree(Paths.get(dir),new SimpleFileVisitor<Path>() {
-			@Override
-			public FileVisitResult visitFile(Path path,BasicFileAttributes attrs) throws IOException
-			{
-				if (matcher.matches(path)) paths.add(path);
-				return FileVisitResult.CONTINUE;
-			}
+		try {
+			Files.walkFileTree(Paths.get(dir),new SimpleFileVisitor<Path>() {
+				@Override
+				public FileVisitResult visitFile(Path path,BasicFileAttributes attrs) throws IOException
+				{
+					if (matcher.matches(path)) paths.add(path);
+					return FileVisitResult.CONTINUE;
+				}
 
-			@Override
-			public FileVisitResult visitFileFailed(Path path,IOException exc) throws IOException
-			{
-				return FileVisitResult.CONTINUE;
-			}
-		});
+				@Override
+				public FileVisitResult visitFileFailed(Path path,IOException exc) throws IOException
+				{
+					return FileVisitResult.CONTINUE;
+				}
+			});
+		} catch(IOException ex) {
+			throw new AdapterException(ex);
+		}
 
 		if (paths.size() == 0)
 		{
@@ -1408,5 +1488,14 @@ class Misc
 
 		if (Misc.isLog(30)) Misc.log("Glob for " + glob + ": " + paths);
 		return paths;
+	}
+
+	public static void sleep(int delay) throws AdapterException
+	{
+		try {
+			Thread.sleep(delay);
+		} catch(InterruptedException ex) {
+			throw new AdapterException(ex);
+		}
 	}
 }

@@ -29,7 +29,7 @@ class Ucmdb
 	private int bulksize = 1;
 	private BulkType bulktype = BulkType.BULK;
 
-	private Ucmdb() throws Exception
+	private Ucmdb() throws AdapterException
 	{
 		adapterinfo = "javaadapter/" + javaadapter.getName();
 
@@ -53,7 +53,12 @@ class Ucmdb
 			bulktype = bulkxml.getAttributeEnum("type",BulkType.BULK,BulkType.class);
 		}
 
-		UcmdbServiceProvider serviceProvider = UcmdbServiceFactory.getServiceProvider(protocol,host,port);
+		UcmdbServiceProvider serviceProvider;
+		try {
+			serviceProvider  = UcmdbServiceFactory.getServiceProvider(protocol,host,port);
+		} catch(java.net.MalformedURLException ex) {
+			throw new AdapterException(ex);
+		}
 		ClientContext clientContext = serviceProvider.createClientContext(adapterinfo);
 		Credentials credentials = serviceProvider.createCredentials(username,password);
 		int retry = 0;
@@ -62,11 +67,11 @@ class Ucmdb
 			try {
 				service = serviceProvider.connect(credentials,clientContext);
 				break;
-			} catch (Exception ex) {
+			} catch (CustomerNotAvailableException ex) {
 				retry++;
 				if (retry > 3)
 					Misc.rethrow(ex);
-				Thread.sleep(10000);
+				Misc.sleep(10000);
 			}
 		}
 		System.out.println("Done");
@@ -87,7 +92,12 @@ class Ucmdb
 		return service.getClassModelService();
 	}
 
-	public synchronized static Ucmdb getInstance() throws Exception
+	ViewService getView()
+	{
+		return service.getViewService();
+	}
+
+	public synchronized static Ucmdb getInstance() throws AdapterException
 	{
 		if (instance == null)
 			instance = new Ucmdb();
@@ -150,16 +160,41 @@ class Ucmdb
 class ReaderUCMDB extends ReaderUtil
 {
 	Iterator<TopologyCI> cis;
+	Iterator<? extends ViewResultTreeNode> viewIter;
 	Topology topo;
 	String rootname;
 	Map<UcmdbId,Set<String>> mapids;
 	Ucmdb ucmdb = Ucmdb.getInstance();
 
-	public ReaderUCMDB(XML xml) throws Exception
+	public ReaderUCMDB(XML xml) throws AdapterException
 	{
 		super(xml);
 
+		String viewname = xml.getAttribute("view");
 		String queryname = xml.getAttribute("query");
+		if (viewname != null)
+		{
+			if (queryname != null)
+				throw new AdapterException("Cannot specify both view and query attributes");
+			if (instance == null) instance = viewname;
+			ViewService viewService = ucmdb.getView();
+			ViewFactory viewFactory = viewService.getFactory();
+			ViewExecutionOptions viewOptions = viewFactory.createOptions();
+			viewOptions.withViewProperties();
+
+			ViewResult viewResult = viewService.executeView(viewname,viewOptions);
+			List<? extends ViewResultTreeNode> viewList = viewResult.roots();
+			if (headers == null)
+			{
+				Iterator<? extends ViewResultTreeNode> iter = viewList.iterator();
+				if (iter.hasNext())
+					headers = propertiesToMap(iter.next().viewProperties()).keySet();
+			}
+
+			viewIter = viewList.iterator();
+			return;
+		}
+
 		if (instance == null) instance = queryname;
 		rootname = xml.getAttribute("root");
 		if (rootname == null) rootname = "Root";
@@ -185,6 +220,23 @@ class ReaderUCMDB extends ReaderUtil
 		mapids = topo.getContainingNodesMap();
 	}
 
+	@SuppressWarnings("unchecked")
+	private String getValue(Property property)
+	{
+		Object value = property.getValue();
+		if (value == null) return "";
+
+		switch(property.getType())
+		{
+		case DATE:
+			Date date = (Date)value;
+			return Misc.gmtdateformat.format(date);
+		case STRING_LIST:
+			return Misc.implode((Iterable<String>)value,"\n");
+		}
+		return value.toString().trim();
+	}
+
 	private void setProperties(String prefix,LinkedHashMap<String,String> row,Element element)
 	{
 		String post = "";
@@ -194,16 +246,7 @@ class ReaderUCMDB extends ReaderUtil
 		row.put(post + "ID",element.getId().getAsString());
 
 		for(Property property:element.properties())
-		{
-			Object value = property.getValue();
-			if (property.getType() == Type.DATE)
-			{
-				Date date = (Date)value;
-				row.put(post + property.getName(),Misc.gmtdateformat.format(date));
-			}
-			else
-				row.put(post + property.getName(),value == null ? "" : value.toString().trim());
-		}
+			row.put(post + property.getName(),getValue(property));
 	}
 
 	String getNameCount(String name,HashMap<String,Integer> counts)
@@ -230,7 +273,7 @@ class ReaderUCMDB extends ReaderUtil
 		return rootname.equals(name) ? null : name;
 	}
 
-	void getRelated(TopologyCI current,String prefix,HashMap<UcmdbId,String> ids,HashMap<String,Integer> counts,LinkedHashMap<String,String> row) throws Exception
+	void getRelated(TopologyCI current,String prefix,HashMap<UcmdbId,String> ids,HashMap<String,Integer> counts,LinkedHashMap<String,String> row) throws AdapterException
 	{
 		if (current == null) return;
 
@@ -273,9 +316,28 @@ class ReaderUCMDB extends ReaderUtil
 		}
 	}
 
-	@Override
-	public LinkedHashMap<String,String> nextRaw() throws Exception
+	private LinkedHashMap<String,String> propertiesToMap(List<Property> propertyList)
 	{
+		LinkedHashMap<String,String> row = new LinkedHashMap<String,String>();
+		for(Property property:propertyList)
+			row.put(property.getName(),getValue(property));
+		return row;
+	}
+
+	@Override
+	public LinkedHashMap<String,String> nextRaw() throws AdapterException
+	{
+		if (viewIter != null)
+		{
+			if (!viewIter.hasNext()) return null;
+
+			ViewResultTreeNode viewItem = viewIter.next();
+			List<Property> propertyList = viewItem.viewProperties();
+			LinkedHashMap<String,String> row = propertiesToMap(propertyList);
+			if (Misc.isLog(30)) Misc.log("uCMDB view row: " + row);
+			return row;
+		}
+
 		if (!cis.hasNext())
 		{
 			if (!topo.hasNextChunk()) return null;
@@ -297,7 +359,7 @@ class ReaderUCMDB extends ReaderUtil
 		getRelated(root,null,ids,counts,row);
 		row = normalizeFields(row);
 
-		if (Misc.isLog(30)) Misc.log("uCMDB row: " + row);
+		if (Misc.isLog(30)) Misc.log("uCMDB query row: " + row);
 
 		return row;
 	}
@@ -325,7 +387,7 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 	private String adapterinfo;
 	private final Pattern relationTagPattern = Pattern.compile("^((([^:]+):)?([^:]*):((REL|RREL)(_(\\d+))*)):INFO$");
 
-	public UCMDBUpdateSubscriber() throws Exception
+	public UCMDBUpdateSubscriber() throws AdapterException
 	{
 		ucmdb = Ucmdb.getInstance();
 		update = ucmdb.getUpdate();
@@ -339,7 +401,7 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 		actionmap.put(SyncOper.REMOVE,TopologyModificationAction.DELETE_IF_EXISTS);
 	}
 
-	private void FillUpdateData(TopologyModificationData data,XML xml,SyncOper oper) throws Exception
+	private void FillUpdateData(TopologyModificationData data,XML xml,SyncOper oper) throws AdapterException
 	{
 		final int debug = 15;
 		HashMap<String,Element> elements = new HashMap<String,Element>();
@@ -373,7 +435,6 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 			if (prefix == null) continue;
 
 			String value = field.getValue();
-			if (value == null) throw new AdapterException(xml,"Value for element " + tagname + " cannot be empty");
 
 			if (oper == SyncOper.UPDATE)
 			{
@@ -382,7 +443,7 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 				{
 					OnOper type = Field.getOnOper(field,"type");
 					String oldvalue = old.getValue();
-					if (type == OnOper.INITIAL && oldvalue != null)
+					if ((value == null || type == OnOper.INITIAL) && oldvalue != null)
 						value = oldvalue;
 				}
 
@@ -392,6 +453,8 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 					if (id == null) id = idxml.getValue("oldvalue",null);
 				}
 			}
+
+			if (value == null) throw new AdapterException(xml,"Value for element " + tagname + " cannot be empty");
 
 			if (end1id != null && end2id != null)
 			{
@@ -549,15 +612,23 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 				element.setStringListProperty(suffix,value.split("\n"));
 				break;
 			case DATE:
-				element.setDateProperty(suffix,Misc.gmtdateformat.parse(value));
+				try {
+					element.setDateProperty(suffix,Misc.gmtdateformat.parse(value));
+				} catch(java.text.ParseException ex) {
+					throw new AdapterException(ex);
+				}
 				break;
 			case BYTES:
-				ByteArrayOutputStream bos = new ByteArrayOutputStream();
-				GZIPOutputStream gzip = new GZIPOutputStream(bos);
-				gzip.write(value.getBytes());
-				gzip.close();
-				element.setBytesProperty(suffix,bos.toByteArray());
-				bos.close();
+				try {
+					ByteArrayOutputStream bos = new ByteArrayOutputStream();
+					GZIPOutputStream gzip = new GZIPOutputStream(bos);
+					gzip.write(value.getBytes());
+					gzip.close();
+					element.setBytesProperty(suffix,bos.toByteArray());
+					bos.close();
+				} catch(IOException ex) {
+					throw new AdapterException(ex);
+				}
 				break;
 			default:
 				throw new AdapterException("Unsupported uCMDB type " + attrtype.type + " for field " + suffix);
@@ -565,7 +636,7 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 		}
 	}
 
-	private void push(XML xml,SyncOper oper) throws Exception
+	private void push(XML xml,SyncOper oper) throws AdapterException
 	{
 		BulkType bulktype = ucmdb.getBulkType();
 		if (bulktype == BulkType.DATA && bulkcount > 0 && oper != bulkoper) flush();
@@ -588,7 +659,7 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 			flush();
 	}
 
-	private void flush()
+	private void flush() throws AdapterException
 	{
 		if (bulkdata != null)
 		{
@@ -599,16 +670,20 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 			bulkoper = SyncOper.START;
 
 			SingleTopologyModification modif = factory.createSingleTopologyModification(adapterinfo + "/" + currentoper,currentbulkdata,actionmap.get(currentoper));
-			GracefulTopologyModificationOutput output = update.executeGracefully(modif);
-			if (output.isSuccessFul()) return;
+			try {
+				GracefulTopologyModificationOutput output = update.executeGracefully(modif);
+				if (output.isSuccessFul()) return;
 
-			List<TopologyModificationFailure> failures = output.getFailures();
-			for(TopologyModificationFailure failure:failures)
-			{
-				TopologyData data = failure.getTopology();
-				Exception cause = failure.getCause();
-				Misc.log("ERROR: uCMDB bulk " + currentoper.toString().toLowerCase() + " " + ucmdb.implode(data.getCIs()) + " " + ucmdb.implode(data.getRelations()) + ": " + getExceptionMessage(cause));
-				if (Misc.isLog(30)) Misc.log(cause);
+				List<TopologyModificationFailure> failures = output.getFailures();
+				for(TopologyModificationFailure failure:failures)
+				{
+					TopologyData data = failure.getTopology();
+					Exception cause = failure.getCause();
+					Misc.log("ERROR: uCMDB bulk " + currentoper.toString().toLowerCase() + " " + ucmdb.implode(data.getCIs()) + " " + ucmdb.implode(data.getRelations()) + ": " + getExceptionMessage(cause));
+					if (Misc.isLog(30)) Misc.log(cause);
+				}
+			} catch (ExecutionException ex) {
+				throw new AdapterException(ex);
 			}
 		}
 
@@ -617,11 +692,15 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 			TopologyModificationBulk currentbulk = bulk;
 			bulk = null;
 			bulkcount = 0;
-			update.execute(currentbulk);
+			try {
+				update.execute(currentbulk);
+			} catch (ExecutionException ex) {
+				throw new AdapterException(ex);
+			}
 		}
 	}
 
-	protected void add(XML xmldest,XML xml) throws Exception
+	protected void add(XML xmldest,XML xml) throws AdapterException
 	{
 		XML[] customs = xmldest.getElements("customadd");
 		for(XML custom:customs)
@@ -662,19 +741,19 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 		push(xml,SyncOper.ADD);
 	}
 
-	private String getAddValue(XML xml) throws Exception
+	private String getAddValue(XML xml) throws AdapterException
 	{
 		if (xml == null) return null;
 		return xml.getValue();
 	}
 
-	private String getAddValue(XML xml,String name) throws Exception
+	private String getAddValue(XML xml,String name) throws AdapterException
 	{
 		XML idxml = xml.getElement(name);
 		return getAddValue(idxml);
 	}
 
-	private String getUpdateValue(XML xml) throws Exception
+	private String getUpdateValue(XML xml) throws AdapterException
 	{
 		if (xml == null) return null;
 		XML oldxml = xml.getElement("oldvalue");
@@ -686,13 +765,13 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 		return xml.getValue();
 	}
 
-	private String getUpdateValue(XML xml,String name) throws Exception
+	private String getUpdateValue(XML xml,String name) throws AdapterException
 	{
 		XML idxml = xml.getElement(name);
 		return getUpdateValue(idxml);
 	}
 
-	private void updatemulti(SyncOper oper,XML xml) throws Exception
+	private void updatemulti(SyncOper oper,XML xml) throws AdapterException
 	{
 		XML idxml = xml.getElement("ID");
 		String idlist = getUpdateValue(idxml);
@@ -710,7 +789,7 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 		push(xml,SyncOper.UPDATE);
 	}
 
-	protected void remove(XML xmldest,XML xml) throws Exception
+	protected void remove(XML xmldest,XML xml) throws AdapterException
 	{
 		XML[] customs = xmldest.getElements("customremove");
 		for(XML custom:customs)
@@ -748,7 +827,7 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 				delete.add("END2",end2value);
 				delete.add("INFO",xml.getValue("INFO",null));
 
-				push(xml,SyncOper.REMOVE);
+				push(delete,SyncOper.REMOVE);
 			}
 			return;
 		}
@@ -773,7 +852,7 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 		push(xml,SyncOper.REMOVE);
 	}
 
-	protected void update(XML xmldest,XML xml) throws Exception
+	protected void update(XML xmldest,XML xml) throws AdapterException
 	{
 		String old1 = getUpdateValue(xml,"END1");
 		String old2 = getUpdateValue(xml,"END2");
@@ -801,15 +880,15 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 		updatemulti(SyncOper.UPDATE,xml);
 	}
 
-	protected void start(XML xmldest,XML xml) throws Exception {}
+	protected void start(XML xmldest,XML xml) throws AdapterException {}
 
-	protected void end(XML xmldest,XML xml) throws Exception
+	protected void end(XML xmldest,XML xml) throws AdapterException
 	{
 		flush();
 	}
 
 	@Override
-	protected void setKeyValue(XML xml) throws Exception
+	protected void setKeyValue(XML xml) throws AdapterException
 	{
 		String[] keys = {"END1","END2","ID","INFO"};
 		for(String key:keys)

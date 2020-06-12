@@ -276,7 +276,7 @@ class ASI
 		{
 			object = (DataObject)Misc.invoke(service,"get",key);
 		}
-		catch(InvocationTargetException ex)
+		catch(AdapterException ex)
 		{
 			Misc.log(1,"Error invoking Granite object, Granite might be down, trying to reconnect");
 			close();
@@ -290,12 +290,7 @@ class ASI
 
 	public synchronized Key getKey(HashMap<String,Object> infoService,long id) throws Exception
 	{
-		Object objects[] = new Object[1];
-		objects[0] = id;
-		Class<?> types[] = new Class[1];
-		types[0] = Long.TYPE;
-
-		Key key = (Key)Class.forName("com.granite.asi.key." + (String)infoService.get(KEYCLASS)).getConstructor(types).newInstance(objects);
+		Key key = (Key)Misc.newObject("com.granite.asi.key." + (String)infoService.get(KEYCLASS),id);
 
 		return key;
 	}
@@ -694,7 +689,7 @@ class ChangeRequestSubscriber extends Subscriber
 	}
 
 	@Override
-	public XML run(XML xml) throws Exception
+	public XML run(XML xml) throws AdapterException
 	{
 		String objectname = xml.getValue("objectName");
 		String objectid = xml.getValue("objectId");
@@ -705,11 +700,15 @@ class ChangeRequestSubscriber extends Subscriber
 
 		if (Misc.isLog(3)) Misc.log("Change request: " + objectname + ", " + idnum + ", " + requestid);
 
-		ASIobject object = new ASIobject(objectname,idnum);
-		String name = object.getName();
-		if (Misc.isLog(5)) Misc.log("Processing " + name + "...");
-		object.setDefaultUda(requestid);
-		object.update();
+		try {
+			ASIobject object = new ASIobject(objectname,idnum);
+			String name = object.getName();
+			if (Misc.isLog(5)) Misc.log("Processing " + name + "...");
+			object.setDefaultUda(requestid);
+			object.update();
+		} catch(Exception ex) {
+			throw new AdapterException(ex);
+		}
 		return null;
 	}
 	public void close()
@@ -724,7 +723,7 @@ class NewServiceRequestSubscriber extends Subscriber
 	}
 
 	@Override
-	public XML run(XML xml) throws Exception
+	public XML run(XML xml) throws AdapterException
 	{
 		String objectname = xml.getValue("objectName");
 		if (!objectname.equals("Path")) return null;
@@ -732,47 +731,51 @@ class NewServiceRequestSubscriber extends Subscriber
 		String objectid = xml.getValue("objectId");
 		Long idnum = ASI.getGraniteId(objectid);
 
-		if (idnum != null)
-		{
-			XML result = xml.getElementByPath("serviceRequestFields[name='Status']/value");
-			if (result == null) return null;
+		try {
+			if (idnum != null)
+			{
+				XML result = xml.getElementByPath("serviceRequestFields[name='Status']/value");
+				if (result == null) return null;
 
-			String value = result.getValue();
-			if (value == null) return null;
+				String value = result.getValue();
+				if (value == null) return null;
 
-			if (Misc.isLog(3)) Misc.log("Update service request: " + objectname + " id: " + idnum);
+				if (Misc.isLog(3)) Misc.log("Update service request: " + objectname + " id: " + idnum);
 
-			value = value.trim();
+				value = value.trim();
 
-			ASIobject object = new ASIobject(objectname,idnum);
-			object.setAttribute("Status",value);
-			object.update();
+				ASIobject object = new ASIobject(objectname,idnum);
+				object.setAttribute("Status",value);
+				object.update();
 
-			return null;
+				return null;
+			}
+
+			if (Misc.isLog(3)) Misc.log("New service request: " + objectname);
+
+			ASIobject object = new ASIobject(objectname);
+
+			XML fields[] = xml.getElements("serviceRequestFields");
+			for(XML field:fields)
+			{
+				String uda = field.getValue("udaGroup");
+				String name = field.getValue("name");
+				// Use: Name, Status, Type, Bandwidth, TopologyAbbr, 
+				if (name == null) continue;
+
+				String value = field.getValue("value");
+				if (value == null) continue;
+
+				if (uda != null)
+					object.setUda(uda,name,value);
+				else
+					object.setAttribute(name,value);
+			}
+
+			object.insert();
+		} catch(Exception ex) {
+			throw new AdapterException(ex);
 		}
-
-		if (Misc.isLog(3)) Misc.log("New service request: " + objectname);
-
-		ASIobject object = new ASIobject(objectname);
-
-		XML fields[] = xml.getElements("serviceRequestFields");
-		for(XML field:fields)
-		{
-			String uda = field.getValue("udaGroup");
-			String name = field.getValue("name");
-			// Use: Name, Status, Type, Bandwidth, TopologyAbbr, 
-			if (name == null) continue;
-
-			String value = field.getValue("value");
-			if (value == null) continue;
-
-			if (uda != null)
-				object.setUda(uda,name,value);
-			else
-				object.setAttribute(name,value);
-		}
-
-		object.insert();
 		return null;
 	}
 	public void close()

@@ -3,6 +3,7 @@ import javax.naming.*;
 import javax.naming.directory.*;
 import javax.naming.ldap.*;
 import java.util.regex.*;
+import java.io.IOException;
 
 class directory
 {
@@ -14,7 +15,7 @@ class directory
 		private String[] attrs;
 		private int count;
 
-		Search(String basedn,String search,String[] attrs) throws Exception
+		Search(String basedn,String search,String[] attrs) throws NamingException,AdapterException
 		{
 			results = null;
 			this.basedn = basedn;
@@ -24,7 +25,7 @@ class directory
 			doSearch();
 		}
 
-		private void doSearch() throws Exception
+		private void doSearch() throws NamingException
 		{
 			SearchControls sc = new SearchControls();
 			sc.setReturningAttributes(attrs);
@@ -45,7 +46,7 @@ class directory
 			count = 0;
 		}
 
-		public LinkedHashMap<String,String> next() throws Exception
+		public LinkedHashMap<String,String> next() throws IOException,NamingException
 		{
 			if (results == null || !results.hasMore())
 			{
@@ -98,7 +99,7 @@ class directory
 		dirname = name;
 	}
 
-	public directory(String url,String context,String username,String password,String auth) throws Exception
+	public directory(String url,String context,String username,String password,String auth) throws NamingException
 	{
 		dirname = context;
 		Properties env = new Properties();
@@ -110,12 +111,12 @@ class directory
 		ctx = new InitialDirContext(env);
 	}
 
-	protected String getRelativeName(String name) throws Exception
+	protected String getRelativeName(String name) throws NamingException
 	{
 		return name;
 	}
 
-	public LinkedHashMap<String,List<String>> read(String dn,String[] fields) throws Exception
+	public LinkedHashMap<String,List<String>> read(String dn,String[] fields) throws NamingException
 	{
 		LinkedHashMap<String,List<String>> result = new LinkedHashMap<String,List<String>>();
 		Attributes set = ctx.getAttributes(dn,fields);
@@ -136,7 +137,7 @@ class directory
 		return result;
 	}
 
-	private XML read(String dn,XML sourcexml) throws Exception
+	private XML read(String dn,XML sourcexml) throws NamingException,AdapterXmlException
 	{
 		// DN must be complete but relative to base DN
 		XML xml = new XML();
@@ -187,7 +188,7 @@ class directory
 		return name;
 	}
 
-	private void modAdd(ArrayList<ModificationItem> mods,int oper,XML xml) throws Exception
+	private void modAdd(ArrayList<ModificationItem> mods,int oper,XML xml) throws AdapterXmlException
 	{
 		XML[] xmllist = xml.getElements(null);
 		for(XML el:xmllist)
@@ -210,7 +211,7 @@ class directory
 		}
 	}
 
-	public XML oper(XML xml,XML node) throws Exception
+	public XML oper(XML xml,XML node) throws IOException,NamingException,AdapterException
 	{
 		String root = xml.getTagName();
 		if (root == null)
@@ -356,22 +357,22 @@ class directory
 		return read(dn,xml);
 	}
 
-	public void search(String basedn,String search,String[] attrs) throws Exception
+	public void search(String basedn,String search,String[] attrs) throws NamingException,AdapterException
 	{
 		search_info = new Search(basedn,search,attrs);
 	}
 
-	protected boolean setPagedNext(int count) throws Exception
+	protected boolean setPagedNext(int count) throws IOException,NamingException
 	{
 		return false;
 	}
 
-	public LinkedHashMap<String,String> searchNext() throws Exception
+	public LinkedHashMap<String,String> searchNext() throws IOException,NamingException
 	{
 		return search_info.next();
 	}
 
-	public void disconnect() throws Exception
+	public void disconnect() throws NamingException
 	{
 		if (ctx == null) return;
 		ctx.close();
@@ -384,7 +385,7 @@ class ldap extends directory
 	private int pageSize = 100;
 	private LdapContext ld;
 
-	public ldap(String url,String username,String password,String[] sortattrs,String auth,String referral,String deref,boolean notrust) throws Exception
+	public ldap(String url,String username,String password,String[] sortattrs,String auth,String referral,String deref,boolean notrust) throws IOException,NamingException
 	{
 		super("LDAP");
 
@@ -451,7 +452,7 @@ class ldap extends directory
 	}
 
 	@Override
-	protected String getRelativeName(String name) throws Exception
+	protected String getRelativeName(String name) throws NamingException
 	{
 		LdapName ln;
 		try
@@ -478,7 +479,7 @@ class ldap extends directory
 	}
 
 	@Override
-	protected boolean setPagedNext(int count) throws Exception
+	protected boolean setPagedNext(int count) throws IOException,NamingException
 	{
 		byte[] cookie = null;
 		Control[] controls = null;
@@ -532,7 +533,7 @@ class ldap extends directory
 
 class dns extends directory
 {
-	public dns() throws Exception
+	public dns() throws NamingException
 	{
 		super("DNS");
 
@@ -541,7 +542,7 @@ class dns extends directory
 		ctx = new InitialDirContext(env);
 	}
 
-	public List<String> readSRV(String dn) throws Exception
+	public List<String> readSRV(String dn) throws NamingException
 	{
 		String[] fields = {"SRV"};
 		List<String> servers = new ArrayList<String>();

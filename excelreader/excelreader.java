@@ -13,34 +13,39 @@ import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.CellType;
 import org.apache.poi.poifs.filesystem.OfficeXmlFileException;
+import org.apache.poi.hssf.usermodel.HSSFDateUtil;
 
 class ReaderExcel extends ReaderUtil
 {
 	Iterator<Row> rows;
 
-	public ReaderExcel(XML xml) throws Exception
+	public ReaderExcel(XML xml) throws AdapterException
 	{
 		super(xml);
 
 		String filename = xml.getAttribute("filename");
 		Set<Path> paths = Misc.glob(filename);
-		if (paths.size() != 1) throw new FileNotFoundException("File not found or multiple match: " + filename);
+		if (paths.size() != 1) throw new AdapterNotFoundException("File not found or multiple match: " + filename);
 		File file = new File(paths.iterator().next().toString());
 		if (instance == null) instance = file.getName();
 
 		String sheetname = xml.getAttribute("worksheet");
 		Sheet worksheet;
 		try {
-			FileInputStream fis = new FileInputStream(file);
-			HSSFWorkbook workbook = new HSSFWorkbook(fis);
-			worksheet = sheetname == null ? workbook.getSheetAt(0) : workbook.getSheet(sheetname);
-		} catch(OfficeXmlFileException ex) {
-			FileInputStream fis = new FileInputStream(file);
-			XSSFWorkbook workbook = new XSSFWorkbook(fis);
-			worksheet = sheetname == null ? workbook.getSheetAt(0) : workbook.getSheet(sheetname);
+			try {
+				FileInputStream fis = new FileInputStream(file);
+				HSSFWorkbook workbook = new HSSFWorkbook(fis);
+				worksheet = sheetname == null ? workbook.getSheetAt(0) : workbook.getSheet(sheetname);
+			} catch(OfficeXmlFileException ex) {
+				FileInputStream fis = new FileInputStream(file);
+				XSSFWorkbook workbook = new XSSFWorkbook(fis);
+				worksheet = sheetname == null ? workbook.getSheetAt(0) : workbook.getSheet(sheetname);
+			}
+		} catch(IOException ex) {
+			throw new AdapterException(ex);
 		}
 
-		if (worksheet == null) throw new FileNotFoundException("Worksheet " + (sheetname == null ? "" : sheetname + " ") + "not found in file: " + filename);
+		if (worksheet == null) throw new AdapterNotFoundException("Worksheet " + (sheetname == null ? "" : "\"" + sheetname + "\" ") + "not found in file: " + filename);
 
 		rows = worksheet.rowIterator();
 		Row row = null;
@@ -89,7 +94,7 @@ class ReaderExcel extends ReaderUtil
 		}
 	}
 
-	String getCellValue(Cell cell) throws Exception
+	String getCellValue(Cell cell) throws AdapterException
 	{
 		if (cell == null) return null;
 
@@ -105,9 +110,15 @@ class ReaderExcel extends ReaderUtil
 				value = "";
 				break;
 			case NUMERIC:
-				final DecimalFormat df = new DecimalFormat("0",DecimalFormatSymbols.getInstance(Locale.ENGLISH));
-				df.setMaximumFractionDigits(340);
-				value = df.format(cell.getNumericCellValue());
+				if (HSSFDateUtil.isCellDateFormatted(cell))
+				{
+					Date date = cell.getDateCellValue();
+					value = Misc.gmtdateformat.format(date);
+				} else {
+					final DecimalFormat df = new DecimalFormat("0",DecimalFormatSymbols.getInstance(Locale.ENGLISH));
+					df.setMaximumFractionDigits(340);
+					value = df.format(cell.getNumericCellValue());
+				}
 				break;
 			case BOOLEAN:
 				value = cell.getBooleanCellValue() ? "true" : "false";
@@ -119,12 +130,12 @@ class ReaderExcel extends ReaderUtil
 				throw new AdapterException("Unsupported cell type " + type);
 		}
 
-		if (Misc.isLog(35)) Misc.log("Cell value [" + cell.getRowIndex() + "," + cell.getColumnIndex() + "]: " + value);
+		if (Misc.isLog(35)) Misc.log("Cell value [" + cell.getRowIndex() + "," + cell.getColumnIndex() + "]: " + type + ": " + value);
 		return value;
 	}
 
 	@Override
-	public LinkedHashMap<String,String> nextRaw() throws Exception
+	public LinkedHashMap<String,String> nextRaw() throws AdapterException
 	{
 		if (!rows.hasNext()) return null;
 
@@ -137,7 +148,8 @@ class ReaderExcel extends ReaderUtil
 			if (!header.isEmpty())
 			{
 				Cell cell = row.getCell(pos);
-				result.put(header,getCellValue(cell));
+				String value = getCellValue(cell);
+				result.put(header,value == null ? "" : value);
 			}
 			pos++;
 		}

@@ -66,18 +66,15 @@ class Field
 	private boolean hasvalue = false;
 	private boolean isdefault = false;
 	private String copyname;
-	private String filtername;
-	private String filterresult;
 	private boolean iskey = false;
 
 	private OnOper onempty = OnOper.IGNORE;
 	private OnOper onmissing = OnOper.IGNORE;
 	private String forceemptyvalue;
-	private String ifexists;
 	private String synclist[];
 	private Scope scope;
 
-	public Field(XML xml,Scope scope) throws Exception
+	public Field(XML xml,Scope scope) throws AdapterException
 	{
 		xmlfield = xml;
 		this.scope = scope;
@@ -88,20 +85,12 @@ class Field
 		String strip = xml.getAttributeDeprecated("strip");
 		if (strip != null && strip.equals("true")) dostrip = true;
 		copyname = xml.getAttribute("copy");
-		filtername = xml.getAttribute("filter");
-		filterresult = xml.getAttribute("filter_result");
 
 		xml.setAttributeDeprecated("on_not_found","on_empty");
 		onempty = getOnOper("on_empty",OnOper.IGNORE,EnumSet.of(OnOper.IGNORE,OnOper.REJECT_FIELD,OnOper.REJECT_RECORD,OnOper.WARNING,OnOper.ERROR,OnOper.EXCEPTION));
 		onmissing = getOnOper("on_missing",OnOper.IGNORE,EnumSet.of(OnOper.IGNORE,OnOper.EXCEPTION));
 
 		forceemptyvalue = xml.getAttribute("force_empty_value");
-		ifexists = null;
-		if (xml.isAttribute("if_exists"))
-		{
-			ifexists = xml.getAttribute("if_exists");
-			if (ifexists == null) ifexists = "";
-		}
 		String forsync = xml.getAttribute("for_sync");
 		if (forsync != null) synclist = forsync.split("\\s*,\\s*");
 
@@ -117,7 +106,7 @@ class Field
 		return name + " (scope=" + scope + ",iskey=" + iskey + ",hasvalue=" + hasvalue + ",isdefault=" + isdefault + ")";
 	}
 
-	public Field(String name) throws Exception
+	public Field(String name) throws AdapterException
 	{
 		this.name = name;
 		iskey = true;
@@ -223,7 +212,7 @@ class Field
 		return synclist;
 	}
 
-	public boolean isValid(Sync sync) throws Exception
+	public boolean isValid(Sync sync) throws AdapterException
 	{
 		boolean result = sync.getDBSync().isValidSync(synclist,sync.getScope());
 		if (!result) return false;
@@ -232,11 +221,24 @@ class Field
 		return true;
 	}
 
-	public boolean isValidFilter(Map<String,String> result) throws Exception
+	public static boolean isValidFilter(XML xml,Map<String,String> result,String current) throws AdapterException
 	{
+		String ifexists = null;
+
+		if (xml.isAttribute("if_exists"))
+		{
+			ifexists = xml.getAttribute("if_exists");
+			if (ifexists == null) ifexists = "";
+		}
+
 		if (ifexists != null)
 		{
-			if (ifexists.isEmpty()) ifexists = getName();
+			if (ifexists.isEmpty())
+			{
+				if (current == null) throw new AdapterException("if_exists attribute cannot have an empty value");
+				ifexists = current;
+			}
+
 			String[] keys = ifexists.split("\\s*,\\s*");
 			for(String key:keys)
 			{
@@ -244,13 +246,22 @@ class Field
 				if (value == null || value.isEmpty()) return false;
 			}
 		}
+
+		String filtername = xml.getAttribute("filter");
+		String filterresult = xml.getAttribute("filter_result");
+
 		if (filtername == null && filterresult == null) return true;
 
-		XML xml = new XML();
-		xml.add("root",result);
-		if (Misc.isLog(30)) Misc.log("Looking for filter " + filtername + " [" + filterresult + "]: " + xml);
+		XML xmlresult = new XML();
+		xmlresult.add("root",result);
+		if (Misc.isLog(30)) Misc.log("Looking for filter " + filtername + " [" + filterresult + "]: " + xmlresult);
 
-		return Misc.isFilterPass(xmlfield,xml);
+		return Misc.isFilterPass(xml,xmlresult);
+	}
+
+	public boolean isValidFilter(Map<String,String> result) throws AdapterException
+	{
+		return isValidFilter(xmlfield,result,getName());
 	}
 
 	public void updateCache(HashMap<String,String> row)
@@ -271,7 +282,7 @@ class FieldValue<T>
 	}
 
 	Field getField() { return field; }
-	T getValue(Map<String,String> row) throws Exception
+	T getValue(Map<String,String> row) throws AdapterException
 	{
 		if (row == null || field.isValidFilter(row)) return value;
 		return null;
@@ -293,7 +304,7 @@ class Fields
 	private ArrayList<Field> fields;
 	private DBSyncOper dbsync;
 
-	public Fields(DBSyncOper dbsync,Set<String> keyfields) throws Exception
+	public Fields(DBSyncOper dbsync,Set<String> keyfields) throws AdapterException
 	{
 		this.dbsync = dbsync;
 		this.keyfields = new LinkedHashSet<String>(keyfields);
@@ -324,12 +335,16 @@ class Fields
 	}
 
 	@SuppressWarnings("unchecked")
-	<T>T getFeature(Scope scope,FieldFeature feature,String name,Map<String,String> row) throws Exception
+	<T>T getFeature(Scope scope,FieldFeature feature,String name,Map<String,String> row) throws AdapterException
 	{
-		return (T)features.get(scope).get(feature).get(name).getValue(row);
+		EnumMap<FieldFeature,HashMap<String,FieldValue>> fieldscope = features.get(scope);
+		HashMap<String,FieldValue> fieldfeature = fieldscope.get(feature);
+		FieldValue fieldvalue = fieldfeature.get(name);
+		if (fieldvalue == null) return null;
+		return (T)fieldvalue.getValue(row);
 	}
 
-	void setDefaultFields(Set<String> set,Scope scope) throws Exception
+	void setDefaultFields(Set<String> set,Scope scope) throws AdapterException
 	{
 		XML xml = new XML();
 		xml = xml.add("field");
@@ -359,12 +374,12 @@ class Fields
 		}
 	}
 
-	public void addDefaultVar(XML xml) throws Exception
+	public void addDefaultVar(XML xml) throws AdapterException
 	{
 		XML.setDefaultVariable(xml.getAttribute("name"),xml.getAttribute("value"));
 	}
 
-	public void removeDefaultVar(XML xml) throws Exception
+	public void removeDefaultVar(XML xml) throws AdapterException
 	{
 		XML.setDefaultVariable(xml.getAttribute("name"),null);
 	}
@@ -385,12 +400,12 @@ class Fields
 			set.add(field.getCopyName());
 	}
 
-	public void add(Field field) throws Exception
+	public void add(Field field) throws AdapterException
 	{
 		add(field,false,-1);
 	}
 
-	public void add(Field field,boolean isdefault,int pos) throws Exception
+	public void add(Field field,boolean isdefault,int pos) throws AdapterException
 	{
 		addName(namefields,field);
 
@@ -459,12 +474,15 @@ class Fields
 		return namefields;
 	}
 
-	public Set<String> getNames(Sync sync) throws Exception
+	public Set<String> getNames(Sync sync) throws AdapterException
 	{
 		Set<String> names = new LinkedHashSet<String>();
 		Map<String,String> renamed_names = new HashMap<String,String>();
 		for(Field field:fields)
 		{
+			Scope scope = field.getScope();
+			if (scope != Scope.SCOPE_GLOBAL && scope != sync.getScope())
+				continue;
 			String name = field.getName();
 			String newname = field.getNewName();
 			if (newname != null) renamed_names.put(name,newname);
@@ -490,7 +508,7 @@ class Fields
 		return fields;
 	}
 
-	private void doFunction(LinkedHashMap<String,String> result,XML function) throws Exception
+	private void doFunction(LinkedHashMap<String,String> result,XML function) throws AdapterException
 	{
 		if (function == null) return;
 		if (javaadapter.isShuttingDown()) return;
@@ -525,17 +543,17 @@ class Fields
 		}
 	}
 
-	public LinkedHashMap<String,String> getNext(Sync sync) throws Exception
+	public LinkedHashMap<String,String> getNext(Sync sync) throws AdapterException
 	{
 		try {
 			return getNextSub(sync);
-		} catch(Exception ex) {
+		} catch(AdapterException ex) {
 			Misc.rethrow(ex,"ERROR: Exception generated while reading " + sync.getDescription());
 		}
 		return null;
 	}
 
-	public LinkedHashMap<String,String> getNextSub(Sync sync) throws Exception
+	public LinkedHashMap<String,String> getNextSub(Sync sync) throws AdapterException
 	{
 		final String traceid = "GETNEXT";
 		LinkedHashMap<String,String> result;
@@ -602,7 +620,7 @@ class Fields
 						case EXCEPTION:
 							throw new AdapterException("[" + sync.getName() + ":" + dbsync.getDisplayKey(keyset,result) + "] Invalid lookup " + (erroroper.getName() == null ? "" : "[" + erroroper.getName() + "] ") + "for field " + field.getName() + ": " + (erroroper.getMessage() == null ? "" : erroroper.getMessage() + ": ") + result);
 						}
-					} catch (Exception ex) {
+					} catch (AdapterException ex) {
 						Misc.rethrow(ex);
 					}
 				} else if (value == null) continue; // Skip field if already ignored during pre-processing
@@ -657,6 +675,7 @@ class Fields
 					case USE_FIRST:
 						String[] values = value.split("\n");
 						value = values.length > 0 ? values[0] : "";
+						if (sync.getReader().toTrim()) value = value.trim();
 						break;
 					}
 				}

@@ -36,7 +36,6 @@ class DBSyncOper
 	private Sync destinationsync;
 	private DatabaseUpdateSubscriber update;
 	private LinkedHashSet<String> displayfields;
-	private Set<String> comparefields;
 	private HashSet<String> tracekeys;
 	private LinkedHashSet<String> ignorefields;
 	private Fields fields;
@@ -50,7 +49,7 @@ class DBSyncOper
 	private boolean ignorecasekeys;
 	private boolean ignorecasefields;
 
-	public DBSyncOper() throws Exception
+	public DBSyncOper() throws AdapterException
 	{
 		db = DB.getInstance();
 		update = new DatabaseUpdateSubscriber();
@@ -121,7 +120,7 @@ class DBSyncOper
 		return set.size() == 0 ? null : Misc.implode(set,"/");
 	}
 
-	public boolean isValidSync(String[] synclist,Scope scope) throws Exception
+	public boolean isValidSync(String[] synclist,Scope scope) throws AdapterException
 	{
 		if (synclist == null) return true;
 		if (Misc.isLog(30)) Misc.log("Field: Doing validation against " + Misc.implode(synclist));
@@ -145,7 +144,7 @@ class DBSyncOper
 		return false;
 	}
 
-	private void flush() throws Exception
+	private void flush() throws AdapterException
 	{
 		if (dbsyncplugin.preview_mode || directmode)
 		{
@@ -180,7 +179,7 @@ class DBSyncOper
 		xmloperlist.clear();
 	}
 
-	private void push(SyncOper oper) throws Exception
+	private void push(SyncOper oper) throws AdapterException
 	{
 		XML xml = new XML();
 		XML node = xml.add(oper.toString().toLowerCase());
@@ -201,7 +200,7 @@ class DBSyncOper
 		xmloperlist.add(xml);
 	}
 
-	private void push(SyncOper oper,LinkedHashMap<String,String> row,LinkedHashMap<String,String> rowold) throws Exception
+	private void push(SyncOper oper,LinkedHashMap<String,String> row,LinkedHashMap<String,String> rowold) throws AdapterException
 	{
 		XML sourcexml = sourcesync.getXML();
 		XML destinationxml = destinationsync == null ? null : destinationsync.getXML();
@@ -209,9 +208,10 @@ class DBSyncOper
 		XML xml = new XML();
 		XML xmlop = xml.add(oper.toString().toLowerCase());
 
-		Set<String> destinationheader = destinationsync == null ? null : destinationsync.getResultHeader();
-		Set<String> allfields = comparefields;
-		if (allfields == null) allfields = row.keySet(); // If destination null, use source fields
+		Set<String> destinationheader = null;
+		Set<String> allfields = row.keySet(); // If destination null, use source fields
+		if (destinationsync != null)
+			allfields = destinationheader = destinationsync.getResultHeader();
 
 		ArrayList<String> changes = new ArrayList<String>();
 		HashMap<String,String> cachevalues = new HashMap<String,String>();
@@ -358,7 +358,7 @@ class DBSyncOper
 			flush();
 	}
 
-	private void remove(LinkedHashMap<String,String> row) throws Exception
+	private void remove(LinkedHashMap<String,String> row) throws AdapterException
 	{
 		if (doremove == doTypes.ERROR) Misc.log("ERROR: [" + destinationsync.getName() + ':' + getDisplayKey(fields.getKeys(),row) + "] removing entry rejected: " + row);
 		if (doremove != doTypes.TRUE) return;
@@ -366,7 +366,7 @@ class DBSyncOper
 		push(SyncOper.REMOVE,row,null);
 	}
 
-	private void add(LinkedHashMap<String,String> row) throws Exception
+	private void add(LinkedHashMap<String,String> row) throws AdapterException
 	{
 		if (doadd == doTypes.ERROR) Misc.log("ERROR: [" + sourcesync.getName() + ':' + getDisplayKey(fields.getKeys(),row) + "] adding entry rejected: " + row);
 		if (doadd != doTypes.TRUE) return;
@@ -375,7 +375,7 @@ class DBSyncOper
 		push(SyncOper.ADD,row,null);
 	}
 
-	private void update(LinkedHashMap<String,String> rowold,LinkedHashMap<String,String> rownew) throws Exception
+	private void update(LinkedHashMap<String,String> rowold,LinkedHashMap<String,String> rownew) throws AdapterException
 	{
 		if (doupdate == doTypes.ERROR) Misc.log("ERROR: [" + sourcesync.getName() + ':' + getDisplayKey(fields.getKeys(),rownew) + "] updating entry rejected: " + rownew);
 		if (doupdate != doTypes.TRUE) return;
@@ -418,7 +418,7 @@ class DBSyncOper
 		return key.toString();
 	}
 
-	private void getSyncFileNotFound(Exception ex,XML xml) throws Exception
+	private void getSyncFileNotFound(AdapterNotFoundException ex,XML xml) throws AdapterException
 	{
 		xml.setAttributeDeprecated("on_not_found","on_file_not_found");
 		OnOper onnotfound = Field.getOnOper(xml,"on_file_not_found",OnOper.EXCEPTION,EnumSet.of(OnOper.EXCEPTION,OnOper.IGNORE,OnOper.WARNING,OnOper.ERROR));
@@ -435,22 +435,27 @@ class DBSyncOper
 		}
 	}
 
-	private Sync getSync(XML xml,XML xmlextra,XML xmlsource) throws Exception
+	private Sync getSync(XML xml,XML xmlextra,XML xmlsource) throws AdapterException
 	{
 		try {
-			return getSyncSub(xml,xmlextra,xmlsource);
-		} catch(FileNotFoundException ex) {
+			Sync sync = getSyncSub(xml,xmlextra,xmlsource);
+			if (sync.getReader().getHeader() == null)
+				throw new AdapterException("No header provided by reader: " + xml);
+			return sync;
+		} catch(AdapterNotFoundException ex) {
 			getSyncFileNotFound(ex,xml);
-		} catch(java.lang.reflect.InvocationTargetException ex) {
+		} catch(AdapterException ex) {
 			if (ex.getCause() instanceof FileNotFoundException)
-				getSyncFileNotFound((Exception)ex.getCause(),xml);
+				getSyncFileNotFound(new AdapterNotFoundException(ex.getCause()),xml);
+			else if (ex.getCause() != null && ex.getCause().getCause() instanceof FileNotFoundException)
+				getSyncFileNotFound(new AdapterNotFoundException(ex.getCause().getCause()),xml);
 			else
 				Misc.rethrow(ex);
 		}
 		return null;
 	}
 
-	private Sync getSyncSub(XML xml,XML xmlextra,XML xmlsource) throws Exception
+	private Sync getSyncSub(XML xml,XML xmlextra,XML xmlsource) throws AdapterException
 	{
 		String type = xml.getAttribute("type");
 		if (type == null) type = "db";
@@ -481,7 +486,7 @@ class DBSyncOper
 		throw new AdapterException(xml,"Invalid sync type " + type);
 	}
 
-	private void compare() throws Exception
+	private void compare() throws AdapterException
 	{
 		final String traceid = "COMPARE";
 		final Comparator<String> collator = db.getCollator();
@@ -505,10 +510,15 @@ class DBSyncOper
 		push(SyncOper.START);
 
 		LinkedHashMap<String,String> row = fields.getNext(sourcesync);
-		LinkedHashMap<String,String> rowdest = (destinationsync == null) ? null : fields.getNext(destinationsync);
-
-		comparefields = (destinationsync == null) ? null : destinationsync.getResultHeader();
-		if (comparefields != null && ignorefields != null) comparefields.removeAll(ignorefields);
+		LinkedHashMap<String,String> rowdest = null;
+		Set<String> comparefields = null;
+		if (destinationsync != null)
+		{
+			rowdest = fields.getNext(destinationsync);
+			comparefields = destinationsync.getResultHeader();
+			if (ignorefields != null) comparefields.removeAll(ignorefields);
+			if (Misc.isLog(30)) Misc.log("Compare fields: " + Misc.implode(comparefields));
+		}
 
 		/* keycheck is obsolete and should no longer be used */
 		String keycheck = sourcesync.getXML().getAttribute("keycheck");
@@ -602,7 +612,7 @@ class DBSyncOper
 		flush();
 	}
 
-	private void exec(XML xml,String oper) throws Exception
+	private void exec(XML xml,String oper) throws AdapterException
 	{
 		XML[] execlist = xml.getElements(oper);
 		for(XML element:execlist)
@@ -627,24 +637,28 @@ class DBSyncOper
 			}
 
 			String charset = element.getAttribute("charset");
-			Process process = Misc.exec(command,charset);
-			int exitval = process.waitFor();
-			if (exitval != 0)
-				throw new AdapterException(element,"Command cannot be executed properly, result code is " + exitval);
+			try {
+				Process process = Misc.exec(command,charset);
+				int exitval = process.waitFor();
+				if (exitval != 0)
+					throw new AdapterException(element,"Command cannot be executed properly, result code is " + exitval);
+			} catch(InterruptedException ex) {
+				throw new AdapterException(ex);
+			}
 		}
 	}
 
-	public void run() throws Exception
+	public void run() throws AdapterException
 	{
 		run(null,null);
 	}
 
-	public void run(XML xmlfunction) throws Exception
+	public void run(XML xmlfunction) throws AdapterException
 	{
 		run(xmlfunction,null);
 	}
 
-	private doTypes getOperationFlag(XML xml,String attr) throws Exception
+	private doTypes getOperationFlag(XML xml,String attr) throws AdapterException
 	{
 		String dostr = xml.getAttribute(attr);
 		if (dostr == null) return null;
@@ -659,7 +673,7 @@ class DBSyncOper
 			throw new AdapterException(xml,"Invalid " + attr + " attribute");
 	}
 
-	private Boolean getBooleanFlag(XML xml,String attr) throws Exception
+	private Boolean getBooleanFlag(XML xml,String attr) throws AdapterException
 	{
 		String dostr = xml.getAttribute(attr);
 		if (dostr == null) return null;
@@ -671,7 +685,7 @@ class DBSyncOper
 		else
 			throw new AdapterException(xml,"Invalid " + attr + " attribute");
 	}
-	private void setOperationFlags(XML xml) throws Exception
+	private void setOperationFlags(XML xml) throws AdapterException
 	{
 		doTypes doresult = getOperationFlag(xml,"do_add");
 		if (doresult != null) doadd = doresult;
@@ -705,10 +719,10 @@ class DBSyncOper
 		}
 	}
 
-	private String substituteFilename(String str,final String def) throws Exception
+	private String substituteFilename(String str,final String def) throws AdapterException
 	{
 		return Misc.substitute(str,new Misc.Substituer() {
-			public String getValue(String param) throws Exception
+			public String getValue(String param) throws AdapterException
 			{
 				String value = Misc.substituteGet(param,null,null);
 				// def null returs the variable name
@@ -717,7 +731,7 @@ class DBSyncOper
 			}
 		});
 	}
-	private ArrayList<XML> getFilenamePatterns(XML sync) throws Exception
+	private ArrayList<XML> getFilenamePatterns(XML sync) throws AdapterException
 	{
 		ArrayList<XML> results = new ArrayList<XML>();
 
@@ -726,22 +740,19 @@ class DBSyncOper
 			results.add(sync);
 		else
 		{
-			String fileescape = filename.replaceAll("\\.","\\.").replaceAll("\\*","\\*");
-			String fileglob = substituteFilename(fileescape,"*");
+			String fileglob = substituteFilename(filename,"*");
 			if (Misc.isLog(10)) Misc.log("File glob: " + fileglob);
 
-			fileescape = filename.replaceAll("[\\\\/]","[\\\\\\\\/]").replaceAll("\\.","\\.").replaceAll("\\*","\\.\\*");
+			String fileescape = filename.replaceAll("[\\\\\\/]","[\\\\\\\\\\\\\\\\\\\\\\\\/]").replaceAll("\\.","\\\\\\\\.").replaceAll("\\*",".*");
 			String fileextract = substituteFilename(fileescape,"(.*)");
 			if (Misc.isLog(10)) Misc.log("File extract: " + fileextract);
 			Pattern patternextract = Pattern.compile(fileextract);
 
-			String filevar = substituteFilename(fileescape,null);
+			String filevar = substituteFilename(filename,null);
 			if (Misc.isLog(10)) Misc.log("File var: " + filevar);
 			Matcher matchervar = Misc.substitutepattern.matcher(filevar);
 
 			Set<Path> paths = Misc.glob(fileglob);
-			if (paths.size() == 0) results.add(sync);
-
 			for(Path path:paths)
 			{
 				XML newsync = sync.copy();
@@ -781,7 +792,7 @@ class DBSyncOper
 		return results;
 	}
 
-	public void run(XML xmlfunction,XML xmlsource) throws Exception
+	public void run(XML xmlfunction,XML xmlsource) throws AdapterException
 	{
 		XML xmlcfg = javaadapter.getConfiguration();
 
@@ -946,10 +957,13 @@ class DBSyncOper
 						{
 							compare();
 						}
-						catch(java.net.SocketTimeoutException ex)
+						catch(AdapterException ex)
 						{
-							// Don't stop processing if a timeout occurs
-							Misc.log(ex);
+							if (ex.getCause() instanceof java.net.SocketTimeoutException)
+								// Don't stop processing if a timeout occurs
+								Misc.log(ex);
+							else
+								Misc.rethrow(ex);
 						}
 
 						sourcesync = null;
@@ -983,7 +997,6 @@ class DBSyncOper
 					if (destinationsync == null) continue;
 
 					fields.setDefaultFields(destinationsync.getReader().getHeader(),Scope.SCOPE_DESTINATION);
-					if (ignorefields != null) comparefields.removeAll(ignorefields);
 
 					if (iscache)
 						for(Field globalfield:globalfields) fields.add(globalfield);
@@ -995,7 +1008,6 @@ class DBSyncOper
 
 					counter = new RateCounter();
 					xmloperlist = new ArrayList<XML>();
-					comparefields = fields.getNames();
 
 					destinationsync.setPostInitReader();
 

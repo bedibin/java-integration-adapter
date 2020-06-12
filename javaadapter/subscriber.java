@@ -11,20 +11,20 @@ class Operation extends SchedulerTask
 
 	public void run() {}
 
-	public Operation(String classname,XML function) throws Exception
+	public Operation(String classname,XML function)
 	{
 		this.classname = classname;
 		this.function = function;
 	}
 
-	public Operation(XML function) throws Exception
+	public Operation(XML function)
 	{
 		this.function = function;
 	}
 
 	protected Operation() {}
 
-	public String getName() throws Exception
+	public String getName() throws AdapterXmlException
 	{
 		String name = this.getClass().getName();
 		if (classname != null) name = classname;
@@ -41,7 +41,7 @@ class Operation extends SchedulerTask
 		return classname;
 	}
 
-	protected void setOperation(Operation sub) throws Exception
+	protected void setOperation(Operation sub)
 	{
 		classname = sub.classname;
 		function = sub.function;
@@ -66,7 +66,7 @@ class Operation extends SchedulerTask
 		return variablelist.get(name);
 	}
 
-	private synchronized void setVariable(XML xml,String path,String name) throws Exception
+	private synchronized void setVariable(XML xml,String path,String name) throws AdapterXmlException
 	{
 		if (name == null || !name.startsWith("$"))
 		{
@@ -78,7 +78,7 @@ class Operation extends SchedulerTask
 		variablelist.put(name,value);
 	}
 
-	private void rateElement(XML element) throws Exception
+	private void rateElement(XML element) throws AdapterXmlException
 	{
 		int level = 1;
 		String oper = element.getAttribute("oper");
@@ -105,7 +105,7 @@ class Operation extends SchedulerTask
 		if (Misc.isLog(level)) Misc.log("RATE" + (classname == null ? "" : " " + classname) + ": " + ratestr + " a second [MAX: " + rate.getMax() + ", COUNT: " + rate.getCount() + "]");
 	}
 
-	private void logElement(XML xml,XML element) throws Exception
+	private void logElement(XML xml,XML element) throws AdapterException
 	{
 		int level = 1;
 		boolean exception = false;
@@ -124,7 +124,7 @@ class Operation extends SchedulerTask
 		final XML finalxml = xml;
 
 		String str = Misc.substitute(value,new Misc.Substituer() {
-			public String getValue(String param) throws Exception
+			public String getValue(String param) throws AdapterException
 			{
 				if (param.startsWith("$"))
 				{
@@ -148,12 +148,12 @@ class Operation extends SchedulerTask
 			Misc.log(level,str);
 	}
 
-	public static ResultTypes getResultType(XML xml) throws Exception
+	public static ResultTypes getResultType(XML xml) throws AdapterXmlException
 	{
 		return xml.getAttributeEnum("result_type",ResultTypes.LAST,ResultTypes.class);
 	}
 
-	protected XML runFunction(XML xml,XML function) throws Exception
+	protected XML runFunction(XML xml,XML function) throws AdapterException
 	{
 		if (function == null)
 		{
@@ -179,7 +179,7 @@ class Operation extends SchedulerTask
 		return xml;
 	}
 
-	public XML runMulti(XML xml,XML element) throws Exception
+	public XML runMulti(XML xml,XML element) throws AdapterException
 	{
 		ResultTypes resulttype = getResultType(element);
 
@@ -223,7 +223,7 @@ class Operation extends SchedulerTask
 		return xml;
 	}
 
-	static public void renameByPath(XML xml,String path,String name) throws Exception
+	static public void renameByPath(XML xml,String path,String name) throws AdapterXmlException
 	{
 		if (path == null || name == null) return;
 
@@ -232,7 +232,7 @@ class Operation extends SchedulerTask
 			node.rename(name);
 	}
 
-	static public void addByPath(XML xml,String path,String name,String value) throws Exception
+	static public void addByPath(XML xml,String path,String name,String value) throws AdapterXmlException
 	{
 		if (path == null)
 		{
@@ -245,7 +245,7 @@ class Operation extends SchedulerTask
 			node.add(name,value);
 	}
 
-	static public void removeByPath(XML xml,String path) throws Exception
+	static public void removeByPath(XML xml,String path) throws AdapterXmlException
 	{
 		if (path == null) return;
 
@@ -254,7 +254,7 @@ class Operation extends SchedulerTask
 			node.remove();
 	}
 
-	private void splitPath(XML xml,String path,String split,String name) throws Exception
+	private void splitPath(XML xml,String path,String split,String name) throws AdapterXmlException
 	{
 		if (path == null) return;
 		if (name == null) name = "value";
@@ -271,7 +271,7 @@ class Operation extends SchedulerTask
 		}
 	}
 
-	static public void setValueByPath(Operation oper,XML xmlget,XML xmlset,String getpath,String setpath) throws Exception
+	static public void setValueByPath(Operation oper,XML xmlget,XML xmlset,String getpath,String setpath) throws AdapterXmlException
 	{
 		if (getpath == null) return;
 		if (setpath == null) return;
@@ -286,7 +286,7 @@ class Operation extends SchedulerTask
 		xmlset.setValueByPath(setpath,sourcevalue);
 	}
 
-	public void setAttributeByPath(XML xmlget,XML xmlset,String getpath,String setpath,String name) throws Exception
+	public void setAttributeByPath(XML xmlget,XML xmlset,String getpath,String setpath,String name) throws AdapterXmlException
 	{
 		String sourcevalue = getVariable(getpath);
 		if (sourcevalue == null) sourcevalue = xmlget.getStringByPath(getpath);
@@ -295,7 +295,7 @@ class Operation extends SchedulerTask
 		xmlset.setAttributeByPath(setpath,name,sourcevalue);
 	}
 
-	private XML runElementResult(XML xml,XML element,ResultTypes resulttype) throws Exception
+	private XML runElementResult(XML xml,XML element,ResultTypes resulttype) throws AdapterException
 	{
 		if (!Misc.isFilterPass(element,xml))
 			return xml;
@@ -322,7 +322,7 @@ class Operation extends SchedulerTask
 		return null;
 	}
 
-	private XML runElement(XML xml,XML element) throws Exception
+	private XML runElement(XML xml,XML element) throws AdapterException
 	{
 		if (Misc.isLog(18)) Misc.log("runElement element:" + element.toString());
 		if (Misc.isLog(18)) Misc.log("runElement xml:" + xml.toString());
@@ -345,7 +345,7 @@ class Operation extends SchedulerTask
 		else if (tagname.equals("transformation"))
 			xml = xml.transform(element.getValue());
 		else if (tagname.equals("sleep"))
-			Thread.sleep(new Integer(element.getValue()));
+			Misc.sleep(new Integer(element.getValue()));
 		else if (tagname.equals("valuepath"))
 			setValueByPath(this,xml,xml,element.getAttribute("get"),element.getAttribute("set"));
 		else if (tagname.equals("splitpath"))
@@ -402,17 +402,17 @@ class Subscriber extends Operation
 {
 	protected Subscriber() {}
 
-	public Subscriber(String classname,XML function) throws Exception
+	public Subscriber(String classname,XML function) throws AdapterException
 	{
 		super(classname,function);
 	}
 
-	public Subscriber(XML function) throws Exception
+	public Subscriber(XML function) throws AdapterException
 	{
 		super(function);
 	}
 
-	protected XML run(XML xml) throws Exception
+	protected XML run(XML xml) throws AdapterException
 	{
 		if (Misc.isLog(8)) Misc.log("Message received");
 		return runFunction(xml,function);

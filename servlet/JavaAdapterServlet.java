@@ -13,7 +13,7 @@ public final class JavaAdapterServlet extends HttpServlet
 		super.init(config);
 	}
 
-	private boolean checkAuthentication(HttpServletRequest request,XML xml) throws Exception
+	private boolean checkAuthentication(HttpServletRequest request,XML xml) throws IOException,AdapterException
 	{
 		String username = xml.getAttribute("username");
 		if (username == null) return true;
@@ -124,7 +124,7 @@ public final class JavaAdapterServlet extends HttpServlet
 					}
 				}
 			}
-			catch(Exception ex)
+			catch(AdapterException ex)
 			{
 				Misc.log(ex);
 				response.sendError(500,ex.toString());
@@ -188,7 +188,7 @@ public final class JavaAdapterServlet extends HttpServlet
 					}
 				}
 			}
-			catch(Exception ex)
+			catch(AdapterException ex)
 			{
 				Misc.log(ex);
 				try
@@ -197,7 +197,7 @@ public final class JavaAdapterServlet extends HttpServlet
 					response.sendError(500,soaprequest.rootToString());
 					return;
 				}
-				catch(Exception ex2)
+				catch(AdapterException ex2)
 				{
 					Misc.log(ex2);
 				}

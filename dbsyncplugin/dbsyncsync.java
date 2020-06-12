@@ -15,7 +15,7 @@ class Sync
 	private boolean isprocessed = false;
 	private Scope scope;
 
-	public Sync(DBSyncOper dbsync,XML xml) throws Exception
+	public Sync(DBSyncOper dbsync,XML xml) throws AdapterException
 	{
 		this.dbsync = dbsync;
 		db = DB.getInstance();
@@ -39,12 +39,12 @@ class Sync
 			throw new AdapterException(xml,"Only source and destination tags are supported for sync elements");
 	}
 
-	protected void setReader(Reader reader) throws Exception
+	protected void setReader(Reader reader) throws AdapterException
 	{
 		this.reader = reader;
 	}
 
-	public LinkedHashMap<String,String> next() throws Exception
+	public LinkedHashMap<String,String> next() throws AdapterException
 	{
 		LinkedHashMap<String,String> result = reader == null ? null : reader.next();
 		if (result == null && !isprocessed) isprocessed = true;
@@ -71,7 +71,7 @@ class Sync
 		return scope;
 	}
 
-	public String getDescription() throws Exception
+	public String getDescription() throws AdapterException
 	{
 		String syncname = xml.getAttribute("name");
 		if (reader == null) return syncname;
@@ -82,7 +82,7 @@ class Sync
 		return syncname;
 	}
 
-	public String getName() throws Exception
+	public String getName() throws AdapterException
 	{
 		if (syncname != null) return syncname;
 		if (xml == null) return "NONE";
@@ -93,12 +93,12 @@ class Sync
 		return syncname;
 	}
 
-	public Set<String> getResultHeader() throws Exception
+	public Set<String> getResultHeader() throws AdapterException
 	{
 		return getDBSync().getFields().getNames(this);
 	}
 
-	public void setPostInitReader() throws Exception
+	public void setPostInitReader() throws AdapterException
 	{
 		// This must be called after all field elements are initialized since sort/cache will use them
 		if (this instanceof SyncSql)
@@ -119,18 +119,25 @@ class Sync
 		{
 			String fieldsattr = xml.getAttribute("csv_fields");
 			if (fieldsattr == null) fieldsattr = xml.getAttribute("fields");
-			Set<String> headers = fieldsattr == null ? getResultHeader() : Misc.arrayToSet(fieldsattr.split("\\s*,\\s*"));
+			Set<String> headers;
+			if (fieldsattr == null)
+			{
+				// Prioritize fields from reader
+				headers = new LinkedHashSet<String>(reader.getHeader());
+				headers.addAll(getResultHeader());
+			}
+			else headers = Misc.arrayToSet(fieldsattr.split("\\s*,\\s*"));
 			csvout = new CsvWriter(dumpcsvfilename,headers,xml);
 		}
 	}
 
-	public void makeDump(LinkedHashMap<String,String> result) throws Exception
+	public void makeDump(LinkedHashMap<String,String> result) throws AdapterException
 	{
 		if (csvout != null) csvout.write(result);
 		if (dumplogfile) Misc.log(Misc.implode(result));
 	}
 
-	public void closeDump() throws Exception
+	public void closeDump() throws AdapterException
 	{
 		if (csvout != null) csvout.flush();
 	}
@@ -148,7 +155,7 @@ class Sync
 
 class SyncClass extends Sync
 {
-	public SyncClass(DBSyncOper dbsync,XML xml) throws Exception
+	public SyncClass(DBSyncOper dbsync,XML xml) throws AdapterException
 	{
 		super(dbsync,xml);
 		setReader(ReaderUtil.getReader(xml));
@@ -157,7 +164,7 @@ class SyncClass extends Sync
 
 class SyncCsv extends Sync
 {
-	public SyncCsv(DBSyncOper dbsync,XML xml) throws Exception
+	public SyncCsv(DBSyncOper dbsync,XML xml) throws AdapterException
 	{
 		super(dbsync,xml);
 		setReader(new ReaderCSV(xml));
@@ -169,7 +176,7 @@ class SyncSql extends Sync
 	private String conn;
 	private DB db;
 
-	public SyncSql(DBSyncOper dbsync,XML xml) throws Exception
+	public SyncSql(DBSyncOper dbsync,XML xml) throws AdapterException
 	{
 		super(dbsync,xml);
 
@@ -257,7 +264,7 @@ class SyncSoap extends Sync
 {
 	private XML xml;
 
-	public SyncSoap(DBSyncOper dbsync,XML xml) throws Exception
+	public SyncSoap(DBSyncOper dbsync,XML xml) throws AdapterException
 	{
 		super(dbsync,xml);
 
@@ -276,7 +283,7 @@ class SyncXML extends Sync
 {
 	private XML xml;
 
-	public SyncXML(DBSyncOper dbsync,XML xml,XML xmlsource) throws Exception
+	public SyncXML(DBSyncOper dbsync,XML xml,XML xmlsource) throws AdapterException
 	{
 		super(dbsync,xml);
 

@@ -297,7 +297,7 @@ class QueryChangeHook extends Hook
 class RTSSubscriber extends Subscriber
 {
 	@Override
-	public XML run(XML xml) throws Exception
+	public XML run(XML xml) throws AdapterException
 	{
 		File file = new File(javaadapter.getCurrentDir(),QueryChangeHook.LASTFILENAME);
 		file.delete();

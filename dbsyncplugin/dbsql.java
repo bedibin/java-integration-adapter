@@ -8,9 +8,22 @@ import java.text.Collator;
 
 enum dbtype { MYSQL, MSSQL, ORACLE, DB2, OTHER };
 
+class AdapterDbException extends AdapterException
+{
+	AdapterDbException(String str)
+	{
+		super(str);
+	}
+
+	AdapterDbException(Exception ex)
+	{
+		super(ex);
+	}
+}
+
 interface DBProcessor
 {
-	public String getFieldValue(byte[] bytes) throws Exception;
+	public String getFieldValue(byte[] bytes) throws AdapterDbException;
 }
 
 class DBProcessorManager
@@ -56,15 +69,13 @@ class ConnectionTimeout extends Thread
 		}
 	}
 
-	static public Connection getConnection(String name,String url,String username,String password) throws Exception
+	static public Connection getConnection(String name,String url,String username,String password) throws SQLException,AdapterException
 	{
 		ConnectionTimeout ct = new ConnectionTimeout(url,username,password);
 		ct.start();
-		try {
-			for(int i=1;i<=60;i++)
-				if (ct.sleep)
-					 Thread.sleep(1000);  
-		} catch (InterruptedException e) {}
+		for(int i=1;i<=60;i++)
+			if (ct.sleep)
+				 Misc.sleep(1000);  
 
 		if (ct.exception != null) Misc.rethrow(ct.exception,"Exception connecting to database " + name);
 		if (ct.conn == null) throw new AdapterException("Timeout connecting to database " + name);
@@ -91,7 +102,7 @@ class DBConnection implements VariableContext
 	private static final String SYBASEJDBCDRIVER = "com.sybase.jdbc4.jdbc.SybDriver";
 	private static final String SQLDATEFORMAT = "'YYYY-MM-DD HH24:MI:SS'";
 
-	public DBConnection(XML xml) throws Exception
+	public DBConnection(XML xml) throws AdapterException
 	{
 		init(xml);
 		this.xml = xml;
@@ -102,15 +113,19 @@ class DBConnection implements VariableContext
 		return processors;
 	}
 
-	private void execsql(String sql) throws SQLException
+	private void execsql(String sql) throws AdapterDbException
 	{
-		PreparedStatement stmt = conn.prepareStatement(sql);
-		if (Misc.isLog(15)) Misc.log("Executing initialization statement: " + sql);
-		stmt.executeUpdate();
-		stmt.close();
+		try {
+			PreparedStatement stmt = conn.prepareStatement(sql);
+			if (Misc.isLog(15)) Misc.log("Executing initialization statement: " + sql);
+			stmt.executeUpdate();
+			stmt.close();
+		} catch(SQLException ex) {
+			throw new AdapterDbException(ex);
+		}
 	}
 
-	private void init(XML xml) throws Exception
+	private void init(XML xml) throws AdapterException
 	{
 		name = xml.getAttribute("name");
 		String urlstr = xml.getValue("url",null);
@@ -126,7 +141,8 @@ class DBConnection implements VariableContext
 		}
 		catch(SQLException ex)
 		{
-			Misc.rethrow(ex,"ERROR: Connecting to database " + name);
+			Misc.log(1,"ERROR: Connecting to database " + name);
+			throw new AdapterDbException(ex);
 		}
 
 		dbtype = dbtype.OTHER;
@@ -154,7 +170,11 @@ class DBConnection implements VariableContext
 		else if (driverstr != null && driverstr.equals(SQLSERVERJDBCDRIVER))
 		{
 			// TODO: Make setTransactionIsolation configurable, UNCOMMITED should not be default
-			conn.setTransactionIsolation(Connection.TRANSACTION_READ_UNCOMMITTED);
+			try {
+				conn.setTransactionIsolation(Connection.TRANSACTION_READ_UNCOMMITTED);
+			} catch(SQLException ex) {
+				throw new AdapterDbException(ex);
+			}
 			dbtype = dbtype.MSSQL;
 		}
 		else if (driverstr != null && driverstr.equals(MYSQLJDBCDRIVER))
@@ -178,9 +198,11 @@ class DBConnection implements VariableContext
 			execsql(el.getValue());
 	}
 
-	public void checkConnectionState(boolean force) throws Exception
+	public void checkConnectionState(boolean force) throws AdapterDbException
 	{
-		if (!force && !conn.isClosed()) return;
+		try {
+			if (!force && !conn.isClosed()) return;
+		} catch(SQLException ex) {}
 
 		Misc.log(1,"Database connection " + name + " closed, trying reconnect");
 
@@ -191,27 +213,39 @@ class DBConnection implements VariableContext
 				Misc.invoke(conn,"abort");
 				Misc.log(3,"Connection aborted");
 			}
-			catch(Throwable th)
+			catch(AdapterException th)
 			{
 			}
 			conn.close();
 			Misc.log(3,"Connection closed");
 		}
-		catch(Exception ex)
+		catch(SQLException ex)
 		{
 		}
 
-		init(xml);
+		try {
+			init(xml);
+		} catch(AdapterException ex) {
+			throw new AdapterDbException(ex);
+		}
 	}
 
-	public void close() throws SQLException
+	public void close() throws AdapterDbException
 	{
-		conn.close();
+		try {
+			conn.close();
+		} catch(SQLException ex) {
+			throw new AdapterDbException(ex);
+		}
 	}
 
-	public PreparedStatement prepareStatement(String sql) throws SQLException
+	public PreparedStatement prepareStatement(String sql) throws AdapterDbException
 	{
-		return conn.prepareStatement(sql);
+		try {
+			return conn.prepareStatement(sql);
+		} catch(SQLException ex) {
+			throw new AdapterDbException(ex);
+		}
 	}
 
 	public TimeZone getTimeZone()
@@ -277,7 +311,7 @@ class DBOper
 
 	protected DBOper() { }
 
-	private void makeStatement(String sql,List<String> list) throws Exception
+	private void makeStatement(String sql,List<String> list) throws SQLException,AdapterDbException
 	{
 		sql = sql.trim();
 		if (list != null) sql = replacementPattern.matcher(sql).replaceAll("?");
@@ -300,8 +334,12 @@ class DBOper
 					stmt.setString(x,null);
 				else if (value.matches("\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}"))
 				{
-					java.util.Date date = Misc.gmtdateformat.parse(value);
-					stmt.setTimestamp(x,new Timestamp(date.getTime()),dbc.getCalendar());
+					try {
+						java.util.Date date = Misc.gmtdateformat.parse(value);
+						stmt.setTimestamp(x,new Timestamp(date.getTime()),dbc.getCalendar());
+					} catch(java.text.ParseException ex) {
+						throw new AdapterDbException(ex);
+					}
 				}
 				else
 					stmt.setString(x,value);
@@ -332,12 +370,12 @@ class DBOper
 		}
 	}
 
-	public DBOper(DBConnection dbc,String sql,boolean totrim) throws Exception
+	public DBOper(DBConnection dbc,String sql,boolean totrim) throws AdapterDbException
 	{
 		this(dbc,sql,null,totrim);
 	}
 
-	public DBOper(DBConnection dbc,String sql,List<String> list,boolean totrim) throws Exception
+	public DBOper(DBConnection dbc,String sql,List<String> list,boolean totrim) throws AdapterDbException
 	{
 		if (javaadapter.isShuttingDown()) return;
 		dbc.checkConnectionState(false);
@@ -370,13 +408,13 @@ class DBOper
 					{
 						Misc.log(1,"2nd SQL error " + ex2.getErrorCode() + " [" + dbc.getName() + "]: " + sql);
 						close();
-						Misc.rethrow(ex2);
+						throw new AdapterDbException(ex2);
 					}
-					catch(Exception ex2)
+					catch(AdapterDbException ex2)
 					{
 						Misc.log(1,"2nd SQL error [" + dbc.getName() + "]: " + sql);
 						close();
-						Misc.rethrow(ex2);
+						throw new AdapterDbException(ex2);
 					}
 
 					return;
@@ -386,18 +424,11 @@ class DBOper
 			String liststr = list == null ? "" : "; " + Misc.implode(list);
 			Misc.log(1,"SQL error " + code + " [" + dbc.getName() + "]: " + sql + liststr);
 			close();
-			Misc.rethrow(ex);
-		}
-		catch(Exception ex)
-		{
-			String liststr = list == null ? "" : "; " + Misc.implode(list);
-			Misc.log(1,"SQL error [" + dbc.getName() + "]: " + sql + liststr);
-			close();
-			Misc.rethrow(ex);
+			throw new AdapterDbException(ex);
 		}
 	}
 
-	public Set<String> getHeader() throws Exception
+	public Set<String> getHeader()
 	{
 		if (rset == null) return null;
 
@@ -420,77 +451,81 @@ class DBOper
 		return ((bytes[0] == (byte)(GZIPInputStream.GZIP_MAGIC)) && (bytes[1] == (byte)(GZIPInputStream.GZIP_MAGIC >> 8)));
 	}
 
-	public LinkedHashMap<String,String> next() throws Exception
+	public LinkedHashMap<String,String> next() throws AdapterDbException
 	{
 		LinkedHashMap<String,String> row = new LinkedHashMap<String,String>();
 
 		if (stmt == null) return null;
-		if (javaadapter.isShuttingDown() || rset == null || !rset.next())
-		{
-			if (stmt.getMoreResults()) throw new AdapterException("Multiple result sets are not supported since they might have different columns. Join multiple selects with UNION instead");
-			close();
-			return null;
-		}
-
-		for(int i = 0;i < columnnames.length;i++)
-		{
-			if (rset.getObject(i+1) == null)
+		try {
+			if (javaadapter.isShuttingDown() || rset == null || !rset.next())
 			{
-				row.put(columnnames[i],"");
-				continue;
+				if (stmt.getMoreResults()) throw new AdapterDbException("Multiple result sets are not supported since they might have different columns. Join multiple selects with UNION instead");
+				close();
+				return null;
 			}
 
-			String value = null;
-			java.util.Date date = null;
-
-			switch(columntypes[i])
+			for(int i = 0;i < columnnames.length;i++)
 			{
-			case Types.TIME:
-				date = rset.getTime(i+1,dbc.getCalendar());
-				break;
-			case Types.DATE:
-				date = rset.getDate(i+1,dbc.getCalendar());
-				break;
-			case Types.TIMESTAMP:
-				date = rset.getTimestamp(i+1,dbc.getCalendar());
-				break;
-			case Types.BLOB:
-			case Types.LONGVARBINARY:
-				Blob blob = rset.getBlob(i+1);
-				byte[] bytes = blob.getBytes(1,(int)blob.length());
-				if (isCompressed(bytes))
+				if (rset.getObject(i+1) == null)
 				{
-					ByteArrayInputStream bis = new ByteArrayInputStream(bytes);
-					GZIPInputStream gzis = new GZIPInputStream(bis);
-					ByteArrayOutputStream out = new ByteArrayOutputStream();
-
-					int len;
-					byte[] buffer = new byte[1024];
-					while ((len = gzis.read(buffer)) > 0)
-						out.write(buffer,0,len);
-
-					gzis.close();
-					out.close();
-
-					bytes = out.toByteArray();
+					row.put(columnnames[i],"");
+					continue;
 				}
 
-				for(String name:dbc.getProcessors())
+				String value = null;
+				java.util.Date date = null;
+
+				switch(columntypes[i])
 				{
-					DBProcessor processor = DBProcessorManager.get(name);
-					value = processor.getFieldValue(bytes);
-					if (value != null) break;
+				case Types.TIME:
+					date = rset.getTime(i+1,dbc.getCalendar());
+					break;
+				case Types.DATE:
+					date = rset.getDate(i+1,dbc.getCalendar());
+					break;
+				case Types.TIMESTAMP:
+					date = rset.getTimestamp(i+1,dbc.getCalendar());
+					break;
+				case Types.BLOB:
+				case Types.LONGVARBINARY:
+					Blob blob = rset.getBlob(i+1);
+					byte[] bytes = blob.getBytes(1,(int)blob.length());
+					if (isCompressed(bytes))
+					{
+						ByteArrayInputStream bis = new ByteArrayInputStream(bytes);
+						GZIPInputStream gzis = new GZIPInputStream(bis);
+						ByteArrayOutputStream out = new ByteArrayOutputStream();
+
+						int len;
+						byte[] buffer = new byte[1024];
+						while ((len = gzis.read(buffer)) > 0)
+							out.write(buffer,0,len);
+
+						gzis.close();
+						out.close();
+
+						bytes = out.toByteArray();
+					}
+
+					for(String name:dbc.getProcessors())
+					{
+						DBProcessor processor = DBProcessorManager.get(name);
+						value = processor.getFieldValue(bytes);
+						if (value != null) break;
+					}
+					if (value == null) value = new String(bytes);
+					break;
+				default:
+					value = rset.getString(i+1);
 				}
-				if (value == null) value = new String(bytes);
-				break;
-			default:
-				value = rset.getString(i+1);
+
+				if (date != null) value = Misc.gmtdateformat.format(date);
+				if (value == null) value = "";
+
+				row.put(columnnames[i],totrim ? value.trim() : value);
 			}
-
-			if (date != null) value = Misc.gmtdateformat.format(date);
-			if (value == null) value = "";
-
-			row.put(columnnames[i],totrim ? value.trim() : value);
+		} catch(IOException | SQLException ex) {
+			throw new AdapterDbException(ex);
 		}
 
 		if (Misc.isLog(15)) Misc.log("row [" + dbc.getName() + "]: " + row);
@@ -498,10 +533,14 @@ class DBOper
 		return row;
 	}
 
-	public void close() throws Exception
+	public void close() throws AdapterDbException
 	{
-		if (rset != null) rset.close();
-		if (stmt != null) stmt.close();
+		try {
+			if (rset != null) rset.close();
+			if (stmt != null) stmt.close();
+		} catch(SQLException ex) {
+			throw new AdapterDbException(ex);
+		}
 		stmt = null;
 	}
 }
@@ -524,7 +563,7 @@ class DB
 		db = new HashMap<String,DBConnection>();
 	}
 
-	public DB(XML xmlcfg) throws Exception
+	public DB(XML xmlcfg) throws AdapterException
 	{
 		this();
 
@@ -534,6 +573,7 @@ class DB
 
 		boolean withdriver = false;
 		boolean withbd = false;
+
 		for(XML el:xmlconn)
 		{
 			String type = el.getAttribute("type");
@@ -544,15 +584,15 @@ class DB
 			if (driver != null)
 			{
 				withdriver = true;
-				Class.forName(driver);
+				Misc.getClass(driver);
 			}
 
 			XML[] xmlprolist = el.getElements("processor");
 			for(XML xmlpro:xmlprolist)
-				Class.forName(xmlpro.getValue());
+				Misc.getClass(xmlpro.getValue());
 		}
 
-		if (withbd && !withdriver) Class.forName(DBConnection.ORACLEJDBCDRIVER);
+		if (withbd && !withdriver) Misc.getClass(DBConnection.ORACLEJDBCDRIVER);
 
 		for(XML el:xmlconn)
 		{
@@ -580,7 +620,7 @@ class DB
 		return db.keySet();
 	}
 
-	public synchronized static DB getInstance() throws Exception
+	public synchronized static DB getInstance() throws AdapterException
 	{
 		if (instance == null)
 		{
@@ -590,22 +630,22 @@ class DB
 		return instance;
 	}
 
-	protected String getDate(String value) throws Exception
+	protected String getDate(String value) throws AdapterDbException
 	{
 		return "{ ts '" + value + "'}";
 	}
 
-	public String getFieldValue(String value) throws Exception
+	public String getFieldValue(String value) throws AdapterDbException
 	{
 		return getValue(value);
 	}
 
-	public String getValue(String value,String name) throws Exception
+	public String getValue(String value,String name) throws AdapterDbException
 	{
 		return getValue(value);
 	}
 
-	public String getValue(String value) throws Exception
+	public String getValue(String value) throws AdapterDbException
 	{
 		if (value == null) return "null";
 		if (value.matches("\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}"))
@@ -614,7 +654,7 @@ class DB
 		return "'" + value + "'";
 	}
 
-	public String getValue(XML xml) throws Exception
+	public String getValue(XML xml) throws AdapterException
         {
 		if (xml == null) return null;
 
@@ -622,7 +662,7 @@ class DB
 		return getValue(value);
 	}
 
-	public String getConcat(String conn,String field,String addedfield) throws Exception
+	public String getConcat(String conn,String field,String addedfield) throws AdapterDbException
 	{
 		DBConnection dbc = getConnectionByName(conn);
 
@@ -636,7 +676,7 @@ class DB
 		return field + " || " + addedfield;
 	}
 
-	public String getFieldEqualsValue(String field,String value) throws Exception
+	public String getFieldEqualsValue(String field,String value) throws AdapterDbException
 	{
 		if (value == null) return field + " is null";
 
@@ -656,15 +696,15 @@ class DB
 		return sql.toString();
 	}
 
-	public DBConnection getConnectionByName(String name) throws Exception
+	public DBConnection getConnectionByName(String name) throws AdapterDbException
 	{
 		DBConnection dbc = db.get(name);
 		if (dbc == null)
-			throw new AdapterException("Connection " + name + " doesn't exist");
+			throw new AdapterDbException("Connection " + name + " doesn't exist");
 		return dbc;
 	}
 
-	public String getOrderBy(String conn,String[] keys,boolean ignore_case) throws Exception
+	public String getOrderBy(String conn,String[] keys,boolean ignore_case) throws AdapterDbException
 	{
 		DBConnection dbc = getConnectionByName(conn);
 
@@ -726,42 +766,42 @@ class DB
 		return " order by " + sql;
 	}
 
-	public DBOper makesqloper(String conn,String sql) throws Exception
+	public DBOper makesqloper(String conn,String sql) throws AdapterDbException
 	{
 		return makesqloper(conn,sql,true);
 	}
 
-	public DBOper makesqloper(String conn,String sql,boolean totrim) throws Exception
+	public DBOper makesqloper(String conn,String sql,boolean totrim) throws AdapterDbException
 	{
 		DBConnection dbc = getConnectionByName(conn);
 		return new DBOper(dbc,sql,totrim);
 	}
 
-	public DBOper makesqloper(String conn,XML xml) throws Exception
+	public DBOper makesqloper(String conn,XML xml) throws AdapterException
 	{
 		DBConnection dbc = getConnectionByName(conn);
 		String sql = xml.getValue();
 		return new DBOper(dbc,sql,true);
 	}
 
-	public int execsqlresult(String conn,String sql,List<String> list) throws Exception
+	public int execsqlresult(String conn,String sql,List<String> list) throws AdapterDbException
 	{
 		DBConnection dbc = getConnectionByName(conn);
 		DBOper oper = new DBOper(dbc,sql,list,true);
 		return oper.getResultCount();
 	}
 
-	public int execsqlresult(String conn,String sql) throws Exception
+	public int execsqlresult(String conn,String sql) throws AdapterDbException
 	{
 		return execsqlresult(conn,sql,null);
 	}
 
-	public ArrayList<LinkedHashMap<String,String>> execsql(String conn,String sql) throws Exception
+	public ArrayList<LinkedHashMap<String,String>> execsql(String conn,String sql) throws AdapterDbException
 	{
 		return execsql(conn,sql,null);
 	}
 
-	public ArrayList<LinkedHashMap<String,String>> execsql(String conn,String sql,List<String> list) throws Exception
+	public ArrayList<LinkedHashMap<String,String>> execsql(String conn,String sql,List<String> list) throws AdapterDbException
 	{
 		DBConnection dbc = getConnectionByName(conn);
 		DBOper oper = null;
@@ -779,19 +819,19 @@ class DB
 		return result;
 	}
 
-	public ArrayList<LinkedHashMap<String,String>> execsql(XML xml) throws Exception
+	public ArrayList<LinkedHashMap<String,String>> execsql(XML xml) throws AdapterException
 	{
 		String conn = xml.getAttribute("instance");
 		return execsql(conn,xml);
 	}
 
-	public ArrayList<LinkedHashMap<String,String>> execsql(String conn,XML xml) throws Exception
+	public ArrayList<LinkedHashMap<String,String>> execsql(String conn,XML xml) throws AdapterException
 	{
 		String sql = xml.getValue();
 		return execsql(conn,sql);
 	}
 
-	public String getQuote(String instance) throws Exception
+	public String getQuote(String instance) throws AdapterDbException
 	{
 		DBConnection dbc = getConnectionByName(instance);
 		return dbc.getQuote();
@@ -804,15 +844,15 @@ class DB
 			for(DBConnection dbc:db.values())
 				dbc.close();
 		}
-		catch(Exception ex)
+		catch(AdapterDbException ex)
 		{
 		}
 	}
 
-	public String substitute(final String conn,String str,final LinkedHashMap<String,String> row) throws Exception
+	public String substitute(final String conn,String str,final LinkedHashMap<String,String> row) throws AdapterException
 	{
 		return Misc.substitute(str,new Misc.Substituer() {
-			public String getValue(String param) throws Exception
+			public String getValue(String param) throws AdapterException
 			{
 				DBConnection dbc = getConnectionByName(conn);
 				if (param.startsWith("$")) return Misc.substituteGet(param,null,dbc);
@@ -822,7 +862,7 @@ class DB
 		});
 	}
 
-	public void lookup(XML xmlconfig,XML xml) throws Exception
+	public void lookup(XML xmlconfig,XML xml) throws AdapterException
 	{
 		final String conn = xmlconfig.getAttribute("instance");
 		XML xmlsql = xmlconfig.getElement("sql");
@@ -830,7 +870,7 @@ class DB
 
 		final XML finalxml = xml;
 		DBOper oper = makesqloper(conn,Misc.substitute(sql,new Misc.Substituer() {
-			public String getValue(String param) throws Exception
+			public String getValue(String param) throws AdapterException
 			{
 				DBConnection dbc = getConnectionByName(conn);
 				if (param.startsWith("$")) return Misc.substituteGet(param,null,dbc);
@@ -854,7 +894,7 @@ class DB
 		}
 	}
 
-	public dbtype getType(String instance) throws Exception
+	public dbtype getType(String instance) throws AdapterDbException
 	{
 		DBConnection dbc = getConnectionByName(instance);
 		if (dbc == null) return null;
@@ -866,7 +906,7 @@ public class dbsql
 {
 	private static DB db;
 
-	private static void Export(String instance,String table) throws Exception
+	private static void Export(String instance,String table) throws AdapterException
 	{
 		DBOper oper = db.makesqloper(instance,"select * from " + table);
 		CsvWriter csvout = new CsvWriter("select_" + table + ".csv");
@@ -879,7 +919,7 @@ public class dbsql
 		csvout.flush();
 	}
 
-	private static void Import(String instance,String table) throws Exception
+	private static void Import(String instance,String table) throws AdapterException
 	{
 		ReaderCSV csvin = new ReaderCSV("select_" + table + ".csv");
 
@@ -918,6 +958,8 @@ public class dbsql
 		}
 	}
 
+	enum EXECTYPE { IMPORT, EXPORT, EXEC };
+
 	public static void main(String[] args) throws Exception
 	{
 		javaadapter.initShutdownHook();
@@ -930,38 +972,51 @@ public class dbsql
 		XML[] conns = xmlcfg.getElements("connection");
 		for(XML conn:conns)
 		{
-			XML extractxml = conn.getElement("extract");
-			if (extractxml == null) continue;
-
-			String extract = extractxml.getValue();
-			if (extract == null) continue;
-
-			String type = extractxml.getAttribute("type");
-			boolean isimport = "import".equals(type);
-
-			String name = conn.getAttribute("name");
-			String oper = isimport ? "Exporting" : "Importing";
-			System.out.println(oper + " " + name + "...");
-
-			ArrayList<LinkedHashMap<String,String>> tables = db.execsql(name,extract);
-
-			for(LinkedHashMap<String,String> table:tables)
+			XML[] extractxmllist = conn.getElements("extract");
+			for(XML extractxml:extractxmllist)
 			{
-				String tablename = Misc.getFirstValue(table);
-				System.out.print("    " + tablename + "... ");
+				String extract = extractxml.getValue();
+				if (extract == null) continue;
 
-				try
+				String type = extractxml.getAttribute("type");
+				EXECTYPE exectype = type == null ? EXECTYPE.EXEC : EXECTYPE.valueOf(type.toUpperCase());
+
+				String name = conn.getAttribute("name");
+				Misc.log(exectype + " " + name + ": " + extract + "...");
+
+				if (exectype == EXECTYPE.EXEC)
 				{
-					if (isimport)
-						Import(name,tablename);
-					else
-						Export(name,tablename);
-					System.out.println("done");
+					DBOper oper = db.makesqloper(name,extract);
+					LinkedHashMap<String,String> row;
+					while((row = oper.next()) != null)
+						Misc.log("RESULT: " + Misc.implode(row));
 				}
-				catch(Exception ex)
+				else
 				{
-					System.out.println("error");
-					//System.out.println("error: " + ex.getMessage());
+					ArrayList<LinkedHashMap<String,String>> results = db.execsql(name,extract);
+					for(LinkedHashMap<String,String> table:results)
+					{
+						String tablename = Misc.getFirstValue(table);
+						Misc.log("    " + tablename + "... ");
+
+						try
+						{
+							switch(exectype) {
+							case IMPORT:
+								Import(name,tablename);
+								break;
+							case EXPORT:
+								Export(name,tablename);
+								break;
+							}
+							Misc.log("done");
+						}
+						catch(Exception ex)
+						{
+							Misc.log("error");
+							//System.out.println("error: " + ex.getMessage());
+						}
+					}
 				}
 			}
 		}

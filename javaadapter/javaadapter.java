@@ -66,7 +66,7 @@ class AdapterExtend
 
 	protected AdapterExtend() {};
 
-	public AdapterExtendBase getInstance(XML xml) throws Exception
+	public AdapterExtendBase getInstance(XML xml) throws AdapterException
 	{
 		String instance = xml.getAttribute("instance");
 		if (instance == null) instance = defaultname + "/" + getClass().getName();
@@ -85,7 +85,7 @@ class AdapterExtend
 		return ctx;
 	}
 
-	public void setInstance(XML xml) throws Exception
+	public void setInstance(XML xml) throws AdapterException
 	{
 		String classname = xml.getValue("class",defaultclass);
 		String name = xml.getValue("name",defaultname + "/" + getClass().getName());
@@ -93,7 +93,7 @@ class AdapterExtend
 		extendlist.put(name,ctx);
 	}
 
-	public void publish(String string,XML xmlpublish) throws Exception
+	public void publish(String string,XML xmlpublish) throws AdapterException
 	{
 		AdapterExtendBase ctx = getInstance(xmlpublish);
 		String name = xmlpublish.getAttribute("name");
@@ -103,8 +103,8 @@ class AdapterExtend
 
 abstract class AdapterExtendBase
 {
-	abstract void publish(String name,String message) throws Exception;
-	abstract String read(String name) throws Exception;
+	abstract void publish(String name,String message) throws AdapterException;
+	abstract String read(String name) throws AdapterException;
 }
 
 public class javaadapter
@@ -200,7 +200,7 @@ public class javaadapter
 		}
 	}
 
-	static void init(String filename) throws Exception
+	static void init(String filename) throws AdapterException
 	{
 		ArrayList<Hook> hooklist = new ArrayList<Hook>();
 

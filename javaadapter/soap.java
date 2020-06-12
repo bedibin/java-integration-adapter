@@ -25,7 +25,7 @@ class SoapRequest extends XML
 				XML headerxml = env.add("SOAP-ENV:Header");
 				for(XML el:header.getElements(null))
 					headerxml.add(el);
-			} catch(Exception ex) {}
+			} catch(AdapterException ex) {}
 		}
 
 		XML body = env.add("SOAP-ENV:Body");
@@ -38,7 +38,7 @@ class SoapRequest extends XML
 		super.node = xml.node;
 	}
 
-	public SoapRequest(Exception ex) throws AdapterException
+	public SoapRequest(AdapterException ex) throws AdapterXmlException
 	{
 		XML env = super.add("SOAP-ENV:Envelope");
 		env.setAttribute("xmlns:SOAP-ENV",nsenv == null ? defnsenv : nsenv);
@@ -54,22 +54,22 @@ class SoapRequest extends XML
 		super.node = fault.node;
 	}
 
-	public SoapRequest() throws AdapterException
+	public SoapRequest() throws AdapterXmlException
 	{
 		makeRequest(null,null,null);
 	}
 
-	public SoapRequest(String request) throws AdapterException
+	public SoapRequest(String request) throws AdapterXmlException
 	{
 		makeRequest(request,null,null);
 	}
 
-	public SoapRequest(String request,String ns) throws AdapterException
+	public SoapRequest(String request,String ns) throws AdapterXmlException
 	{
 		makeRequest(request,ns,null);
 	}
 
-	public SoapRequest(String request,String ns,XML header) throws AdapterException
+	public SoapRequest(String request,String ns,XML header) throws AdapterXmlException
 	{
 		makeRequest(request,ns,header);
 	}
@@ -79,7 +79,7 @@ class SoapRequest extends XML
 		super(xml.dom,xml.node);
 	}
 
-	public SoapRequest add(XML node) throws Exception
+	public SoapRequest add(XML node) throws AdapterXmlException
 	{
 		XML xml = super.add(node);
 		SoapRequest request = new SoapRequest(xml);
@@ -103,7 +103,7 @@ class SoapRequest extends XML
 		return request;
 	}
 
-	public XML publish(XML xmlconfig) throws Exception
+	public XML publish(XML xmlconfig) throws AdapterException
 	{
 		Publisher publisher = Publisher.getInstance();
 
@@ -125,7 +125,7 @@ class SoapRequest extends XML
 
 			String faultdelay = xmlconfig.getAttribute("faultdelay");
 			if (faultdelay != null)
-				Thread.sleep(new Integer(faultdelay));
+				Misc.sleep(new Integer(faultdelay));
 			return faultsoap.copy();
 		}
 
@@ -145,7 +145,7 @@ class SoapServer
 	private ArrayList<Subscriber> sublist = new ArrayList<Subscriber>();
 	private XML xmlserver;
 
-	public SoapServer(XML xml) throws Exception
+	public SoapServer(XML xml) throws AdapterException
 	{
 		System.out.print("Soap server initialisation... ");
 
@@ -174,7 +174,7 @@ class SoapServer
 		return sublist;
 	}
 
-	public String processXML(String request,Subscriber sub) throws Exception
+	public String processXML(String request,Subscriber sub) throws AdapterException
 	{
 		if (Misc.isLog(9)) Misc.log("SOAP request: " + request);
 
@@ -223,7 +223,7 @@ class SoapLookup
 		this.xmlconfig = xmlconfig;
 	}
 
-	public void lookup(XML xml) throws Exception
+	public void lookup(XML xml) throws AdapterException
 	{
 		XML requestxml = xmlconfig.getElement("request");
 		if (requestxml == null) return;

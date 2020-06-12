@@ -45,7 +45,7 @@ class MQQueue extends JMSBase
 		return info;
 	}
 
-	public MQQueue(XML xml) throws Exception
+	public MQQueue(XML xml) throws JMSException,AdapterException
 	{
 		// https://stackoverflow.com/questions/52775733/problem-connecting-a-java-client-jms-to-a-ibm-mq
 		// https://stackoverflow.com/questions/2692070/connecting-to-a-websphere-mq-in-java-with-ssl-keystore
@@ -97,27 +97,31 @@ class MQQueue extends JMSBase
 		getInfo(name).getConsumer().setMessageListener(listener);
 	}
 
-	String read(String name) throws Exception
+	String read(String name) throws AdapterException
 	{
-		Message msg = getInfo(name).getConsumer().receive(1);
-		if (msg == null) return null;
+		try {
+			Message msg = getInfo(name).getConsumer().receive(1);
+			if (msg == null) return null;
 
-		String text = null;
-		if (msg instanceof BytesMessage)
-		{
-			BytesMessage message = (BytesMessage)msg;
-			int len = new Long(message.getBodyLength()).intValue();
-			byte[] textBytes = new byte[len];
-			message.readBytes(textBytes,len);
-			String codePage = message.getStringProperty(WMQConstants.JMS_IBM_CHARACTER_SET);
-			text = new String(textBytes,codePage);
+			String text = null;
+			if (msg instanceof BytesMessage)
+			{
+				BytesMessage message = (BytesMessage)msg;
+				int len = new Long(message.getBodyLength()).intValue();
+				byte[] textBytes = new byte[len];
+				message.readBytes(textBytes,len);
+				String codePage = message.getStringProperty(WMQConstants.JMS_IBM_CHARACTER_SET);
+				text = new String(textBytes,codePage);
+			}
+			else if (msg instanceof TextMessage)
+				text = ((TextMessage)msg).getText();
+			else
+				throw new AdapterException("Unsupported message class " + msg.getClass().getName());
+
+			msg.acknowledge();
+			return text;
+		} catch(java.io.IOException | JMSException ex) {
+			throw new AdapterException(ex);
 		}
-		else if (msg instanceof TextMessage)
-			text = ((TextMessage)msg).getText();
-		else
-			throw new AdapterException("Unsupported message class " + msg.getClass().getName());
-
-		msg.acknowledge();
-		return text;
 	}
 }

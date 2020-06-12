@@ -75,7 +75,7 @@ class JNDITopic extends JMSBase
 		return info;
 	}
 
-	public JNDITopic(XML xml) throws Exception
+	public JNDITopic(XML xml) throws JMSException,NamingException,AdapterException
 	{
 		System.out.print("Connection to JMS (JNDI/Topic) bus... ");
 		Hashtable<String,String> env = new Hashtable<String,String>();
@@ -104,9 +104,13 @@ class JNDITopic extends JMSBase
 
 	}
 
-	void publish(String name,String message) throws JMSException
+	void publish(String name,String message) throws AdapterException
 	{
-		getInfo(name).send(message);
+		try {
+			getInfo(name).send(message);
+		} catch(JMSException ex) {
+			throw new AdapterException(ex);
+		}
 	}
 
 	void setMessageListener(String name,MessageListener listener) throws JMSException
@@ -124,13 +128,17 @@ class JNDITopic extends JMSBase
 		getInfo(name).getSession().recover();
 	}
 
-	String read(String name) throws JMSException
+	String read(String name) throws AdapterException
 	{
-		Message msg = getInfo(name).getSubscriber().receive(1);
-		if (msg == null) return null;
-		String text = ((TextMessage)msg).getText();
-		msg.acknowledge();
-		return text;
+		try {
+			Message msg = getInfo(name).getSubscriber().receive(1);
+			if (msg == null) return null;
+			String text = ((TextMessage)msg).getText();
+			msg.acknowledge();
+			return text;
+		} catch(JMSException ex) {
+			throw new AdapterException(ex);
+		}
 	}
 
 }

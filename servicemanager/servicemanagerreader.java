@@ -11,7 +11,7 @@ class ReaderServiceManager extends ReaderXML
 	private XML xmlconfig;
 	private XML publisher;
 
-	public ReaderServiceManager(XML xml) throws Exception
+	public ReaderServiceManager(XML xml) throws AdapterException
 	{
 		super(xml);
 
@@ -45,7 +45,7 @@ class ReaderServiceManager extends ReaderXML
 	}
 
 	@Override
-	public LinkedHashMap<String,String> nextRaw() throws Exception
+	public LinkedHashMap<String,String> nextRaw() throws AdapterException
 	{
 		LinkedHashMap<String,String> row = getXML(position);
 		if (row == null)
@@ -107,7 +107,7 @@ class ReaderServiceManagerRelations extends ReaderUtil
 		boolean outage;
 	};
 
-	public ReaderServiceManagerRelations(XML xml) throws Exception
+	public ReaderServiceManagerRelations(XML xml) throws AdapterException
 	{
 		super(true);
 
@@ -148,7 +148,7 @@ class ReaderServiceManagerRelations extends ReaderUtil
 		child_iterator = (new TreeMap<String,ChildResult>(db.getCollator())).entrySet().iterator();
 	}
 
-	private void getAllChildren(TreeMap<String,ChildResult> map,int level,String ci,boolean outage) throws Exception
+	private void getAllChildren(TreeMap<String,ChildResult> map,int level,String ci,boolean outage) throws AdapterException
 	{
 		TreeMap<String,ChildExtract> children = all_next.get(ci);
 		if (children == null) return;
@@ -177,7 +177,7 @@ class ReaderServiceManagerRelations extends ReaderUtil
 	}
 
 	@Override
-	public LinkedHashMap<String,String> nextRaw() throws Exception
+	public LinkedHashMap<String,String> nextRaw() throws AdapterException
 	{
 		if (!child_iterator.hasNext()) {
 			if (!next_iterator.hasNext()) return null;
@@ -203,11 +203,11 @@ class ReaderServiceManagerRelations extends ReaderUtil
 
 class ServiceManagerUpdateSubscriber extends UpdateSubscriber
 {
-	public ServiceManagerUpdateSubscriber() throws Exception
+	public ServiceManagerUpdateSubscriber() throws AdapterException
 	{
 	}
 
-	private void setValue(XML xml,String name,String value) throws Exception
+	private void setValue(XML xml,String name,String value) throws AdapterException
 	{
 		if (value == null) value = "";
 		if (value.matches("\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}"))
@@ -220,7 +220,7 @@ class ServiceManagerUpdateSubscriber extends UpdateSubscriber
 		xml.add(name).setValue(value);
 	}
 
-	private String getMessage(XML xml) throws Exception
+	private String getMessage(XML xml) throws AdapterException
 	{
 		if (xml == null)
 			throw new AdapterException("Service Manager returned no data");
@@ -248,25 +248,25 @@ class ServiceManagerUpdateSubscriber extends UpdateSubscriber
 		return sb.toString();
 	}
 
-	protected void add(XML xmldest,XML xmloper) throws Exception
+	protected void add(XML xmldest,XML xmloper) throws AdapterException
 	{
 		oper(xmloper.getParent().getAttribute("name"),xmldest,xmloper);
 	}
 
-	protected void remove(XML xmldest,XML xmloper) throws Exception
+	protected void remove(XML xmldest,XML xmloper) throws AdapterException
 	{
 		oper(xmloper.getParent().getAttribute("name"),xmldest,xmloper);
 	}
 
-	protected void update(XML xmldest,XML xmloper) throws Exception
+	protected void update(XML xmldest,XML xmloper) throws AdapterException
 	{
 		oper(xmloper.getParent().getAttribute("name"),xmldest,xmloper);
 	}
 
-	protected void start(XML xmldest,XML xmloper) throws Exception {}
-	protected void end(XML xmldest,XML xmloper) throws Exception {}
+	protected void start(XML xmldest,XML xmloper) throws AdapterException {}
+	protected void end(XML xmldest,XML xmloper) throws AdapterException {}
 
-	protected void oper(String object,XML xmldest,XML xmloper) throws Exception
+	protected void oper(String object,XML xmldest,XML xmloper) throws AdapterException
 	{
 		XML publisher = new XML();
 		XML pub = publisher.add("publisher");
@@ -482,74 +482,78 @@ class ServiceManagerDBProcessor implements DBProcessor
 		DBProcessorManager.register(new ServiceManagerDBProcessor());
 	}
 
-	public String getFieldValue(byte[] bytes) throws Exception
+	public String getFieldValue(byte[] bytes) throws AdapterDbException
 	{
-		if (!Misc.startsWith(bytes,SMBINARRAY)) return new String(bytes,"iso-8859-1");
+		try {
+			if (!Misc.startsWith(bytes,SMBINARRAY)) return new String(bytes,"iso-8859-1");
 
-		//Misc.log(Misc.toHexString(bytes));
-		//Misc.log(new String(bytes));
-		StringBuilder sb = new StringBuilder();
-		int pos = SMBINARRAY.length;
-		int structpos = -1;
-		while(pos < bytes.length)
-		{
-			int len = 0;
-
-			switch(bytes[pos])
+			//Misc.log(Misc.toHexString(bytes));
+			//Misc.log(new String(bytes));
+			StringBuilder sb = new StringBuilder();
+			int pos = SMBINARRAY.length;
+			int structpos = -1;
+			while(pos < bytes.length)
 			{
-			case 0x2d:
-				pos++;
-				len = (int)bytes[pos];
-				break;
-			case 0x2c:
-				len = 4;
-				break;
-			case 0x2b:
-				len = 3;
-				break;
-			case 0x2a:
-				len = 2;
-				break;
-			case 0x2f:
-				// Empty value
-				break;
-			case (byte)0x80:
-				// Array start
-				break;
-			case (byte)0x81:
-				// Array end
-				break;
-			case (byte)0x90:
-				structpos = 0;
-				break;
-			case (byte)0x91:
-				structpos = -1;
-				sb.append("\n");
-				break;
-			default:
-				String str = new String(bytes);
-				throw new AdapterException("Unsupported 0x" + String.format("%x",bytes[pos]) + "[" + pos + "] SM array " + Misc.toHexString(bytes) + ": " + str);
-			}
+				int len = 0;
 
-			pos++;
-			if (structpos >= 0)
-			{
-				if (structpos > 1) sb.append(",");
-				structpos++;
-				if (structpos > 0)
+				switch(bytes[pos])
 				{
-					sb.append(CsvWriter.escape(new String(Arrays.copyOfRange(bytes,pos,pos+len),"utf-8"),',','"',(char)0,false));
-					pos += len;
+				case 0x2d:
+					pos++;
+					len = (int)bytes[pos];
+					break;
+				case 0x2c:
+					len = 4;
+					break;
+				case 0x2b:
+					len = 3;
+					break;
+				case 0x2a:
+					len = 2;
+					break;
+				case 0x2f:
+					// Empty value
+					break;
+				case (byte)0x80:
+					// Array start
+					break;
+				case (byte)0x81:
+					// Array end
+					break;
+				case (byte)0x90:
+					structpos = 0;
+					break;
+				case (byte)0x91:
+					structpos = -1;
+					sb.append("\n");
+					break;
+				default:
+					String str = new String(bytes);
+					throw new AdapterDbException("Unsupported 0x" + String.format("%x",bytes[pos]) + "[" + pos + "] SM array " + Misc.toHexString(bytes) + ": " + str);
 				}
-				continue;
+
+				pos++;
+				if (structpos >= 0)
+				{
+					if (structpos > 1) sb.append(",");
+					structpos++;
+					if (structpos > 0)
+					{
+						sb.append(CsvWriter.escape(new String(Arrays.copyOfRange(bytes,pos,pos+len),"utf-8"),',','"',(char)0,false));
+						pos += len;
+					}
+					continue;
+				}
+
+				if (len == 0) continue;
+				sb.append(new String(Arrays.copyOfRange(bytes,pos,pos+len),"utf-8"));
+				pos += len;
 			}
+			//Misc.log(sb.toString());
 
-			if (len == 0) continue;
-			sb.append(new String(Arrays.copyOfRange(bytes,pos,pos+len),"utf-8"));
-			pos += len;
+			return sb.toString();
+		} catch(java.io.UnsupportedEncodingException | AdapterException ex) {
+			throw new AdapterDbException(ex);
 		}
-		//Misc.log(sb.toString());
-
-		return sb.toString();
 	}
 }

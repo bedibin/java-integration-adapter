@@ -101,13 +101,11 @@ class Script
 		XML xmlcfg = javaadapter.getConfiguration();
 		if (xmlcfg != null)
 		{
-			try {
-				StringBuilder sb = new StringBuilder(program);
-				XML[] xmlscripts = xmlcfg.getElements("script");
-				for(XML xmlscript:xmlscripts)
-					sb.append(xmlscript.getValue());
-				program = sb.toString() + program;
-			} catch(AdapterException ex) {}
+			StringBuilder sb = new StringBuilder(program);
+			XML[] xmlscripts = xmlcfg.getElements("script");
+			for(XML xmlscript:xmlscripts)
+				sb.append(xmlscript.getValue());
+			program = sb.toString() + program;
 		}
 
 		String engine = xml.getAttribute("engine");

@@ -31,6 +31,7 @@ class dbsyncplugin
 			javaadapter.init(filename);
 			sync = new DBSyncOper();
 			sync.run();
+			System.exit(0);
 		}
 		catch(Exception ex)
 		{
@@ -44,12 +45,12 @@ class DBSyncPluginHook extends Hook
 {
 	private DBSyncOper sync;
 
-	public DBSyncPluginHook() throws Exception
+	public DBSyncPluginHook() throws AdapterException
 	{
 		sync = new DBSyncOper();
 	}
 
-	public DBSyncPluginHook(String classname,XML function) throws Exception
+	public DBSyncPluginHook(String classname,XML function) throws AdapterException
 	{
 		super(classname,function);
 		sync = new DBSyncOper();
@@ -62,7 +63,7 @@ class DBSyncPluginHook extends Hook
 		{
 			sync.run(getFunction(),null);
 		}
-		catch(Exception ex)
+		catch(AdapterException ex)
 		{
 			Misc.log(ex);
 		}
@@ -74,13 +75,13 @@ class DBSyncPluginSubscriber extends Subscriber
 {
 	private DBSyncOper sync;
 
-	public DBSyncPluginSubscriber() throws Exception
+	public DBSyncPluginSubscriber() throws AdapterException
 	{
 		sync = new DBSyncOper();
 	}
 
 	@Override
-	public XML run(XML xml) throws Exception
+	public XML run(XML xml) throws AdapterException
 	{
 		sync.run(getFunction(),xml);
 
@@ -106,7 +107,7 @@ abstract class UpdateSubscriber extends Subscriber
 		return keyvalue;
 	}
 
-	protected void setKeyValue(XML xml) throws Exception
+	protected void setKeyValue(XML xml) throws AdapterException
 	{
 		keyvalue = "";
 
@@ -136,7 +137,7 @@ abstract class UpdateSubscriber extends Subscriber
 	}
 
 	@Override
-	public XML run(XML xml) throws Exception
+	public XML run(XML xml) throws AdapterException
 	{
 		String name = xml.getAttribute("name");
 		if (name == null) throw new AdapterException(xml,"Missing name attribute");
@@ -174,13 +175,13 @@ abstract class UpdateSubscriber extends Subscriber
 		return result;
 	}
 
-	protected abstract void start(XML xmldest,XML xml) throws Exception;
-	protected abstract void end(XML xmldest,XML xml) throws Exception;
-	protected abstract void add(XML xmldest,XML xml) throws Exception;
-	protected abstract void remove(XML xmldest,XML xml) throws Exception;
-	protected abstract void update(XML xmldest,XML xml) throws Exception;
+	protected abstract void start(XML xmldest,XML xml) throws AdapterException;
+	protected abstract void end(XML xmldest,XML xml) throws AdapterException;
+	protected abstract void add(XML xmldest,XML xml) throws AdapterException;
+	protected abstract void remove(XML xmldest,XML xml) throws AdapterException;
+	protected abstract void update(XML xmldest,XML xml) throws AdapterException;
 
-	private void startOper(XML xmldest,XML xml) throws Exception
+	private void startOper(XML xmldest,XML xml) throws AdapterException
 	{
 		addcounter = 0;
 		removecounter = 0;
@@ -189,28 +190,28 @@ abstract class UpdateSubscriber extends Subscriber
 		start(xmldest,xml);
 	}
 
-	private void addOper(XML xmldest,XML xml) throws Exception
+	private void addOper(XML xmldest,XML xml) throws AdapterException
 	{
 		addcounter++;
 		rate.toString();
 		add(xmldest,xml);
 	}
 
-	private void removeOper(XML xmldest,XML xml) throws Exception
+	private void removeOper(XML xmldest,XML xml) throws AdapterException
 	{
 		removecounter++;
 		rate.toString();
 		remove(xmldest,xml);
 	}
 
-	private void updateOper(XML xmldest,XML xml) throws Exception
+	private void updateOper(XML xmldest,XML xml) throws AdapterException
 	{
 		updatecounter++;
 		rate.toString();
 		update(xmldest,xml);
 	}
 
-	private void endOper(XML xmldest,XML xml) throws Exception
+	private void endOper(XML xmldest,XML xml) throws AdapterException
 	{
 		keyvalue = null;
 		String add = xml.getAttribute("add");
@@ -241,7 +242,7 @@ abstract class UpdateSubscriber extends Subscriber
 		return msg == null ? ex.toString() : msg;
 	}
 
-	public final void oper(XML xmldest,XML xmloper) throws Exception
+	public final void oper(XML xmldest,XML xmloper) throws AdapterException
 	{
 		try
 		{
@@ -265,7 +266,7 @@ abstract class UpdateSubscriber extends Subscriber
 				break;
 			}
 		}
-		catch(Exception ex)
+		catch(AdapterException ex)
 		{
 			if (stoponerror) Misc.rethrow(ex);
 			String key = getKeyValue();
@@ -280,7 +281,7 @@ class DatabaseUpdateSubscriber extends UpdateSubscriber
 	protected DB db;
 	private String quotefield = "\"";
 
-	public DatabaseUpdateSubscriber() throws Exception
+	public DatabaseUpdateSubscriber() throws AdapterException
 	{
 		db = DB.getInstance();
 	}
@@ -290,7 +291,7 @@ class DatabaseUpdateSubscriber extends UpdateSubscriber
 		quotefield = field;
 	}
 
-	protected void start(XML xmldest,XML xml) throws Exception
+	protected void start(XML xmldest,XML xml) throws AdapterException
 	{
 		String instance = xmldest.getAttribute("instance_write");
 		if (instance == null) instance = xmldest.getAttribute("instance");
@@ -303,7 +304,7 @@ class DatabaseUpdateSubscriber extends UpdateSubscriber
 		}
 	}
 
-	protected void end(XML xmldest,XML xml) throws Exception
+	protected void end(XML xmldest,XML xml) throws AdapterException
 	{
 		String instance = xmldest.getAttribute("instance_write");
 		if (instance == null) instance = xmldest.getAttribute("instance");
@@ -316,7 +317,7 @@ class DatabaseUpdateSubscriber extends UpdateSubscriber
 		}
 	}
 
-	private boolean customsql(String oper,XML xmldest,XML xml) throws Exception
+	private boolean customsql(String oper,XML xmldest,XML xml) throws AdapterException
 	{
 		String instance = xmldest.getAttribute("instance_write");
 		if (instance == null) instance = xmldest.getAttribute("instance");
@@ -341,7 +342,7 @@ class DatabaseUpdateSubscriber extends UpdateSubscriber
 		return true;
 	}
 
-	private String getWhereClause(XML xmldest,XML xml) throws Exception
+	private String getWhereClause(XML xmldest,XML xml) throws AdapterException
 	{
 		XML[] fields = xml.getElements();
 
@@ -385,7 +386,7 @@ class DatabaseUpdateSubscriber extends UpdateSubscriber
 		return sql.toString();
 	}
 
-	private void handleRetryException(Exception ex,XML xmldest,XML xml,boolean isretry) throws Exception
+	private void handleRetryException(AdapterDbException ex,XML xmldest,XML xml,boolean isretry) throws AdapterException
 	{
 		String table = xmldest.getAttribute("table");
 		String instance = xmldest.getAttribute("instance_write");
@@ -494,12 +495,12 @@ class DatabaseUpdateSubscriber extends UpdateSubscriber
 		Misc.rethrow(ex);
 	}
 
-	protected void add(XML xmldest,XML xml) throws Exception
+	protected void add(XML xmldest,XML xml) throws AdapterException
 	{
 		add(xmldest,xml,false);
 	}
 
-	protected void add(XML xmldest,XML xml,boolean isretry) throws Exception
+	protected void add(XML xmldest,XML xml,boolean isretry) throws AdapterException
 	{
 		String instance = xmldest.getAttribute("instance_write");
 		if (instance == null) instance = xmldest.getAttribute("instance");
@@ -549,13 +550,13 @@ class DatabaseUpdateSubscriber extends UpdateSubscriber
 		{
 			db.execsql(instance,sql,list);
 		}
-		catch(Exception ex)
+		catch(AdapterDbException ex)
 		{
 			handleRetryException(ex,xmldest,xml,isretry);
 		}
 	}
 
-	protected void remove(XML xmldest,XML xml) throws Exception
+	protected void remove(XML xmldest,XML xml) throws AdapterException
 	{
 		String instance = xmldest.getAttribute("instance_write");
 		if (instance == null) instance = xmldest.getAttribute("instance");
@@ -588,12 +589,12 @@ class DatabaseUpdateSubscriber extends UpdateSubscriber
 		db.execsql(instance,sql,list);
 	}
 
-	protected void update(XML xmldest,XML xml) throws Exception
+	protected void update(XML xmldest,XML xml) throws AdapterException
 	{
 		update(xmldest,xml,false);
 	}
 
-	protected void update(XML xmldest,XML xml,boolean isretry) throws Exception
+	protected void update(XML xmldest,XML xml,boolean isretry) throws AdapterException
 	{
 		String instance = xmldest.getAttribute("instance_write");
 		if (instance == null) instance = xmldest.getAttribute("instance");
@@ -630,7 +631,7 @@ class DatabaseUpdateSubscriber extends UpdateSubscriber
 		{
 			db.execsql(instance,sql,list);
 		}
-		catch(Exception ex)
+		catch(AdapterDbException ex)
 		{
 			handleRetryException(ex,xmldest,xml,isretry);
 		}

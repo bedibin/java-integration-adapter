@@ -11,7 +11,7 @@ class AMDBOper extends DBOper
 	private XML[] rowresult;
 	private AMDB db;
 
-	public AMDBOper(AMDB db,String sql,List<String> list) throws Exception
+	public AMDBOper(AMDB db,String sql,List<String> list) throws AdapterDbException
 	{
 		if (list == null || list.size() == 0)
 			init(db,sql);
@@ -22,22 +22,22 @@ class AMDBOper extends DBOper
 			int x = 0;
 			while(matcher.find())
 			{
-				if (x >= list.size()) throw new AdapterException("Too many replacement characters " + list.size() + ": " + sql);
+				if (x >= list.size()) throw new AdapterDbException("Too many replacement characters " + list.size() + ": " + sql);
 				matcher.appendReplacement(sb,Matcher.quoteReplacement(db.getValue(list.get(x))));
 				x++;
 			}
-			if (x < list.size()) throw new AdapterException("Not enough replacement characters " + list.size() + ": " + sql);
+			if (x < list.size()) throw new AdapterDbException("Not enough replacement characters " + list.size() + ": " + sql);
 			matcher.appendTail(sb);
 			init(db,sb.toString());
 		}
 	}
 
-	public AMDBOper(AMDB db,String sql) throws Exception
+	public AMDBOper(AMDB db,String sql) throws AdapterException
 	{
 		init(db,sql);
 	}
 
-	private void init(AMDB db,String sql) throws Exception
+	private void init(AMDB db,String sql) throws AdapterDbException
 	{
 		if (Misc.isLog(8)) Misc.log("AQL: " + sql);
 
@@ -45,22 +45,26 @@ class AMDBOper extends DBOper
 
 		if (sql.startsWith("select") || sql.startsWith("SELECT"))
 		{
-			String out = AmApi.AmQuery(db.getAMConnection(),sql,0,0,true);
-			StringBuilder sb = new StringBuilder(out);
-			XML xml = new XML(sb);
+			try {
+				String out  = AmApi.AmQuery(db.getAMConnection(),sql,0,0,true);
+				StringBuilder sb = new StringBuilder(out);
+				XML xml = new XML(sb);
 
-			XML[] columnlist = xml.getElement("Schema").getElements("Column");
-			columnnames = new String[columnlist.length];
-			for(int i = 0;i < columnlist.length;i++)
-			{
-				int index = new Integer(columnlist[i].getAttribute("Index"));
-				columnnames[index] = columnlist[i].getAttribute("Name");
+				XML[] columnlist = xml.getElement("Schema").getElements("Column");
+				columnnames = new String[columnlist.length];
+				for(int i = 0;i < columnlist.length;i++)
+				{
+					int index = new Integer(columnlist[i].getAttribute("Index"));
+					columnnames[index] = columnlist[i].getAttribute("Name");
+				}
+
+				rowresult = xml.getElement("Result").getElements("Row");
+				resultcount = rowresult.length;
+				if (Misc.isLog(15)) Misc.log("Number of entries returned: " + resultcount);
+				return;
+			} catch(AmException | AdapterException ex) {
+				throw new AdapterDbException(ex);
 			}
-
-			rowresult = xml.getElement("Result").getElements("Row");
-			resultcount = rowresult.length;
-			if (Misc.isLog(15)) Misc.log("Number of entries returned: " + resultcount);
-			return;
 		}
 
 		try
@@ -71,24 +75,23 @@ class AMDBOper extends DBOper
 		}
 		catch(AmException ex)
 		{
-			AmApi.AmRollback(db.getAMConnection());
+			try {
+				AmApi.AmRollback(db.getAMConnection());
+			} catch(AmException ex2) {
+				throw new AdapterDbException(ex2);
+			}
 			String message = ex.getMessage();
 			if (message.indexOf("Impossible de changer de type de gestion") != -1) // TODO: Add English translation
 			{
-				throw new AdapterException(message + ": unique constraint");
+				throw new AdapterDbException(message + ": unique constraint");
 			}
 
-			Misc.rethrow(ex);
-		}
-		catch(Exception ex)
-		{
-			AmApi.AmRollback(db.getAMConnection());
-			Misc.rethrow(ex);
+			throw new AdapterDbException(ex);
 		}
 	}
 
 	@Override
-	public LinkedHashMap<String,String> next() throws Exception
+	public LinkedHashMap<String,String> next() throws AdapterDbException
 	{
 		if (rowresult == null || pos >= rowresult.length) return null;
 
@@ -96,21 +99,25 @@ class AMDBOper extends DBOper
 
 		for(int i = 0;i < columnnames.length;i++)
 		{
-			String value = rowresult[pos].getValueByPath("Column[@Index='"+i+"']");
-			if (value == null) value = "";
-			if (value.matches("\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}"))
-			{
-				Date date = db.dateformat.parse(value);
-				value = Misc.gmtdateformat.format(value);
+			try {
+				String value = rowresult[pos].getValueByPath("Column[@Index='"+i+"']");
+				if (value == null) value = "";
+				if (value.matches("\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}"))
+				{
+					Date date = db.dateformat.parse(value);
+					value = Misc.gmtdateformat.format(value);
+				}
+				row.put(columnnames[i],value);
+			} catch(ParseException | AdapterException ex) {
+				throw new AdapterDbException(ex);
 			}
-			row.put(columnnames[i],value);
 		}
 
 		pos++;
 		return row;
 	}
 
-	public void close() throws Exception
+	public void close() throws AdapterDbException
 	{
 	}
 }
@@ -123,7 +130,7 @@ class AMDB extends DB
 	public SimpleDateFormat dateformat;
 	public DecimalFormat currencyformat;
 
-	private AMDB() throws Exception
+	private AMDB() throws AdapterException
 	{
 		System.out.print("Connection to AM... ");
 		XML xml = javaadapter.getConfiguration().getElementByPath("/configuration/connection[@type='am']");
@@ -134,10 +141,14 @@ class AMDB extends DB
 		String password = xml.getValueCrypt("password");
 		if (password == null) password = "";
 
-		amconn = AmApi.AmGetConnection(instance,username,password,"");
-		if (amconn == 0)
-			throw new AdapterException(xml,"AM connection parameters are incorrect");
-		AmApi.AmAuthenticateUser(amconn,username,password);
+		try {
+			amconn = AmApi.AmGetConnection(instance,username,password,"");
+			if (amconn == 0)
+				throw new AdapterException(xml,"AM connection parameters are incorrect");
+			AmApi.AmAuthenticateUser(amconn,username,password);
+		} catch(AmException ex) {
+			throw new AdapterException(ex);
+		}
 
 		dateformat = new SimpleDateFormat(Misc.DATEFORMAT);
 		String timezone = xml.getValue("timezone","UTC");
@@ -150,14 +161,18 @@ class AMDB extends DB
 	}
 
 	@Override
-	protected String getDate(String value) throws Exception
+	protected String getDate(String value) throws AdapterDbException
 	{
-		Date date = Misc.gmtdateformat.parse(value);
-		return "#" + dateformat.format(date) + "#";
+		try {
+			Date date = Misc.gmtdateformat.parse(value);
+			return "#" + dateformat.format(date) + "#";
+		} catch(ParseException ex) {
+			throw new AdapterDbException(ex);
+		}
 	}
 
 	@Override
-	public String getValue(String value,String name) throws Exception
+	public String getValue(String value,String name) throws AdapterDbException
 	{
 		if (value == null) return "null";
 		final Pattern pat = Pattern.compile("l\\w+id",Pattern.CASE_INSENSITIVE);
@@ -168,13 +183,13 @@ class AMDB extends DB
 	}
 
 	@Override
-	public String getConcat(String conn,String field,String addedfield) throws Exception
+	public String getConcat(String conn,String field,String addedfield)
 	{
 		return field + " + " + addedfield;
 	}
 
 	@Override
-	public String getValue(String value) throws Exception
+	public String getValue(String value) throws AdapterDbException
 	{
 		if (value == null) return "null";
 		if (value.matches("\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}"))
@@ -190,7 +205,7 @@ class AMDB extends DB
 		return "'" + value + "'";
 	}
 
-	public synchronized static AMDB getInstance() throws Exception
+	public synchronized static AMDB getInstance() throws AdapterException
         {
 		if (instance == null)
 		{
@@ -201,26 +216,26 @@ class AMDB extends DB
 	}
 
 	@Override
-	public int execsqlresult(String conn,String sql,List<String> list) throws Exception
+	public int execsqlresult(String conn,String sql,List<String> list) throws AdapterDbException
 	{
 		AMDBOper oper = new AMDBOper(this,sql,list);
 		return oper.getResultCount();
 	}
 
 	@Override
-	public int execsqlresult(String conn,String sql) throws Exception
+	public int execsqlresult(String conn,String sql) throws AdapterDbException
 	{
 		return execsqlresult(conn,sql,null);
 	}
 
 	@Override
-	public ArrayList<LinkedHashMap<String,String>> execsql(String conn,String sql) throws Exception
+	public ArrayList<LinkedHashMap<String,String>> execsql(String conn,String sql) throws AdapterDbException
 	{
 		return execsql(conn,sql,null);
 	}
 
 	@Override
-	public ArrayList<LinkedHashMap<String,String>> execsql(String conn,String sql,List<String> list) throws Exception
+	public ArrayList<LinkedHashMap<String,String>> execsql(String conn,String sql,List<String> list) throws AdapterDbException
 	{
 		AMDBOper oper = null;
 		ArrayList<LinkedHashMap<String,String>> result = null;
@@ -245,7 +260,7 @@ class AMDB extends DB
 
 class AssetManagerUpdateSubscriber extends DatabaseUpdateSubscriber
 {
-	public AssetManagerUpdateSubscriber() throws Exception
+	public AssetManagerUpdateSubscriber() throws AdapterException
 	{
 		db = AMDB.getInstance();
 		setQuoteField("");
@@ -254,13 +269,17 @@ class AssetManagerUpdateSubscriber extends DatabaseUpdateSubscriber
 
 class AssetManagerRestSubscriber extends UpdateSubscriber
 {
-	protected String getDate(String value) throws Exception
+	protected String getDate(String value) throws AdapterException
 	{
-		Date date = Misc.gmtdateformat.parse(value);
-		return "" + date.getTime();
+		try {
+			Date date = Misc.gmtdateformat.parse(value);
+			return "" + date.getTime();
+		} catch(java.text.ParseException ex) {
+			throw new AdapterException(ex);
+		}
 	}
 
-	protected String getValue(String value) throws Exception
+	protected String getValue(String value) throws AdapterException
 	{
 		if (value == null) return "";
 		if (value.matches("\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}"))
@@ -273,25 +292,25 @@ class AssetManagerRestSubscriber extends UpdateSubscriber
 		return value;
 	}
 
-	protected void add(XML xmldest,XML xmloper) throws Exception
+	protected void add(XML xmldest,XML xmloper) throws AdapterException
 	{
 		oper("post",xmldest,xmloper);
 	}
 
-	protected void remove(XML xmldest,XML xmloper) throws Exception
+	protected void remove(XML xmldest,XML xmloper) throws AdapterException
 	{
 		oper("delete",xmldest,xmloper);
 	}
 
-	protected void update(XML xmldest,XML xmloper) throws Exception
+	protected void update(XML xmldest,XML xmloper) throws AdapterException
 	{
 		oper("put",xmldest,xmloper);
 	}
 
-	protected void start(XML xmldest,XML xmloper) throws Exception {}
-	protected void end(XML xmldest,XML xmloper) throws Exception {}
+	protected void start(XML xmldest,XML xmloper) throws AdapterException {}
+	protected void end(XML xmldest,XML xmloper) throws AdapterException {}
 
-	protected void oper(String httpoper,XML xmldest,XML xmloper) throws Exception
+	protected void oper(String httpoper,XML xmldest,XML xmloper) throws AdapterException
 	{
 		DB db = DB.getInstance();
 

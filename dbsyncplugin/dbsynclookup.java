@@ -1,5 +1,4 @@
 import java.util.*;
-import java.io.FileNotFoundException;
 
 enum SyncLookupResultErrorOperationTypes { ERROR, WARNING, EXCEPTION, REJECT_FIELD, REJECT_RECORD, NEWVALUE, NONE };
 
@@ -58,7 +57,7 @@ class SyncLookup
 			private String resultname;
 			private boolean loadingdone;
 
-			Preload(XML xml,String resultname) throws Exception
+			Preload(XML xml,String resultname) throws AdapterException
 			{
 				this.xml = xml;
 				this.resultname = resultname;
@@ -85,14 +84,14 @@ class SyncLookup
 				{
 					reader = ReaderUtil.getReader(xml);
 				}
-				catch(FileNotFoundException ex)
+				catch(AdapterNotFoundException ex)
 				{
 					xml.setAttributeDeprecated("on_not_found","on_file_not_found");
 					OnOper onnotfound = Field.getOnOper(xml,"on_file_not_found",OnOper.EXCEPTION,EnumSet.of(OnOper.EXCEPTION,OnOper.IGNORE,OnOper.WARNING,OnOper.ERROR));
 					switch(onnotfound)
 					{
 					case EXCEPTION:
-						Misc.rethrow(ex);
+						throw new AdapterException(ex);
 					case IGNORE:
 						return;
 					case WARNING:
@@ -120,7 +119,7 @@ class SyncLookup
 				table.put(key,value);
 			}
 
-			void doInitialLoading(FieldResult fieldresult) throws Exception
+			void doInitialLoading(FieldResult fieldresult) throws AdapterException
 			{
 				LinkedHashMap<String,String> result;
 				if (reader != null) while((result = reader.next()) != null)
@@ -202,15 +201,19 @@ class SyncLookup
 				loadingdone = true;
 			}
 
-			public String addValue(FieldResult result) throws Exception
+			public String addValue(FieldResult result) throws AdapterException
 			{
 				XML xmladd = new XML(new StringBuilder(Misc.substitute(xml.toString(),result.getValues())));
-				reader = ReaderUtil.getReader(xmladd);
+				try {
+					reader = ReaderUtil.getReader(xmladd);
+				} catch(AdapterNotFoundException ex) {
+					throw new AdapterException(ex);
+				}
 				doInitialLoading(result);
 				return getValue(result);
 			}
 
-			public String getValue(FieldResult fieldresult) throws Exception
+			public String getValue(FieldResult fieldresult) throws AdapterException
 			{
 				// Delay preloading until first use
 				if (!loadingdone) doInitialLoading(fieldresult);
@@ -278,10 +281,14 @@ class SyncLookup
 				String mergedatevalue = datetable.get(keyvaluelower);
 				if (mergedatevalue == null) return null;
 
-				Date date = Misc.dateformat.parse(datevalue);
-				Date mergedate = Misc.dateformat.parse(mergedatevalue);
+				try {
+					Date date = Misc.dateformat.parse(datevalue);
+					Date mergedate = Misc.dateformat.parse(mergedatevalue);
 
-				if (date.after(mergedate)) return null;
+					if (date.after(mergedate)) return null;
+				} catch(java.text.ParseException ex) {
+					throw new AdapterException(ex);
+				}
 				return result;
 			}
 		}
@@ -297,17 +304,17 @@ class SyncLookup
 		{
 		}
 
-		public SimpleLookup(XML xml) throws Exception
+		public SimpleLookup(XML xml) throws AdapterException
 		{
 			this(xml,fieldname,null);
 		}
 
-		public SimpleLookup(XML xml,Preload preloadinfo) throws Exception
+		public SimpleLookup(XML xml,Preload preloadinfo) throws AdapterException
 		{
 			this(xml,fieldname,preloadinfo);
 		}
 
-		protected SimpleLookup(XML xml,String resultname,Preload preloadinfo) throws Exception
+		protected SimpleLookup(XML xml,String resultname,Preload preloadinfo) throws AdapterException
 		{
 			opername = xml.getAttribute("name");
 			xmllookup = xml;
@@ -349,13 +356,13 @@ class SyncLookup
 			this.preloadinfo = preloadinfo == null ? new Preload(xml,resultname) : preloadinfo;
 		}
 
-		protected final String add(FieldResult result) throws Exception
+		protected final String add(FieldResult result) throws AdapterException
 		{
 			if (preloadinfo == null) throw new AdapterException("Adding non preload is not supported");
 			return preloadinfo.addValue(result);
 		}
 
-		protected final String lookup(FieldResult result) throws Exception
+		protected final String lookup(FieldResult result) throws AdapterException
 		{
 			if (preloadinfo != null)
 				return preloadinfo.getValue(result);
@@ -374,7 +381,7 @@ class SyncLookup
 			return Misc.getFirstValue(nextrow);
 		}
 
-		public SyncLookupResultErrorOperation oper(FieldResult result) throws Exception
+		public SyncLookupResultErrorOperation oper(FieldResult result) throws AdapterException
 		{
 			String previous = result.getValue();
 			if (previous != null && !previous.isEmpty()) return new SyncLookupResultErrorOperation();
@@ -397,7 +404,7 @@ class SyncLookup
 			return opername;
 		}
 
-		public final String getNameDebug() throws Exception
+		public final String getNameDebug() throws AdapterException
 		{
 			if (opername != null) return opername;
 			return xmllookup.getTagName();
@@ -407,17 +414,22 @@ class SyncLookup
 		{
 			return preloadinfo;
 		}
+
+		public final boolean isValidFilter(FieldResult result) throws AdapterException
+		{
+			return Field.isValidFilter(xmllookup,result.getValues(),null);
+		}
 	}
 
 	class MergeLookup extends SimpleLookup
 	{
-		public MergeLookup(XML xml) throws Exception
+		public MergeLookup(XML xml) throws AdapterException
 		{
 			super(xml,null,null);
 		}
 
 		@Override
-		public SyncLookupResultErrorOperation oper(FieldResult result) throws Exception
+		public SyncLookupResultErrorOperation oper(FieldResult result) throws AdapterException
 		{
 			String value = lookup(result);
 			if (value == null)
@@ -430,13 +442,13 @@ class SyncLookup
 
 	class DefaultLookup extends SimpleLookup
 	{
-		public DefaultLookup(XML xml) throws Exception
+		public DefaultLookup(XML xml) throws AdapterException
 		{
 			super(xml,null,null);
 		}
 
 		@Override
-		public SyncLookupResultErrorOperation oper(FieldResult result) throws Exception
+		public SyncLookupResultErrorOperation oper(FieldResult result) throws AdapterException
 		{
 			String previous = result.getValue();
 			if (previous != null && !previous.isEmpty()) return new SyncLookupResultErrorOperation();
@@ -454,7 +466,7 @@ class SyncLookup
 	{
 		SyncLookupResultErrorOperationTypes onexclude = SyncLookupResultErrorOperationTypes.REJECT_RECORD;
 
-		public ExcludeLookup(XML xml) throws Exception
+		public ExcludeLookup(XML xml) throws AdapterException
 		{
 			super(xml,null,null);
 
@@ -480,7 +492,7 @@ class SyncLookup
 		}
 
 		@Override
-		public SyncLookupResultErrorOperation oper(FieldResult result) throws Exception
+		public SyncLookupResultErrorOperation oper(FieldResult result) throws AdapterException
 		{
 			String value = lookup(result);
 			if (value == null || value.isEmpty())
@@ -491,13 +503,13 @@ class SyncLookup
 
 	class IncludeLookup extends ExcludeLookup
 	{
-		public IncludeLookup(XML xml) throws Exception
+		public IncludeLookup(XML xml) throws AdapterException
 		{
 			super(xml);
 		}
 
 		@Override
-		public SyncLookupResultErrorOperation oper(FieldResult result) throws Exception
+		public SyncLookupResultErrorOperation oper(FieldResult result) throws AdapterException
 		{
 			String value = lookup(result);
 			if (value == null)
@@ -508,13 +520,13 @@ class SyncLookup
 
 	class InsertLookup extends SimpleLookup
 	{
-		public InsertLookup(XML xml,Preload preload) throws Exception
+		public InsertLookup(XML xml,Preload preload) throws AdapterException
 		{
 			super(xml,preload);
 		}
 
 		@Override
-		public SyncLookupResultErrorOperation oper(FieldResult result) throws Exception
+		public SyncLookupResultErrorOperation oper(FieldResult result) throws AdapterException
 		{
 			String value = lookup(result);
 			if (value == null) value = add(result);
@@ -528,7 +540,7 @@ class SyncLookup
 	{
 		SyncLookupResultErrorOperationTypes onexception = SyncLookupResultErrorOperationTypes.WARNING;
 
-		public ScriptLookup(XML xml) throws Exception
+		public ScriptLookup(XML xml) throws AdapterException
 		{
 			xmllookup = xml;
 
@@ -554,7 +566,7 @@ class SyncLookup
 		}
 
 		@Override
-		public SyncLookupResultErrorOperation oper(FieldResult result) throws Exception
+		public SyncLookupResultErrorOperation oper(FieldResult result) throws AdapterException
 		{
 			try {
 				HashMap<String,String> fields = new HashMap<String,String>(result.getValues());
@@ -584,7 +596,7 @@ class SyncLookup
 	private String defaultvalue;
 	private int count;
 
-	public SyncLookup(Field field) throws Exception
+	public SyncLookup(Field field) throws AdapterException
 	{
 		fieldname = field.getName();
 		XML xml = field.getXML();
@@ -626,11 +638,12 @@ class SyncLookup
 		}
 	}
 
-	public SyncLookupResultErrorOperation check(FieldResult result) throws Exception
+	public SyncLookupResultErrorOperation check(FieldResult result) throws AdapterException
 	{
 		SyncLookupResultErrorOperationTypes oper = SyncLookupResultErrorOperationTypes.NONE;
 		for(SimpleLookup lookup:lookups)
 		{
+			if (!lookup.isValidFilter(result)) continue;
 			SyncLookupResultErrorOperation erroroperation = lookup.oper(result);
 			if (Misc.isLog(25)) Misc.log("Lookup operation " + lookup.getNameDebug() + " returning " + erroroperation.getType() + " oper " + oper);
 			if (oper != SyncLookupResultErrorOperationTypes.NEWVALUE || erroroperation.getType() != SyncLookupResultErrorOperationTypes.NONE)

@@ -62,12 +62,12 @@ class Hook extends Operation
 
 	protected Hook() {}
 
-	public Hook(String classname,XML function) throws Exception
+	public Hook(String classname,XML function) throws AdapterException
 	{
 		super(classname,function);
 	}
 
-	public Hook(XML function) throws Exception
+	public Hook(XML function) throws AdapterException
 	{
 		super(function);
 	}
@@ -86,7 +86,7 @@ class Hook extends Operation
 		}
 	}
 
-	protected void setOperation(Hook sub) throws Exception
+	protected void setOperation(Hook sub) throws AdapterException
 	{
 		interval = sub.interval;
 		super.setOperation(sub);

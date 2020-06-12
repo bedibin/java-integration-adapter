@@ -17,13 +17,73 @@ interface VariableContext
 	public TimeZone getTimeZone();
 }
 
+class AdapterXmlException extends AdapterException
+{
+	AdapterXmlException(String str)
+	{
+		super(str);
+	}
+
+	AdapterXmlException(Throwable ex)
+	{
+		super(ex);
+	}
+
+	AdapterXmlException(XML xml,String str,Object... args)
+	{
+		super(Misc.getMessage(xml,str,args));
+	}
+}
+
+class AdapterXmlPathException extends AdapterXmlException
+{
+	AdapterXmlPathException(XPathExpressionException ex)
+	{
+		super(ex);
+	}
+}
+
 class XML
 {
+	static class DefaultVar
+	{
+		boolean substitute = false;
+		String value;
+
+		DefaultVar(String value)
+		{
+			this.value = value;
+		}
+
+		DefaultVar(XML xml) throws AdapterXmlException
+		{
+			String substr = xml.getAttribute("substitute");
+			if (substr != null && substr.equals("true"))
+				substitute = true;
+			value = xml.getAttribute("value");
+			if (value == null) value = xml.getValue();
+		}
+
+		String getValue() throws AdapterException
+		{
+			if (substitute)
+                		return Misc.substitute(value,new Misc.Substituer() {
+					public String getValue(String param) throws AdapterException
+					{
+						DefaultVar var = defaultvars.get(param);
+						return var == null ? null : var.getValue();
+					}
+				});
+
+			return value;
+		}
+	}
+
 	protected Document dom;
 	protected Node node;
 	private static ArrayList<XML> defaultattributes = new ArrayList<XML>();
 	private static HashMap<String,XML> defaultelements = new HashMap<String,XML>();
-	private static HashMap<String,String> defaultvars = new HashMap<String,String>();
+	private static HashMap<String,DefaultVar> defaultvars = new HashMap<String,DefaultVar>();
 	final static String LINE_NUMBER_KEY_NAME = "lineNumber";
 	Stack<Element> elementStack = new Stack<Element>();
 	StringBuilder textBuffer = new StringBuilder();
@@ -109,7 +169,7 @@ class XML
 	}
 
 
-	public XML() throws AdapterException
+	public XML() throws AdapterXmlException
 	{
 		try {
 			SAXParserFactory factory = SAXParserFactory.newInstance();
@@ -120,26 +180,34 @@ class XML
 			DocumentBuilder db = dbf.newDocumentBuilder();
 			dom = db.newDocument();
 			node = getRootNode();
-		} catch(Exception ex) {
-			throw new AdapterException(ex);
+		} catch(ParserConfigurationException | SAXException ex) {
+			throw new AdapterXmlException(ex);
 		}
 	}
 
-	public XML(String filename) throws Exception
+	public XML(String filename) throws AdapterXmlException
 	{
 		this();
-		parser.parse(new File(javaadapter.getCurrentDir(),filename),handler);
+		try {
+			parser.parse(new File(javaadapter.getCurrentDir(),filename),handler);
+		} catch(IOException | SAXException ex) {
+			throw new AdapterXmlException(ex);
+		}
 		node = getRootNode();
 	}
 
-	public XML(String filename,String root) throws Exception
+	public XML(String filename,String root) throws AdapterXmlException
 	{
 		this();
-		parser.parse(new File(javaadapter.getCurrentDir(),filename),handler);
+		try {
+			parser.parse(new File(javaadapter.getCurrentDir(),filename),handler);
+		} catch(IOException | SAXException ex) {
+			throw new AdapterXmlException(ex);
+		}
 		node = getElementByPath(root).node;
 	}
 
-	public XML(JSONObject json) throws Exception
+	public XML(JSONObject json) throws AdapterXmlException
 	{
 		// https://github.com/stleary/JSON-java
 		// https://search.maven.org/#search%7Cgav%7C1%7Cg%3A%22org.json%22%20AND%20a%3A%22json%22
@@ -148,43 +216,47 @@ class XML
 		try
 		{
 			parser.parse(new InputSource(new StringReader(txt)),handler);
-		} catch(Exception ex) {
-			Misc.rethrow(ex,"Invalid XML: " + txt);
+		} catch(IOException | SAXException ex) {
+			Misc.rethrow(new AdapterXmlException(ex),"Invalid XML: " + txt);
 		}
 		node = getRootNode();
 	}
 
-	public XML(StringBuffer sb) throws Exception
+	public XML(StringBuffer sb) throws AdapterXmlException
 	{
 		this();
 		String txt = sb.toString();
 		try
 		{
 			parser.parse(new InputSource(new StringReader(txt)),handler);
-		} catch(Exception ex) {
-			Misc.rethrow(ex,"Invalid XML: " + txt);
+		} catch(IOException | SAXException ex) {
+			Misc.rethrow(new AdapterXmlException(ex),"Invalid XML: " + txt);
 		}
 		node = getRootNode();
 	}
 
-	public XML(StringBuilder sb) throws Exception
+	public XML(StringBuilder sb) throws AdapterXmlException
 	{
 		this();
 		String txt = sb.toString();
 		try
 		{
 			parser.parse(new InputSource(new StringReader(txt)),handler);
-		} catch(Exception ex) {
-			Misc.rethrow(ex,"Invalid XML: " + txt);
+		} catch(IOException | SAXException ex) {
+			Misc.rethrow(new AdapterXmlException(ex),"Invalid XML: " + txt);
 		}
 		node = getRootNode();
 	}
 
-	public XML(StringBuilder sb,String root) throws Exception
+	public XML(StringBuilder sb,String root) throws AdapterXmlException
 	{
 		this();
 		String txt = sb.toString();
-		parser.parse(new InputSource(new StringReader(txt)),handler);
+		try {
+			parser.parse(new InputSource(new StringReader(txt)),handler);
+		} catch(IOException | SAXException ex) {
+			throw new AdapterXmlException(ex);
+		}
 		node = getElementByPath(root).node;
 	}
 
@@ -194,7 +266,7 @@ class XML
 		this.node = node;
 	}
 
-	public XML copy() throws Exception
+	public XML copy() throws AdapterXmlException
 	{
 		XML xml = new XML();
 		xml.add(this);
@@ -202,7 +274,7 @@ class XML
 		return xml;
 	}
 
-	public XML rename(String name) throws Exception
+	public XML rename(String name)
 	{
 		dom.renameNode(node,node.getNamespaceURI(),name);
 		return this;
@@ -224,14 +296,18 @@ class XML
 		return new XML(dom,node.getParentNode());
 	}
 
-	public void write(String filename) throws Exception
+	public void write(String filename) throws AdapterXmlException
 	{
-		TransformerFactory factory = TransformerFactory.newInstance();
-		Transformer xformer = factory.newTransformer();
-		Source source = new DOMSource(node == null ? dom : node);
-		FileWriter fw = new FileWriter(new File(javaadapter.getCurrentDir(),filename));
-		Result result = new StreamResult(fw);
-		xformer.transform(source,result);
+		try {
+			TransformerFactory factory = TransformerFactory.newInstance();
+			Transformer xformer = factory.newTransformer();
+			Source source = new DOMSource(node == null ? dom : node);
+			FileWriter fw = new FileWriter(new File(javaadapter.getCurrentDir(),filename));
+			Result result = new StreamResult(fw);
+			xformer.transform(source,result);
+		} catch (IOException | TransformerException ex) {
+			throw new AdapterXmlException(ex);
+		}
 	}
 
 	public String toString(Node node,boolean omit_declaration)
@@ -253,7 +329,7 @@ class XML
 			}
 			return writer.getBuffer().toString();
 		}
-		catch(Exception ex)
+		catch(TransformerException ex)
 		{
 			Misc.log(ex);
 		}
@@ -280,7 +356,7 @@ class XML
 		return (String)(node.getUserData(LINE_NUMBER_KEY_NAME));
 	}
 
-	public XML transform(String filename) throws AdapterException
+	public XML transform(String filename) throws AdapterXmlException
 	{
 		try
 		{
@@ -295,17 +371,17 @@ class XML
 			xml.node = xml.getRootNode();
 			// Next code is commented since we allow empty XML being return
 			//if (!(xml.node instanceof Element))
-			//	throw new AdapterException("Transformation didn't return a node");
+			//	throw new AdapterXmlException("Transformation didn't return a node");
 			return xml;
 		}
 		catch(FileNotFoundException | TransformerException ex)
 		{
 			Misc.log(1,"XML transformation [" + filename + "]: " + toString());
-			throw new AdapterException(ex);
+			throw new AdapterXmlException(ex);
 		}
 	}
 
-	public void transform(XML xmlinfo) throws AdapterException
+	public void transform(XML xmlinfo) throws AdapterXmlException
 	{
 		XML xml = this;
 
@@ -323,7 +399,7 @@ class XML
 		node = xml.node;
 	}
 
-	public void lookup(XML xmlinfo) throws Exception
+	public void lookup(XML xmlinfo) throws AdapterXmlException
 	{
 		XML xml = this;
 
@@ -355,7 +431,7 @@ class XML
 			}
 			catch(Exception ex)
 			{
-				if (!handleexception) Misc.rethrow(ex);
+				if (!handleexception) Misc.rethrow(new AdapterXmlException(ex));
 				Misc.log(ex);
 
 				String msg = ex.getMessage();
@@ -426,7 +502,7 @@ class XML
 		dom.renameNode(node,null,name);
 	}
 
-	public String getAttributeCrypt(String name) throws AdapterException
+	public String getAttributeCrypt(String name) throws AdapterXmlException
 	{
 		String value = getAttribute(name);
 		if (value == null) return null;
@@ -449,7 +525,7 @@ class XML
 		return row;
 	}
 
-	public void copyAttribute(String name,XML xml) throws AdapterException
+	public void copyAttribute(String name,XML xml) throws AdapterXmlException
 	{
 		String source = getAttribute(name);
 		if (source == null) return; // Nothing to copy
@@ -491,7 +567,7 @@ class XML
 		return attr != null;
 	}
 
-	public synchronized boolean isAttribute(String name) throws AdapterException
+	public synchronized boolean isAttribute(String name) throws AdapterXmlException
 	{
 		if (isEmpty()) return false;
 		Element el = (Element)node;
@@ -529,7 +605,7 @@ class XML
 		return attr.getValue();
 	}
 
-	public void setAttributeDeprecated(String oldattr,String newattr) throws AdapterException
+	public void setAttributeDeprecated(String oldattr,String newattr) throws AdapterXmlException
 	{
 		if (isAttribute(newattr)) return;
 		String value = getAttributeDeprecated(oldattr);
@@ -537,7 +613,7 @@ class XML
 		setAttribute(newattr,value);
 	}
 
-	public String getAttribute(String name) throws AdapterException
+	public String getAttribute(String name) throws AdapterXmlException
 	{
 		if (isEmpty()) return null;
 		Element	el = (Element)node;
@@ -573,17 +649,17 @@ class XML
 		return value;
 	}
 
-	public <E extends Enum<E>> E getAttributeEnum(String name,Class<E> type) throws AdapterException
+	public <E extends Enum<E>> E getAttributeEnum(String name,Class<E> type) throws AdapterXmlException
 	{
 		return getAttributeEnum(name,null,null,type);
 	}
 
-	public <E extends Enum<E>> E getAttributeEnum(String name,E def,Class<E> type) throws AdapterException
+	public <E extends Enum<E>> E getAttributeEnum(String name,E def,Class<E> type) throws AdapterXmlException
 	{
 		return getAttributeEnum(name,def,null,type);
 	}
 
-	public <E extends Enum<E>> E getAttributeEnum(String name,E def,EnumSet<E> validset,Class<E> type) throws AdapterException
+	public <E extends Enum<E>> E getAttributeEnum(String name,E def,EnumSet<E> validset,Class<E> type) throws AdapterXmlException
 	{
 		String value = getAttribute(name);
 		if (value == null) return def;
@@ -591,14 +667,14 @@ class XML
 		try {
 			E result = Enum.valueOf(type,value.toUpperCase());
 			if (validset != null && !validset.contains(result))
-				throw new AdapterException(this,"Invalid attribute '" + name + "' value: " + value);
+				throw new AdapterXmlException(this,"Invalid attribute '" + name + "' value: " + value);
 			return result;
 		} catch(IllegalArgumentException ex) {
-			throw new AdapterException(this,"Invalid attribute '" + name + "' value: " + value);
+			throw new AdapterXmlException(this,"Invalid attribute '" + name + "' value: " + value);
 		}
 	}
 
-	public String getValueCrypt() throws AdapterException
+	public String getValueCrypt() throws AdapterXmlException
 	{
 		String value = getValue();
 		if (value == null) return null;
@@ -606,7 +682,7 @@ class XML
 		return javaadapter.crypter.decrypt(value);
 	}
 
-	public String getElementValue() throws AdapterException
+	public String getElementValue() throws AdapterXmlException
 	{
 		if (node == null) return null;
 
@@ -618,7 +694,7 @@ class XML
 		return value;
 	}
 
-	public String getValue() throws AdapterException
+	public String getValue() throws AdapterXmlException
 	{
 		if (node == null) return null;
 
@@ -629,7 +705,7 @@ class XML
 		return getElementValue();
 	}
 
-	public String getValueCrypt(String name) throws AdapterException
+	public String getValueCrypt(String name) throws AdapterXmlException
 	{
 		String value = getValue(name);
 		if (value == null) return null;
@@ -637,74 +713,74 @@ class XML
 		return javaadapter.crypter.decrypt(value);
 	}
 
-	public String getValue(String name) throws AdapterException
+	public String getValue(String name) throws AdapterXmlException
 	{
 		return getValue(name,false);
 	}
 
-	public String getValue(String name,String defvalue) throws AdapterException
+	public String getValue(String name,String defvalue) throws AdapterXmlException
 	{
 		return getValue(name,defvalue,false);
 	}
 
-	public String getValueByPath(String name,String defvalue) throws AdapterException
+	public String getValueByPath(String name,String defvalue) throws AdapterXmlException
 	{
 		return getValue(name,defvalue,true);
 	}
 
-	public String getValueByPath(String name) throws AdapterException
+	public String getValueByPath(String name) throws AdapterXmlException
 	{
 		return getValue(name,true);
 	}
 
-	public String getValue(String name,boolean checkpath) throws AdapterException
+	public String getValue(String name,boolean checkpath) throws AdapterXmlException
 	{
 		XML[] xmllist = getElements(name,checkpath);
-		if (xmllist.length == 0) throw new AdapterException(this,"XML doesn't contain " + name + " element");
+		if (xmllist.length == 0) throw new AdapterXmlException(this,"XML doesn't contain " + name + " element");
 		return xmllist[0].getValue();
 	}
 
-	public String getValue(String name,String defvalue,boolean checkpath) throws AdapterException
+	public String getValue(String name,String defvalue,boolean checkpath) throws AdapterXmlException
 	{
 		XML[] xmllist = getElements(name,checkpath);
 		if (xmllist.length == 0) return defvalue;
 		return xmllist[0].getValue();
 	}
 
-	public XML getElement(String name) throws AdapterException
+	public XML getElement(String name) throws AdapterXmlException
 	{
 		XML result = getElement(name,false);
 		return result == null ? defaultelements.get(name) : result;
 	}
 
-	public XML getElementByPath(String name) throws AdapterException
+	public XML getElementByPath(String name) throws AdapterXmlException
 	{
 		return getElement(name,true);
 	}
 
-	public XML getElement(String name,boolean checkpath) throws AdapterException
+	public XML getElement(String name,boolean checkpath) throws AdapterXmlException
 	{
 		XML[] xmllist = getElements(name,checkpath);
 		if (xmllist.length == 0) return null;
 		return xmllist[0];
 	}
 
-	public XML[] getElements() throws AdapterException
+	public XML[] getElements() throws AdapterXmlException
 	{
 		return getElements(null);
 	}
 
-	public XML[] getElements(String name) throws AdapterException
+	public XML[] getElements(String name) throws AdapterXmlException
 	{
 		return getElements(name,false);
 	}
 
-	public XML[] getElementsByPath(String name) throws AdapterException
+	public XML[] getElementsByPath(String name) throws AdapterXmlException
 	{
 		return getElements(name,true);
 	}
 
-	public XML[] getElements(String name,boolean checkpath) throws AdapterException
+	public XML[] getElements(String name,boolean checkpath) throws AdapterXmlException
 	{
 		ArrayList<XML> xmllist = new ArrayList<XML>();
 		if (node == null) return new XML[0];
@@ -751,7 +827,7 @@ class XML
 						xmllist.add(xml);
 				}
 			} catch(XPathExpressionException ex) {
-				throw new AdapterException(ex);
+				throw new AdapterXmlPathException(ex);
 			}
 		}
 
@@ -759,48 +835,53 @@ class XML
 		return xmllist.toArray(xmlarray);
 	}
 
-	public String getStringByPath(String name) throws XPathExpressionException
+	public String getStringByPath(String name) throws AdapterXmlPathException
 	{
 		if (node == null) return "";
 
 		XPathFactory factory = XPathFactory.newInstance();
 		XPath xpath = factory.newXPath();
-		XPathExpression expr = xpath.compile(name);
-
-		String result = null;
 
 		try {
-			Object obj = expr.evaluate(node,XPathConstants.NODESET);
-			NodeList nl = (NodeList)obj;
-			for(int i = 0;i < nl.getLength();i++)
-			{
-				Node node = nl.item(i);
-				Node firstchild = node.getFirstChild();
-				if (firstchild == null)
+			XPathExpression expr = xpath.compile(name);
+
+			String result = null;
+
+			try {
+				Object obj = expr.evaluate(node,XPathConstants.NODESET);
+				NodeList nl = (NodeList)obj;
+				for(int i = 0;i < nl.getLength();i++)
 				{
-					result = null;
-					break;
+					Node node = nl.item(i);
+					Node firstchild = node.getFirstChild();
+					if (firstchild == null)
+					{
+						result = null;
+						break;
+					}
+					String value = firstchild.getNodeValue();
+					if (value != null && value.length() > 0)
+					{
+						if (result == null)
+							result = value;
+						else
+							result += ", " + value;
+					}
 				}
-				String value = firstchild.getNodeValue();
-				if (value != null && value.length() > 0)
-				{
-					if (result == null)
-						result = value;
-					else
-						result += ", " + value;
-				}
+			} catch(XPathExpressionException ex) {
+				// Nothing since try with XPathConstants.STRING just after
 			}
+
+			if (result == null) result = (String)expr.evaluate(node,XPathConstants.STRING);
+			if (result == null) return "";
+
+			return result;
 		} catch(XPathExpressionException ex) {
-			// Nothing since try with XPathConstants.STRING just after
+			throw new AdapterXmlPathException(ex);
 		}
-
-		if (result == null) result = (String)expr.evaluate(node,XPathConstants.STRING);
-		if (result == null) return "";
-
-		return result;
 	}
 
-	public void setAttributeByPath(String path,String name,String value) throws AdapterException
+	public void setAttributeByPath(String path,String name,String value) throws AdapterXmlException
 	{
 		if (value == null) return;
 
@@ -831,7 +912,7 @@ class XML
 		return this;
 	}
 
-	public void setValueByPath(String name,String value) throws AdapterException
+	public void setValueByPath(String name,String value) throws AdapterXmlException
 	{
 		XML[] nodes = getElementsByPath(name);
 
@@ -839,7 +920,7 @@ class XML
 			xmlnode.setValue(value);
 	}
 
-	public void setValue(String name,String value) throws AdapterException
+	public void setValue(String name,String value) throws AdapterXmlException
 	{
 		XML el = getElement(name);
 		if (el != null) el.setValue(value);
@@ -885,28 +966,28 @@ class XML
 		}
 	}
 
-	public XML addBefore(String name) throws AdapterException
+	public XML addBefore(String name) throws AdapterXmlException
 	{
-		if (node == null || node == dom.getDocumentElement()) throw new AdapterException("Cannot insert before on an empty node");
+		if (node == null || node == dom.getDocumentElement()) throw new AdapterXmlException("Cannot insert before on an empty node");
 
 		Element element = CreateElement(name);
 		Node newnode = node.getParentNode().insertBefore(element,node);
 		return new XML(dom,newnode);
 	}
 
-	public XML addBefore(XML xml) throws AdapterException
+	public XML addBefore(XML xml) throws AdapterXmlException
 	{
 		if (xml == null || xml.node == null) return xml; // Nothing to add
-		if (node == null || node == dom.getDocumentElement()) throw new AdapterException(xml,"Cannot insert before on an empty node");
+		if (node == null || node == dom.getDocumentElement()) throw new AdapterXmlException(xml,"Cannot insert before on an empty node");
 
 		Node newnode = dom.importNode(xml.node,true);
 		newnode = node.getParentNode().insertBefore(newnode,node);
 		return new XML(dom,newnode);
 	}
 
-	public XML addAfter(String name) throws AdapterException
+	public XML addAfter(String name) throws AdapterXmlException
 	{
-		if (node == null || node == dom.getDocumentElement()) throw new AdapterException("Cannot insert after on an empty node");
+		if (node == null || node == dom.getDocumentElement()) throw new AdapterXmlException("Cannot insert after on an empty node");
 		Element element = CreateElement(name);
 
 		Node newnode;
@@ -922,10 +1003,10 @@ class XML
 		return new XML(dom,newnode);
 	}
 
-	public XML addAfter(XML xml) throws AdapterException
+	public XML addAfter(XML xml) throws AdapterXmlException
 	{
 		if (xml == null || xml.node == null) return xml; // Nothing to add
-		if (node == null || node == dom.getDocumentElement()) throw new AdapterException(xml,"Cannot insert after on an empty node");
+		if (node == null || node == dom.getDocumentElement()) throw new AdapterXmlException(xml,"Cannot insert after on an empty node");
 
 		Node newnode = dom.importNode(xml.node,true);
 		Node nextnode = node.getNextSibling();
@@ -936,7 +1017,7 @@ class XML
 		return new XML(dom,newnode);
 	}
 
-	public XML add(XML xml) throws Exception
+	public XML add(XML xml) throws AdapterXmlException
 	{
 		if (xml.node == null) return xml; // Nothing to add
 
@@ -952,7 +1033,7 @@ class XML
 		return new XML(dom,newnode);
 	}
 
-	public XML add(XML[] xmllist) throws Exception
+	public XML add(XML[] xmllist) throws AdapterXmlException
 	{
 		for(XML xml:xmllist)
 			add(xml);
@@ -1039,7 +1120,7 @@ class XML
 		return new XML(dom,newnode);
 	}
 
-	public boolean matchXPath(String string) throws AdapterException
+	public boolean matchXPath(String string) throws AdapterXmlException
 	{
 		try {
 			XPathFactory factory = XPathFactory.newInstance();
@@ -1049,11 +1130,11 @@ class XML
 			Boolean result = (Boolean)expr.evaluate(node,XPathConstants.BOOLEAN);
 			return result.booleanValue();
 		} catch(XPathExpressionException ex) {
-			throw new AdapterException(ex);
+			throw new AdapterXmlException(ex);
 		}
 	}
 
-	static public synchronized void setDefaults(XML xmlconfig) throws AdapterException
+	static public synchronized void setDefaults(XML xmlconfig) throws AdapterXmlException
 	{
 		XML[] xmllist = xmlconfig.getElements("default");
 		for(XML xml:xmllist)
@@ -1074,13 +1155,11 @@ class XML
 					attribute = xml.getAttribute("name");
 					if (attribute != null && attribute.startsWith("$"))
 					{
-						String value = xml.getAttribute("value");
-						if (value == null) value = xml.getValue();
 						if (!defaultvars.containsKey(attribute)) // Take first matching one only
-							defaultvars.put(attribute,value);
+							defaultvars.put(attribute,new DefaultVar(xml));
 					}
 					else
-						throw new AdapterException(xml,"Missing 'attribute'/'element' attribute or 'name' attribute is not a variable");
+						throw new AdapterXmlException(xml,"Missing 'attribute'/'element' attribute or 'name' attribute is not a variable");
 				}
 			}
 		}
@@ -1095,7 +1174,7 @@ class XML
 			{
 				String value = (String)props.get(key);
 				String var = key.substring(KEY.length() - 1);
-				defaultvars.put(var,value);
+				defaultvars.put(var,new DefaultVar(value));
 			}
 		}
 		
@@ -1109,15 +1188,15 @@ class XML
 			return;
 		}
 
-		defaultvars.put(name,value);
+		defaultvars.put(name,new DefaultVar(value));
 	}
 
-	static public synchronized String getDefaultVariable(String name)
+	static public synchronized String getDefaultVariable(String name) throws AdapterException
 	{
 		return getDefaultVariable(name,null);
 	}
 
-	static public synchronized String getDefaultVariable(String name,VariableContext ctx)
+	static public synchronized String getDefaultVariable(String name,VariableContext ctx) throws AdapterException
 	{
 		final String currentdatevar = "$ADAPTER_CURRENT_DATE_";
 		final String startdatevar = "$ADAPTER_START_DATE_";
@@ -1153,10 +1232,11 @@ class XML
 			return format.format(date);
 		}
 
-		return defaultvars.get(name);
+		DefaultVar var = defaultvars.get(name);
+		return var == null ? null : var.getValue();
 	}
 
-	static public synchronized HashMap<String,String> getDefaultVariables()
+	static public synchronized HashMap<String,DefaultVar> getDefaultVariables()
 	{
 		return defaultvars;
 	}

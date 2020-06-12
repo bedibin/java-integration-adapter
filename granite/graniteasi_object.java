@@ -128,7 +128,7 @@ class ObjectRequestSubscriber
 		}
 	}
 
-	public void process(XML xml) throws Exception
+	public void process(XML xml) throws AdapterException
 	{
 		XML classxml = xml.getElement("class");
 		if (classxml != null) xml = classxml;
@@ -196,7 +196,7 @@ class GetObjectRequestSubscriber extends Subscriber
 	}
 
 	@Override
-	public XML run(XML xml) throws Exception
+	public XML run(XML xml) throws AdapterException
 	{
 		request.process(xml);
 		return null;
@@ -217,7 +217,7 @@ class UpdateObjectRequestSubscriber extends Subscriber
 	}
 
 	@Override
-	public XML run(XML xml) throws Exception
+	public XML run(XML xml) throws AdapterException
 	{
 		request.process(xml);
 		return null;
@@ -238,7 +238,7 @@ class InsertObjectRequestSubscriber extends Subscriber
 	}
 
 	@Override
-	public XML run(XML xml) throws Exception
+	public XML run(XML xml) throws AdapterException
 	{
 		request.process(xml);
 		return null;
@@ -259,7 +259,7 @@ class DeleteObjectRequestSubscriber extends Subscriber
 	}
 
 	@Override
-	public XML run(XML xml) throws Exception
+	public XML run(XML xml) throws AdapterException
 	{
 		request.process(xml);
 		return null;

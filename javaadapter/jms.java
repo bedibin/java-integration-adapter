@@ -32,7 +32,7 @@ class JMSServer
 		private String name;
 		private int delay;
 
-		public JMSInfo(JMSBase ctx,int delay) throws Exception
+		public JMSInfo(JMSBase ctx,int delay)
 		{
 			this.ctx = ctx;
 			this.delay = delay;
@@ -48,7 +48,7 @@ class JMSServer
 	{
 		private JMSInfo info;
 
-		public JMSListener(JMSInfo info) throws Exception
+		public JMSListener(JMSInfo info) throws JMSException
 		{
 			this.info = info;
 			javaadapter.setForShutdown(this);
@@ -81,7 +81,7 @@ class JMSServer
 				if (Misc.isLog(12)) Misc.log("onMessage ack");
 				msg.acknowledge();
 			}
-			catch(org.xml.sax.SAXParseException ex)
+			catch(AdapterXmlException ex)
 			{
 				// Error if message is not valid XML. Just discard message.
 				try
@@ -89,12 +89,12 @@ class JMSServer
 					if (Misc.isLog(2)) Misc.log("WARNING: Discarded message from " + info.name + ": " + msgtxt.getText());
 					msg.acknowledge();
 				}
-				catch(Exception subex)
+				catch(JMSException subex)
 				{
 				}
 				Misc.log(ex);
 			}
-			catch(Exception ex)
+			catch(JMSException | AdapterException ex)
 			{
 				Misc.log(ex);
 				try
@@ -107,12 +107,12 @@ class JMSServer
 						for(int i = 0;i < info.delay;i++)
 						{
 							if (javaadapter.isShuttingDown()) return;
-							Thread.sleep(1000);
+							Misc.sleep(1000);
 						}
 						info.ctx.recover(srvname);
 					}
 				}
-				catch(Exception subex)
+				catch(JMSException | AdapterException subex)
 				{
 					Misc.log(subex);
 				}
@@ -126,7 +126,7 @@ class JMSServer
 	private ArrayList<JMSInfo> infolist;
 	private String srvname;
 
-	public JMSServer(String name,JMSBase ctx,XML xml) throws Exception
+	public JMSServer(String name,JMSBase ctx,XML xml) throws JMSException,AdapterException
 	{
 		srvname = name;
 		sublist = Misc.initSubscribers(xml);

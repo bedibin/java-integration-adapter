@@ -5,7 +5,7 @@ import java.util.regex.*;
 import java.net.URLDecoder;
 import java.net.InetSocketAddress;
 import javax.net.ssl.*;
-import java.security.KeyStore;
+import java.security.*;
 import com.sun.net.httpserver.*;
 import com.sun.net.httpserver.spi.*;
 
@@ -34,7 +34,7 @@ class SoapServerStandAlone extends SoapServer implements HttpHandler
 		}
 	}
 
-	public SoapServerStandAlone(XML xml) throws Exception
+	public SoapServerStandAlone(XML xml) throws AdapterException
 	{
 		super(xml);
 
@@ -49,29 +49,33 @@ class SoapServerStandAlone extends SoapServer implements HttpHandler
 		HttpServer server;
 
 		String keystore = xml.getAttribute("keystore");
-		if (keystore == null)
-			server = provider.createHttpServer(addr,0);
-		else
-		{
-			String pass = xml.getAttributeCrypt("passphrase");
-			if (pass == null) pass = "changeit";
-			char[] passphrase = pass.toCharArray();
+		try {
+			if (keystore == null)
+				server = provider.createHttpServer(addr,0);
+			else
+			{
+				String pass = xml.getAttributeCrypt("passphrase");
+				if (pass == null) pass = "changeit";
+				char[] passphrase = pass.toCharArray();
 
-			KeyStore ks = KeyStore.getInstance("JKS");
-			ks.load(new FileInputStream(keystore),passphrase);
+				KeyStore ks = KeyStore.getInstance("JKS");
+				ks.load(new FileInputStream(keystore),passphrase);
 
-			KeyManagerFactory kmf = KeyManagerFactory.getInstance("SunX509");
-			kmf.init(ks,passphrase);
+				KeyManagerFactory kmf = KeyManagerFactory.getInstance("SunX509");
+				kmf.init(ks,passphrase);
 
-			TrustManagerFactory tmf = TrustManagerFactory.getInstance("SunX509");
-			tmf.init(ks);
+				TrustManagerFactory tmf = TrustManagerFactory.getInstance("SunX509");
+				tmf.init(ks);
 
-			SSLContext ssl = SSLContext.getInstance("TLS");
-			ssl.init(kmf.getKeyManagers(),tmf.getTrustManagers(),null);
+				SSLContext ssl = SSLContext.getInstance("TLS");
+				ssl.init(kmf.getKeyManagers(),tmf.getTrustManagers(),null);
 
-			HttpsServer serverssl = provider.createHttpsServer(addr,0);
-			serverssl.setHttpsConfigurator(new HttpsConfigurator(ssl));
-			server = serverssl;
+				HttpsServer serverssl = provider.createHttpsServer(addr,0);
+				serverssl.setHttpsConfigurator(new HttpsConfigurator(ssl));
+				server = serverssl;
+			}
+		} catch(GeneralSecurityException | IOException ex) {
+			throw new AdapterException(ex);
 		}
 
 		HttpContext context = server.createContext("/javaadapter",this);
@@ -196,7 +200,7 @@ class SoapServerStandAlone extends SoapServer implements HttpHandler
 						stream.close();
 						message = "File " + uploadfile + " (size=" + size + ") uploaded successfully";
 					}
-					catch(Exception ex)
+					catch(IOException ex)
 					{
 						message = ex.toString();
 					}
@@ -329,7 +333,7 @@ class SoapServerStandAlone extends SoapServer implements HttpHandler
 				}
 			}
 		}
-		catch(Exception ex)
+		catch(AdapterException ex)
 		{
 			Misc.log(ex);
 			try
@@ -338,7 +342,7 @@ class SoapServerStandAlone extends SoapServer implements HttpHandler
 				rawSend(exchange,500,null,request.rootToString());
 				return;
 			}
-			catch(Exception ex2)
+			catch(AdapterException ex2)
 			{
 				Misc.log(ex2);
 			}

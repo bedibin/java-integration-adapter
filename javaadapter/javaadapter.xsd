@@ -313,6 +313,8 @@ elementFormDefault="qualified">
 				<xs:element name="read" type="read"/>
 				<xs:element name="element" type="anyxml"/>
 			</xs:choice></xs:sequence>
+			<xs:attribute name="if_exists" type="xs:string"/>
+			<xs:attributeGroup ref="filter"/>
 		</xs:extension>
 	</xs:complexContent>
 </xs:complexType>
@@ -739,6 +741,7 @@ elementFormDefault="qualified">
 							<xs:attribute name="attribute" type="xs:string"/>
 							<xs:attribute name="element" type="xs:string"/>
 							<xs:attribute name="name" type="xs:string"/>
+							<xs:attribute name="substitute" type="xs:boolean" default="false"/> <!-- For "name" attribute only -->
 							<xs:attribute name="value" type="xs:string"/>
 							<xs:attribute name="tagname" type="xs:string"/>
 						</xs:extension>
@@ -890,7 +893,7 @@ elementFormDefault="qualified">
 								<xs:attribute name="filter" type="xs:string"/>
 								<xs:attribute name="dumpcsvfilename" type="xs:string"/>
 								<xs:attribute name="csv_fields" type="xs:string"/>
-								<xs:attribute name="dumplogfile" type="xs:boolean"/>
+								<xs:attribute name="dumplogfile" type="xs:boolean" default="false"/>
 								<xs:attribute name="on_duplicates" type="ondupstypes" default="merge"/>
 								<xs:attribute name="on_duplicates_fields" type="xs:string"/>
 								<xs:attribute name="on_file_not_found" type="onnotfoundtypes" default="exception"/>

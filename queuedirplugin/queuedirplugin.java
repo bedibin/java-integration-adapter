@@ -8,7 +8,7 @@ class QueueDirPluginHook extends Hook
 		private ArrayList<Subscriber> sublist = new ArrayList<Subscriber>();
 		private String dir;
 
-		public QueueDir(XML xml) throws Exception
+		public QueueDir(XML xml) throws AdapterException
 		{
 			sublist = Misc.initSubscribers(xml);
 			Misc.activateSubscribers(sublist);
@@ -21,7 +21,7 @@ class QueueDirPluginHook extends Hook
 			return dir;
 		}
 
-		public void run(XML xml) throws Exception
+		public void run(XML xml) throws AdapterException
 		{
 			for(Subscriber sub:sublist)
 			{
@@ -33,7 +33,7 @@ class QueueDirPluginHook extends Hook
 
 	private ArrayList<QueueDir> queues = new ArrayList<QueueDir>();
 
-	public QueueDirPluginHook() throws Exception
+	public QueueDirPluginHook() throws AdapterException
 	{
 		XML xmlcfg = javaadapter.getConfiguration();
 		XML[] elements = xmlcfg.getElements("queuedir");

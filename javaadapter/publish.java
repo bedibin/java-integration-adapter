@@ -2,10 +2,8 @@ import java.io.*;
 import java.util.*;
 import java.net.*;
 import javax.net.ssl.*;
-import java.security.Principal;
-import java.security.PrivateKey;
+import java.security.*;
 import java.security.cert.X509Certificate;
-import java.security.KeyStore;
 
 class AliasSelectorKeyManager implements X509KeyManager
 {
@@ -108,12 +106,12 @@ class Publisher
 			publishername = name;
 		}
 
-		public String sendHttpRequest(String body,XML xmlpub) throws Exception
+		public String sendHttpRequest(String body,XML xmlpub) throws GeneralSecurityException,IOException,AdapterException
 		{
 			return sendHttpRequest(body,null,xmlpub);
 		}
 
-		public String sendHttpRequest(String body,XML xml,XML xmlpub) throws Exception
+		public String sendHttpRequest(String body,XML xml,XML xmlpub) throws GeneralSecurityException,IOException,AdapterException
 		{
 			String urlstr = xml == null ? Misc.substitute(xmlpub.getAttribute("url")) : Misc.substitute(xmlpub.getAttribute("url"),xml);
 			if (urlstr == null && defaulturl == null) urlstr = "http://localhost/";
@@ -337,7 +335,7 @@ class Publisher
 				{
 					result = sendHttpRequest(string,xml,xmlpub);
 				}
-				catch(Exception ex)
+				catch(IOException ex)
 				{
 					setSessionID(publishername,null);
 					Misc.rethrow(ex,"Error publishing to " + publishername + ": " + string);
@@ -392,7 +390,7 @@ class Publisher
 		return sessionids.get(name);
 	}
 
-	public synchronized void publisherRemove(XML xmlpublisher) throws Exception
+	public synchronized void publisherRemove(XML xmlpublisher) throws AdapterException
 	{
 		XML[] xmllist = xmlpublisher.getElements("publisher");
                 if (xmllist.length == 0 && xmlpublisher.getTagName().equals("publisher") && Misc.checkActivate(xmlpublisher) != null)
@@ -410,7 +408,7 @@ class Publisher
 		}
 	}
 
-	private synchronized XML[] publisherInit(XML xmlpublisher) throws Exception
+	private synchronized XML[] publisherInit(XML xmlpublisher) throws AdapterException
 	{
 		XML[] xmllist = xmlpublisher.getElements("publisher");
                 if (xmllist.length == 0 && xmlpublisher.getTagName().equals("publisher") && Misc.checkActivate(xmlpublisher) != null)
@@ -442,7 +440,11 @@ class Publisher
 				String notrustssl = el.getAttribute("notrustssl");
 				boolean notrust = notrustssl != null && "true".equals(notrustssl);
 
-				pub = new PublisherObject(new ldap(url,el.getAttribute("username"),el.getAttributeCrypt("password"),null,el.getAttribute("authentication"),el.getAttribute("referral"),el.getAttribute("derefAliases"),notrust));
+				try {
+					pub = new PublisherObject(new ldap(url,el.getAttribute("username"),el.getAttributeCrypt("password"),null,el.getAttribute("authentication"),el.getAttribute("referral"),el.getAttribute("derefAliases"),notrust));
+				} catch(IOException | javax.naming.NamingException ex) {
+					throw new AdapterException(ex);
+				}
 				break;
 			default:
 				pub = new PublisherObject(type);
@@ -461,14 +463,14 @@ class Publisher
 		return xmllist;
 	}
 
-	public synchronized PublisherObject publisherGet(String name) throws Exception
+	public synchronized PublisherObject publisherGet(String name) throws AdapterException
 	{
 		if (name == null)
 			throw new AdapterException("Publisher name attribute is mandatory");
 		return publishers.get(name);
 	}
 
-	private String publish(String string,XML xml,XML xmlpublisher) throws Exception
+	private String publish(String string,XML xml,XML xmlpublisher) throws AdapterException
 	{
 		String result = null;
 		if (string == null) return result;
@@ -484,18 +486,22 @@ class Publisher
 
 			PublisherObject pub = publisherGet(name);
 			if (Misc.isLog(6)) Misc.log("Sending message to " + name + ": " + string);
-			result = pub.send(string,xml,el);
+			try {
+				result = pub.send(string,xml,el);
+			} catch(Exception ex) {
+				throw new AdapterException(ex);
+			}
 			if (Misc.isLog(9)) Misc.log("Sending " + i + " done. Result is: " + result);
 		}
 		return result;
 	}
 
-	public String publish(String string,XML xmlpublisher) throws Exception
+	public String publish(String string,XML xmlpublisher) throws AdapterException
 	{
 		return publish(string,null,xmlpublisher);
 	}
 
-	public XML publish(XML xml,XML xmlpublisher) throws Exception
+	public XML publish(XML xml,XML xmlpublisher) throws AdapterException
 	{
 		if (xml == null || xml.isEmpty())
 		{
