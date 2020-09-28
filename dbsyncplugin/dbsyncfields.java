@@ -25,8 +25,8 @@ class FieldDeviation
 	{
 		// Only interger supported for now
 		if (value == 0) return false;
-		if (!oldvalue.matches("^-?\\d+$")) return false;
-		if (!newvalue.matches("^-?\\d+$")) return false;
+		if (oldvalue == null || !oldvalue.matches("^-?\\d+$")) return false;
+		if (newvalue == null || !newvalue.matches("^-?\\d+$")) return false;
 		int oldint = new Integer(oldvalue);
 		int newint = new Integer(newvalue);
 		int gap = type == DeviationType.PERCENTAGE ? oldint * value / 100 : value;
@@ -38,22 +38,26 @@ class FieldDeviation
 
 class FieldResult
 {
-	private LinkedHashMap<String,String> values;
+	private Map<String,String> values;
 	private Sync sync;
 	private Field field;
+	private Set<String> fields = new TreeSet<String>();
 
-	FieldResult(Sync sync,Field field,LinkedHashMap<String,String> values)
+	FieldResult(Sync sync,Field field,Map<String,String> values)
 	{
 		this.values = values;
 		this.sync = sync;
 		this.field = field;
+		fields.add(field.getName());
 	}
 
 	Sync getSync() { return sync; }
 	Field getField() { return field; }
-	LinkedHashMap<String,String> getValues() { return values; }
+	Map<String,String> getValues() { return values; }
 	String getValue() { return values.get(field.getName()); }
 	void setValue(String value) { values.put(field.getName(),value); }
+	Set<String> getFields() { return fields; }
+	void setFields(Set<String> processed_fields) { fields.addAll(processed_fields); }
 }
 
 class Field
@@ -594,7 +598,8 @@ class Fields
 						throw new AdapterException("[" + sync.getName() + ":" + dbsync.getDisplayKey(keyset,result) + "] Required field '" + name + "' missing: " + result);
 
 					try {
-						SyncLookupResultErrorOperation erroroper = lookup.check(new FieldResult(sync,field,result));
+						FieldResult fieldresult = new FieldResult(sync,field,result);
+						SyncLookupResultErrorOperation erroroper = lookup.check(fieldresult);
 						if (Misc.isLog(30)) Misc.log("Lookup check result " + erroroper.getType());
 						switch(erroroper.getType())
 						{
@@ -605,12 +610,12 @@ class Fields
 							value = result.get(name);
 							break;
 						case ERROR:
-							Misc.log("ERROR: [" + sync.getName() + ":" + dbsync.getDisplayKey(keyset,result) + "] Rejecting record since lookup " + (erroroper.getName() == null ? "" : "[" + erroroper.getName() + "] ") + "for field " + field.getName() + " failed: " + (erroroper.getMessage() == null ? "" : erroroper.getMessage() + ": ") + result);
+							if (sync.isErrors()) Misc.log("ERROR: [" + sync.getName() + ":" + dbsync.getDisplayKey(keyset,result) + "] Rejecting record since lookup " + (erroroper.getName() == null ? "" : "[" + erroroper.getName() + "] ") + "for field '" + field.getName() + "' failed: " + (erroroper.getMessage() == null ? "" : erroroper.getMessage() + ": ") + Misc.implode(result,fieldresult.getFields()));
 						case REJECT_RECORD:
 							result = null;
 							break fieldloop;
 						case WARNING:
-							Misc.log("WARNING: [" + sync.getName() + ":" + dbsync.getDisplayKey(keyset,result) + "] Rejecting field " + field.getName() + " since lookup " + (erroroper.getName() == null ? "" : "[" + erroroper.getName() + "] ") + "failed: " + (erroroper.getMessage() == null ? "" : erroroper.getMessage() + ": ") + result);
+							if (sync.isErrors()) Misc.log("WARNING: [" + sync.getName() + ":" + dbsync.getDisplayKey(keyset,result) + "] Rejecting field '" + field.getName() + "' since lookup " + (erroroper.getName() == null ? "" : "[" + erroroper.getName() + "] ") + "failed: " + (erroroper.getMessage() == null ? "" : erroroper.getMessage() + ": ") + Misc.implode(result,fieldresult.getFields()));
 						case REJECT_FIELD:
 							if (iskey)
 								result.put(name,"");
@@ -618,7 +623,7 @@ class Fields
 								result.remove(name);
 							continue;
 						case EXCEPTION:
-							throw new AdapterException("[" + sync.getName() + ":" + dbsync.getDisplayKey(keyset,result) + "] Invalid lookup " + (erroroper.getName() == null ? "" : "[" + erroroper.getName() + "] ") + "for field " + field.getName() + ": " + (erroroper.getMessage() == null ? "" : erroroper.getMessage() + ": ") + result);
+							throw new AdapterException("[" + sync.getName() + ":" + dbsync.getDisplayKey(keyset,result) + "] Invalid lookup " + (erroroper.getName() == null ? "" : "[" + erroroper.getName() + "] ") + "for field " + field.getName() + ": " + (erroroper.getMessage() == null ? "" : erroroper.getMessage() + ": ") + Misc.implode(result,fieldresult.getFields()));
 						}
 					} catch (AdapterException ex) {
 						Misc.rethrow(ex);
@@ -653,7 +658,7 @@ class Fields
 						OnOper onempty = field.getOnEmpty();
 						if (onempty != OnOper.WARNING)
 						{
-							Misc.log("ERROR: [" + sync.getName() + ":" + dbsync.getDisplayKey(keyset,result) + "] Rejecting record since field " + field.getName() + " contains multiple values: " + value);
+							if (sync.isErrors()) Misc.log("ERROR: [" + sync.getName() + ":" + dbsync.getDisplayKey(keyset,result) + "] Rejecting record since field '" + field.getName() + "' contains multiple values: " + value);
 							result = null;
 							break fieldloop;
 						}
@@ -661,7 +666,7 @@ class Fields
 					case WARNING:
 					case REJECT_FIELD:
 						if (onmultiple == OnOper.WARNING || onmultiple == OnOper.ERROR)
-							Misc.log("WARNING: [" + sync.getName() + ":" + dbsync.getDisplayKey(keyset,result) + "] Rejecting field " + field.getName() + " since it contains multiple values: " + value);
+							if (sync.isErrors()) Misc.log("WARNING: [" + sync.getName() + ":" + dbsync.getDisplayKey(keyset,result) + "] Rejecting field '" + field.getName() + "' since it contains multiple values: " + value);
 						if (iskey)
 							result.put(name,"");
 						else
@@ -725,12 +730,12 @@ class Fields
 						result = null;
 						break fieldloop;
 					case WARNING:
-						Misc.log("WARNING: [" + sync.getName() + ":" + dbsync.getDisplayKey(keyset,result) + "] Rejecting field " + field.getName() + " since empty: " + result);
+						if (sync.isErrors()) Misc.log("WARNING: [" + sync.getName() + ":" + dbsync.getDisplayKey(keyset,result) + "] Rejecting field '" + field.getName() + "' since empty");
 						if (!iskey) result.remove(name);
 						if (copyname != null && !isKey(copyname)) result.remove(copyname);
 						break;
 					case ERROR:
-						Misc.log("ERROR: [" + sync.getName() + ":" + dbsync.getDisplayKey(keyset,result) + "] Rejecting record since field " + field.getName() + " is empty: " + result);
+						if (sync.isErrors()) Misc.log("ERROR: [" + sync.getName() + ":" + dbsync.getDisplayKey(keyset,result) + "] Rejecting record since field '" + field.getName() + "' is empty");
 						result = null;
 						break fieldloop;
 					case EXCEPTION:

@@ -71,8 +71,8 @@ class Script
 	{
 		Context ctx = getRhinoContext();
 		ScriptableObject scope = ctx.initStandardObjects();
-		for(Map.Entry<String,?> var:XML.getDefaultVariables().entrySet())
-			scope.putProperty(scope,var.getKey(),var.getValue());
+		for(Map.Entry<String,XML.DefaultVar> var:XML.getDefaultVariables().entrySet())
+			scope.putProperty(scope,var.getKey(),var.getValue().getValue());
 		if (vars != null) for(Map.Entry<String,?> var:vars.entrySet())
 		{
 			String key = var.getKey();
@@ -86,7 +86,7 @@ class Script
 			Object obj = ctx.evaluateString(scope,program,"script",1,null);
 			if (obj instanceof Undefined) return null;
 			if (obj != null) return obj.toString();
-		} catch (org.mozilla.javascript.JavaScriptException ex) {
+		} catch (JavaScriptException ex) {
 			throw new AdapterScriptException(ex.getMessage());
 		}
 

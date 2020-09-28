@@ -43,7 +43,7 @@ abstract class ReaderUtil implements Reader
 		if (type == null)
 			reader = new ReaderRow(xml);
 		else if (type.equals("db"))
-			reader = new ReaderSQL(xml);
+			reader = new ReaderSQL.Builder(xml).build();
 		else if (type.equals("csv"))
 			reader = new ReaderCSV(xml);
 		else if (type.equals("ldap"))
@@ -68,23 +68,12 @@ abstract class ReaderUtil implements Reader
  		db = DB.getInstance();
 	}
 
-	public ReaderUtil(boolean issorted) throws AdapterException
-	{
- 		db = DB.getInstance();
-		this.issorted = issorted;
-	}
+	public final void setSorted(boolean issorted) { this.issorted = issorted; }
+	public final void setTrim(boolean totrim) { this.totrim = totrim; }
+	public final void setKeys(Set<String> keyfields) { this.keyfields = keyfields;; }
 
-	public ReaderUtil(Set<String> keyfields,boolean issorted,boolean totrim) throws AdapterException
+	public ReaderUtil setXML(XML xml) throws AdapterException
 	{
- 		db = DB.getInstance();
-		this.keyfields = keyfields;
-		this.issorted = issorted;
-		this.totrim = totrim;
-	}
-
-	public ReaderUtil(XML xml) throws AdapterException
-	{
- 		db = DB.getInstance();
 		xmlreader = xml;
 
 		String tagname = xml.getTagName();
@@ -116,6 +105,8 @@ abstract class ReaderUtil implements Reader
 		pathcol = xml.getAttribute("resultpathcolumn");
 		colname = xml.getAttribute("resultattributename");
 		pathrow = xml.getAttribute("resultpathrow");
+
+		return this;
 	}
 
 	static final public void pushCurrent(Map<String,String> row,Map<String,Set<String>> map,boolean issorted) throws AdapterException
@@ -137,7 +128,7 @@ abstract class ReaderUtil implements Reader
 
 	abstract public LinkedHashMap<String,String> nextRaw() throws AdapterException;
 
-	private void CheckEmpty() throws AdapterException
+	private final void CheckEmpty() throws AdapterException
 	{
 		if (rowcount == 0 && onempty == OnOper.EXCEPTION)
 			throw new AdapterException("Reader " + getName() + " didn't return any record");
@@ -344,7 +335,7 @@ class ReaderRow extends ReaderUtil
 
 	public ReaderRow(XML xml) throws AdapterException
 	{
-		super(xml);
+		setXML(xml);
 
 		if (instance == null) instance = "row";
 		rowpos = 0;
@@ -556,7 +547,7 @@ class ReaderCSV extends ReaderUtil
 
 	public ReaderCSV(XML xml) throws AdapterException
 	{
-		super(xml);
+		setXML(xml);
 
 		String filename = xml.getAttribute("filename");
 
@@ -629,7 +620,7 @@ class ReaderLDAP extends ReaderUtil
 
 	public ReaderLDAP(XML xml) throws AdapterException
 	{
-		super(xml);
+		setXML(xml);
 
 		String url = Misc.substitute(xml.getAttribute("url"));
 		String username = xml.getAttribute("username");
@@ -689,34 +680,59 @@ class ReaderSQL extends ReaderUtil
 {
 	private DBOper oper = null;
 
-	private void init(String conn,String sql) throws AdapterException
+	static class Builder
 	{
-		String sqlsub = Misc.substitute(sql,db.getConnectionByName(conn));
-		oper = db.makesqloper(conn,sqlsub,toTrim());
+		String conn;
+		String sql;
+		List<DBField> list;
+		Set<String> keyfields;
+		boolean issorted = false;
+		boolean totrim = true;
+		XML xml;
+
+		Builder(String conn,String sql)
+		{
+			this.conn = conn;
+			this.sql = sql;
+		}
+
+		Builder(XML xml) throws AdapterException
+		{
+			this.xml = xml;
+			conn = xml.getAttribute("instance");
+			XML sqlxml = xml.getElement("extractsql");
+			sql = sqlxml == null ? xml.getValue() : sqlxml.getValue();
+		}
+
+		ReaderSQL build() throws AdapterException
+		{
+ 			DB db = DB.getInstance();
+			String sqlsub = Misc.substitute(sql,db.getConnectionByName(conn));
+			return new ReaderSQL(this);
+		}
+
+		Builder setDBFields(List<DBField> list) { this.list = list; return this; };
+		Builder setTrim(boolean totrim) { this.totrim = totrim; return this; };
+		Builder setSorted(boolean issorted) { this.issorted = issorted; return this; };
+		Builder setKeys(Set<String> keyfields) { this.keyfields = keyfields; return this; };
+	}
+
+	private ReaderSQL(ReaderSQL.Builder builder) throws AdapterException
+	{
+		if (builder.xml == null)
+		{
+			setKeys(builder.keyfields);
+			setSorted(builder.issorted);
+			setTrim(builder.totrim);
+		}
+		else
+			setXML(builder.xml);
+
+		String sqlsub = Misc.substitute(builder.sql,db.getConnectionByName(builder.conn));
+		oper = db.makesqloper(builder.conn,sqlsub,builder.list,toTrim());
 
 		if (headers == null) headers = oper.getHeader();
-		if (instance == null) instance = conn;
-	}
-
-	public ReaderSQL(XML xml) throws AdapterException
-	{
-		super(xml);
-
-		String conn = xml.getAttribute("instance");
-		XML sqlxml = xml.getElement("extractsql");
-		String sql = sqlxml == null ? xml.getValue() : sqlxml.getValue();
-		init(conn,sql);
-	}
-
-	public ReaderSQL(String conn,String sql) throws AdapterException
-	{
-		init(conn,sql);
-	}
-
-	public ReaderSQL(String conn,String sql,Set<String> keyfields,boolean issorted,boolean totrim) throws AdapterException
-	{
-		super(keyfields,issorted,totrim);
-		init(conn,sql);
+		if (instance == null) instance = builder.conn;
 	}
 
 	@Override
@@ -756,7 +772,7 @@ class ReaderXML extends ReaderUtil
 
 	public ReaderXML(XML xml,XML xmlsource) throws AdapterException
 	{
-		super(xml);
+		setXML(xml);
 		init(ProcessXML(xml,xmlsource));
 	}
 
@@ -839,7 +855,7 @@ class CacheReader implements Reader
 	public LinkedHashMap<String,String> next() throws AdapterException
 	{
 		LinkedHashMap<String,String> result = csvreader.next();
-		if (result == null) csvfile.delete();
+		if (result == null) close();
 		return result;
 	}
 
@@ -863,12 +879,16 @@ class CacheReader implements Reader
 		return sourcereader.toTrim();
 	}
 
-	public void close() throws AdapterException,IOException
+	public void close() throws AdapterException
 	{
-		if (csvreader != null) csvreader.close();
-		if (fileoutput != null) fileoutput.close();
-		System.gc(); // Needed on Windows otherwise the file might not get deleted
-		if (csvfile != null) csvfile.delete();
+		try {
+			if (csvreader != null) csvreader.close();
+			if (fileoutput != null) fileoutput.close();
+			System.gc(); // Needed on Windows otherwise the file might not get deleted
+			if (csvfile != null) csvfile.delete();
+		} catch(IOException ex) {
+			throw new AdapterException(ex);
+		}
 	}
 }
 
@@ -956,9 +976,9 @@ class SortTable implements Reader
 		String value = xml.rootToString();
 		String sql = "insert into " + tablename + " values (" + DB.replacement + "," + DB.replacement + ")";
 
-		ArrayList<String> list = new ArrayList<String>();
-		list.add(key);
-		list.add(value);
+		ArrayList<DBField> list = new ArrayList<DBField>();
+		list.add(new DBField(tablename,"key",key));
+		list.add(new DBField(tablename,"value",value));
 
 		db.execsql(conn,sql,list);
 	}
@@ -1041,7 +1061,7 @@ class ReaderJMS extends ReaderUtil
 
 	public ReaderJMS(XML xml) throws AdapterException
 	{
-		super(xml);
+		setXML(xml);
 
 		jmsbase = JMS.getInstance().getInstance(xml);
 		name = xml.getAttribute("name");

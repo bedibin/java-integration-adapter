@@ -297,6 +297,35 @@ class DBComparatorIgnoreCase implements Comparator<String>
 	}
 }
 
+class DBField
+{
+	String table;
+	String field;
+	String value;
+
+	DBField(String table,String field,String value)
+	{
+		this.table = table;
+		this.field = field;
+		this.value = value;
+	}
+
+	DBField(String field,String value)
+	{
+		this.field = field;
+		this.value = value;
+	}
+
+	DBField(String value)
+	{
+		this.value = value;
+	}
+
+	String getTableName() { return table; }
+	String getFieldName() { return field; }
+	String getValue() { return value; }
+}
+
 class DBOper
 {
 	private PreparedStatement stmt;
@@ -311,13 +340,26 @@ class DBOper
 
 	protected DBOper() { }
 
-	private void makeStatement(String sql,List<String> list) throws SQLException,AdapterDbException
+	static String implode(List<DBField> list)
+	{
+		if (list == null) return "";
+		StringBuilder sb = new StringBuilder();
+		boolean first = true;
+		for(DBField field:list)
+		{
+			first = false;
+			sb.append(first ? ": " : ",");
+			sb.append(field.getValue());
+		}
+		return first ? "" : sb.toString();
+	}
+
+	private void makeStatement(String sql,List<DBField> list) throws SQLException,AdapterDbException
 	{
 		sql = sql.trim();
 		if (list != null) sql = replacementPattern.matcher(sql).replaceAll("?");
 
-		String liststr = list == null ? "" : "; " + Misc.implode(list);
-		if (Misc.isLog(5)) Misc.log("SQL query [" + dbc.getName() + "]: " + sql + liststr);
+		if (Misc.isLog(5)) Misc.log("SQL query [" + dbc.getName() + "]: " + sql + implode(list));
 
 		stmt = dbc.prepareStatement(sql);
 
@@ -328,8 +370,9 @@ class DBOper
 		if (list != null)
 		{
 			int x = 1;
-			for(String value:list)
+			for(DBField field:list)
 			{
+				String value = field.getValue();
 				if (value == null)
 					stmt.setString(x,null);
 				else if (value.matches("\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}"))
@@ -375,7 +418,7 @@ class DBOper
 		this(dbc,sql,null,totrim);
 	}
 
-	public DBOper(DBConnection dbc,String sql,List<String> list,boolean totrim) throws AdapterDbException
+	public DBOper(DBConnection dbc,String sql,List<DBField> list,boolean totrim) throws AdapterDbException
 	{
 		if (javaadapter.isShuttingDown()) return;
 		dbc.checkConnectionState(false);
@@ -421,8 +464,7 @@ class DBOper
 				}
 			}
 
-			String liststr = list == null ? "" : "; " + Misc.implode(list);
-			Misc.log(1,"SQL error " + code + " [" + dbc.getName() + "]: " + sql + liststr);
+			Misc.log(1,"SQL error " + code + " [" + dbc.getName() + "]: " + sql + implode(list));
 			close();
 			throw new AdapterDbException(ex);
 		}
@@ -630,38 +672,6 @@ class DB
 		return instance;
 	}
 
-	protected String getDate(String value) throws AdapterDbException
-	{
-		return "{ ts '" + value + "'}";
-	}
-
-	public String getFieldValue(String value) throws AdapterDbException
-	{
-		return getValue(value);
-	}
-
-	public String getValue(String value,String name) throws AdapterDbException
-	{
-		return getValue(value);
-	}
-
-	public String getValue(String value) throws AdapterDbException
-	{
-		if (value == null) return "null";
-		if (value.matches("\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}"))
-			return getDate(value);
-		value = value.replace("'","''");
-		return "'" + value + "'";
-	}
-
-	public String getValue(XML xml) throws AdapterException
-        {
-		if (xml == null) return null;
-
-		String value = xml.getValue();
-		return getValue(value);
-	}
-
 	public String getConcat(String conn,String field,String addedfield) throws AdapterDbException
 	{
 		DBConnection dbc = getConnectionByName(conn);
@@ -676,19 +686,24 @@ class DB
 		return field + " || " + addedfield;
 	}
 
-	public String getFieldEqualsValue(String field,String value) throws AdapterDbException
+	public String getFieldEqualsValue(String quote,String table,String field,String value,List<DBField> list) throws AdapterDbException
 	{
-		if (value == null) return field + " is null";
+		String fieldname = quote + field + quote;
+		if (value == null) return fieldname + " is null";
 
 		String[] valuesplit = value.split("\n");
 		if (valuesplit.length == 1)
-			return field + " = " + getValue(value,field);
+		{
+			list.add(new DBField(table,field,value));
+			return fieldname + " = " + DB.replacement;
+		}
 
-		StringBuilder sql = new StringBuilder(field + " in (");
+		StringBuilder sql = new StringBuilder(fieldname + " in (");
 		String sep = "";
 		for(int i = 0;i < valuesplit.length;i++)
 		{
-			sql.append(sep + getValue(valuesplit[i],field));
+			list.add(new DBField(table,field,valuesplit[i]));
+			sql.append(sep + DB.replacement);
 			sep = ",";
 		}
 
@@ -768,13 +783,23 @@ class DB
 
 	public DBOper makesqloper(String conn,String sql) throws AdapterDbException
 	{
-		return makesqloper(conn,sql,true);
+		return makesqloper(conn,sql,null,true);
 	}
 
 	public DBOper makesqloper(String conn,String sql,boolean totrim) throws AdapterDbException
 	{
+		return makesqloper(conn,sql,null,totrim);
+	}
+
+	public DBOper makesqloper(String conn,String sql,List<DBField> list) throws AdapterDbException
+	{
+		return makesqloper(conn,sql,list,true);
+	}
+
+	public DBOper makesqloper(String conn,String sql,List<DBField> list,boolean totrim) throws AdapterDbException
+	{
 		DBConnection dbc = getConnectionByName(conn);
-		return new DBOper(dbc,sql,totrim);
+		return new DBOper(dbc,sql,list,totrim);
 	}
 
 	public DBOper makesqloper(String conn,XML xml) throws AdapterException
@@ -784,7 +809,7 @@ class DB
 		return new DBOper(dbc,sql,true);
 	}
 
-	public int execsqlresult(String conn,String sql,List<String> list) throws AdapterDbException
+	public int execsqlresult(String conn,String sql,List<DBField> list) throws AdapterDbException
 	{
 		DBConnection dbc = getConnectionByName(conn);
 		DBOper oper = new DBOper(dbc,sql,list,true);
@@ -801,7 +826,7 @@ class DB
 		return execsql(conn,sql,null);
 	}
 
-	public ArrayList<LinkedHashMap<String,String>> execsql(String conn,String sql,List<String> list) throws AdapterDbException
+	public ArrayList<LinkedHashMap<String,String>> execsql(String conn,String sql,List<DBField> list) throws AdapterDbException
 	{
 		DBConnection dbc = getConnectionByName(conn);
 		DBOper oper = null;
@@ -849,7 +874,7 @@ class DB
 		}
 	}
 
-	public String substitute(final String conn,String str,final LinkedHashMap<String,String> row) throws AdapterException
+	public String substitute(final String conn,String str,final Map<String,String> row,final ArrayList<DBField> list) throws AdapterException
 	{
 		return Misc.substitute(str,new Misc.Substituer() {
 			public String getValue(String param) throws AdapterException
@@ -857,7 +882,8 @@ class DB
 				DBConnection dbc = getConnectionByName(conn);
 				if (param.startsWith("$")) return Misc.substituteGet(param,null,dbc);
 				String value = Misc.substituteGet(param,row == null ? null : row.get(param),dbc);
-				return getFieldValue(value);
+				list.add(new DBField(value));
+				return DB.replacement;
 			}
 		});
 	}
@@ -869,15 +895,17 @@ class DB
 		String sql = xmlsql.getValue();
 
 		final XML finalxml = xml;
+		final ArrayList<DBField> list = new ArrayList<DBField>();
 		DBOper oper = makesqloper(conn,Misc.substitute(sql,new Misc.Substituer() {
 			public String getValue(String param) throws AdapterException
 			{
 				DBConnection dbc = getConnectionByName(conn);
 				if (param.startsWith("$")) return Misc.substituteGet(param,null,dbc);
 				String value = Misc.substituteGet(param,finalxml.getStringByPath(param),dbc);
-				return getFieldValue(value);
+				list.add(new DBField(value));
+				return DB.replacement;
 			}
-		}));
+		}),list);
 
 		LinkedHashMap<String,String> row;
 		XML xmltable = xml.add(conn);
@@ -937,13 +965,13 @@ public class dbsql
 			}
 			sql += ") values (";
 			sep = "";
-			ArrayList<String> list = new ArrayList<String>();
+			ArrayList<DBField> list = new ArrayList<DBField>();
 			for(String header:headers)
 			{
 				String value = row.get(header);
 				if (value.length() > 3000) value = value.substring(0,3000);
 				sql += sep + DB.replacement;
-				list.add(value);
+				list.add(new DBField(table,header,value));
 				sep = ",";
 			}
 			sql += ")";

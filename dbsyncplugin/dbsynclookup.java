@@ -179,8 +179,8 @@ class SyncLookup
 					if (table.get(keyvaluelower) != null)
 					{
 						String duperror = xml.getAttribute("show_duplicates_error");
-						if (duperror == null || duperror.equals("true"))
-							Misc.log("ERROR: [" + keyvalue + "] Preload for " + fieldname + " returned more than one entries");
+						if ((duperror == null || duperror.equals("true")) && fieldresult.getSync().isErrors())
+							Misc.log("ERROR: [" + keyvalue + "] Preload for field '" + fieldname + "' returned more than one entries");
 						value = null;
 					}
 
@@ -196,7 +196,7 @@ class SyncLookup
 					if (datevalue != null) datetable.put(keyvaluelower,datevalue);
 				}
 
-				if (table == null)
+				if (table == null && fieldresult.getSync().isErrors())
 					Misc.log("WARNING: Preload for field '" + fieldname + "' returned empty result");
 				loadingdone = true;
 			}
@@ -226,7 +226,8 @@ class SyncLookup
 				}
 
 				if (fields == null) return null;
-				LinkedHashMap<String,String> values = fieldresult.getValues();
+				fieldresult.setFields(fields);
+				Map<String,String> values = fieldresult.getValues();
 				String keyvalue = Misc.getKeyValue(fields,values);
 				if (keyvalue == null) return ""; // If key is null, do not reject or throw an error
 
@@ -258,8 +259,8 @@ class SyncLookup
 								result = null;
 							else
 							{
-								if (discardedlist.size() > 0)
-									Misc.log("WARNING: Discarded entries when looking up multiple values for field " + fieldname + ": " + Misc.implode(discardedlist));
+								if (discardedlist.size() > 0 && fieldresult.getSync().isErrors())
+									Misc.log("WARNING: Discarded entries when looking up multiple values for field '" + fieldname + "': " + Misc.implode(discardedlist));
 								Collections.sort(resultlist,db.getCollator());
 								result = Misc.implode(resultlist,"\n");
 							}
@@ -372,8 +373,9 @@ class SyncLookup
 			String sql = xmllookup.getValue();
 			String instance = xmllookup.getAttribute("instance");
 
-			String str = result == null ? sql : db.substitute(instance,sql,result.getValues());
-			DBOper oper = db.makesqloper(instance,str);
+			ArrayList<DBField> list = new ArrayList<DBField>();
+			String str = result == null ? sql : db.substitute(instance,sql,result.getValues(),list);
+			DBOper oper = db.makesqloper(instance,str,list);
 
 			LinkedHashMap<String,String> nextrow = oper.next();
 			if (nextrow == null) return null;

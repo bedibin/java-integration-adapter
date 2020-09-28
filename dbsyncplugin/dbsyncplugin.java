@@ -92,9 +92,95 @@ class DBSyncPluginSubscriber extends Subscriber
 	}
 }
 
+class UpdateDestInfo
+{
+	XML xml;
+	boolean stoponerror = false;
+	String instance;
+	String idfield;
+	String tablename;
+	String username;
+	String password;
+	String url;
+	ArrayList<String> preinsertlist = new ArrayList<String>();
+	ArrayList<String> postinsertlist = new ArrayList<String>();
+	HashMap<SyncOper,ArrayList<XML>> customsqloperlist = new HashMap<SyncOper,ArrayList<XML>>();
+	HashMap<SyncOper,ArrayList<XML>> customoperlist = new HashMap<SyncOper,ArrayList<XML>>();
+	Pattern ondupspattern;
+	OnOper onduplicates;
+	String[] mergefields;
+	String[] mergekeys;
+	String[] clearfields;
+	String[] suffixfields;
+
+	UpdateDestInfo(XML xml) throws AdapterException
+	{
+		this.xml = xml;
+		String stop = xml.getAttribute("stop_on_error");
+		if (stop != null && stop.equals("true")) stoponerror = true;
+		username = xml.getAttribute("username");
+		password = xml.getAttributeCrypt("password");
+		url = xml.getAttribute("url");
+		instance = xml.getAttribute("instance_write");
+		if (instance == null) instance = xml.getAttribute("instance");
+		XML[] xmlsqllist = xml.getElements("preinsertsql");
+		for(XML xmlsql:xmlsqllist)
+			preinsertlist.add(xmlsql.getValue());
+		xmlsqllist = xml.getElements("postinsertsql");
+		for(XML xmlsql:xmlsqllist)
+			postinsertlist.add(xmlsql.getValue());
+		idfield = xml.getAttribute("idfield");
+		tablename = xml.getAttribute("table");
+		String ondupsmatch = xml.getAttribute("on_duplicates_match");
+		if (ondupsmatch != null) ondupspattern = Pattern.compile(ondupsmatch);
+		SyncOper[] operlist = { SyncOper.ADD, SyncOper.REMOVE, SyncOper.UPDATE };
+		for(SyncOper oper:operlist)
+		{
+			ArrayList<XML> customlist = new ArrayList<XML>();
+			xmlsqllist = xml.getElements("custom" + oper.toString().toLowerCase());
+			for(XML xmlsql:xmlsqllist)
+				customlist.add(xmlsql);
+			customoperlist.put(oper,customlist);
+			customlist = new ArrayList<XML>();
+			xmlsqllist = xml.getElements("custom" + oper.toString().toLowerCase() + "sql");
+			for(XML xmlsql:xmlsqllist)
+				customlist.add(xmlsql);
+			customsqloperlist.put(oper,customlist);
+		}
+		onduplicates = Field.getOnOper(xml,"on_duplicates",OnOper.MERGE,EnumSet.of(OnOper.MERGE,OnOper.CLEAR,OnOper.SUFFIX,OnOper.RECREATE,OnOper.WARNING,OnOper.ERROR,OnOper.IGNORE));
+		String mergefieldsattr = xml.getAttribute("merge_fields");
+		if (mergefieldsattr != null) mergefields = mergefieldsattr.split("\\s*,\\s*");
+		String mergekeysattr = xml.getAttribute("merge_keys");
+		if (mergekeysattr != null) mergekeys = mergekeysattr.split("\\s*,\\s*");
+		String clearfieldsattr = xml.getAttribute("clear_fields");
+		if (clearfieldsattr != null) clearfields = clearfieldsattr.split("\\s*,\\s*");
+		String suffixfieldsattr = xml.getAttribute("suffix_fields");
+		if (suffixfieldsattr != null) suffixfields = suffixfieldsattr.split("\\s*,\\s*");
+	}
+
+	XML getXML() { return xml; }
+	boolean getStopOnError() { return stoponerror; }
+	String getUserName() { return username; }
+	String getPassword() { return password; }
+	String getUrl() { return url; }
+	String getInstance() { return instance; }
+	String getIdField() { return idfield; }
+	String getTableName() { return tablename; }
+	ArrayList<String> getPreInsertList() { return preinsertlist; }
+	ArrayList<String> getPostInsertList() { return postinsertlist; }
+	ArrayList<XML> getCustomSqlList(SyncOper oper) { return customsqloperlist.get(oper); }
+	ArrayList<XML> getCustomList(SyncOper oper) { return customoperlist.get(oper); }
+	Pattern getOnDupsPattern() { return ondupspattern; }
+	OnOper getOnDuplicates() { return onduplicates; }
+	String[] getMergeFields() { return mergefields; }
+	String[] getMergeKeys() { return mergekeys; }
+	String[] getClearFields() { return clearfields; }
+	String[] getSuffixFields() { return suffixfields; }
+	void Exception(String text) throws AdapterException { throw new AdapterException(xml,text); }
+}
+
 abstract class UpdateSubscriber extends Subscriber
 {
-	private boolean stoponerror = false;
 	private String keyvalue;
 	private String[] displayfields;
 	private Rate rate;
@@ -155,8 +241,7 @@ abstract class UpdateSubscriber extends Subscriber
 		XML xmldest = javaadapter.getConfiguration().getElementByPath(path);
 		if (xmldest == null) throw new AdapterException(xml,"Non matching destination element: " + path);
 
-		String stop = xmldest.getAttribute("stop_on_error");
-		if (stop != null && stop.equals("true")) stoponerror = true;
+		UpdateDestInfo destinfo = new UpdateDestInfo(xmldest);
 
 		String displayfield = xml.getAttribute("display_keyfield");
 		if (displayfield != null) displayfields = displayfield.split("\\s*,\\s*");
@@ -166,7 +251,7 @@ abstract class UpdateSubscriber extends Subscriber
 		{
 			if (javaadapter.isShuttingDown()) return null;
 			setKeyValue(xmloper);
-			oper(xmldest,xmloper);
+			oper(destinfo,xmloper);
 		}
 
 		XML result = new XML();
@@ -175,43 +260,43 @@ abstract class UpdateSubscriber extends Subscriber
 		return result;
 	}
 
-	protected abstract void start(XML xmldest,XML xml) throws AdapterException;
-	protected abstract void end(XML xmldest,XML xml) throws AdapterException;
-	protected abstract void add(XML xmldest,XML xml) throws AdapterException;
-	protected abstract void remove(XML xmldest,XML xml) throws AdapterException;
-	protected abstract void update(XML xmldest,XML xml) throws AdapterException;
+	protected abstract void start(UpdateDestInfo destinfo,XML xml) throws AdapterException;
+	protected abstract void end(UpdateDestInfo destinfo,XML xml) throws AdapterException;
+	protected abstract void add(UpdateDestInfo destinfo,XML xml) throws AdapterException;
+	protected abstract void remove(UpdateDestInfo destinfo,XML xml) throws AdapterException;
+	protected abstract void update(UpdateDestInfo destinfo,XML xml) throws AdapterException;
 
-	private void startOper(XML xmldest,XML xml) throws AdapterException
+	private void startOper(UpdateDestInfo destinfo,XML xml) throws AdapterException
 	{
 		addcounter = 0;
 		removecounter = 0;
 		updatecounter = 0;
 		rate = new Rate();
-		start(xmldest,xml);
+		start(destinfo,xml);
 	}
 
-	private void addOper(XML xmldest,XML xml) throws AdapterException
+	private void addOper(UpdateDestInfo destinfo,XML xml) throws AdapterException
 	{
 		addcounter++;
 		rate.toString();
-		add(xmldest,xml);
+		add(destinfo,xml);
 	}
 
-	private void removeOper(XML xmldest,XML xml) throws AdapterException
+	private void removeOper(UpdateDestInfo destinfo,XML xml) throws AdapterException
 	{
 		removecounter++;
 		rate.toString();
-		remove(xmldest,xml);
+		remove(destinfo,xml);
 	}
 
-	private void updateOper(XML xmldest,XML xml) throws AdapterException
+	private void updateOper(UpdateDestInfo destinfo,XML xml) throws AdapterException
 	{
 		updatecounter++;
 		rate.toString();
-		update(xmldest,xml);
+		update(destinfo,xml);
 	}
 
-	private void endOper(XML xmldest,XML xml) throws AdapterException
+	private void endOper(UpdateDestInfo destinfo,XML xml) throws AdapterException
 	{
 		keyvalue = null;
 		String add = xml.getAttribute("add");
@@ -233,7 +318,7 @@ abstract class UpdateSubscriber extends Subscriber
 		}
 
 		rate = null;
-		end(xmldest,xml);
+		end(destinfo,xml);
 	}
 
 	protected String getExceptionMessage(Exception ex)
@@ -242,7 +327,7 @@ abstract class UpdateSubscriber extends Subscriber
 		return msg == null ? ex.toString() : msg;
 	}
 
-	public final void oper(XML xmldest,XML xmloper) throws AdapterException
+	public final void oper(UpdateDestInfo destinfo,XML xmloper) throws AdapterException
 	{
 		try
 		{
@@ -250,25 +335,25 @@ abstract class UpdateSubscriber extends Subscriber
 			switch(oper)
 			{
 			case UPDATE:
-				updateOper(xmldest,xmloper);
+				updateOper(destinfo,xmloper);
 				break;
 			case ADD:
-				addOper(xmldest,xmloper);
+				addOper(destinfo,xmloper);
 				break;
 			case REMOVE:
-				removeOper(xmldest,xmloper);
+				removeOper(destinfo,xmloper);
 				break;
 			case START:
-				startOper(xmldest,xmloper);
+				startOper(destinfo,xmloper);
 				break;
 			case END:
-				endOper(xmldest,xmloper);
+				endOper(destinfo,xmloper);
 				break;
 			}
 		}
 		catch(AdapterException ex)
 		{
-			if (stoponerror) Misc.rethrow(ex);
+			if (destinfo.getStopOnError()) Misc.rethrow(ex);
 			String key = getKeyValue();
 			Misc.log("ERROR: " + (keyvalue == null ? "" : "[" + keyvalue + "] ") + getExceptionMessage(ex) + Misc.CR + "XML message was: " + xmloper);
 			if (Misc.isLog(30)) Misc.log(ex);
@@ -291,38 +376,31 @@ class DatabaseUpdateSubscriber extends UpdateSubscriber
 		quotefield = field;
 	}
 
-	protected void start(XML xmldest,XML xml) throws AdapterException
+	protected void start(UpdateDestInfo destinfo,XML xml) throws AdapterException
 	{
-		String instance = xmldest.getAttribute("instance_write");
-		if (instance == null) instance = xmldest.getAttribute("instance");
-		XML[] xmlsqllist = xmldest.getElements("preinsertsql");
-		for(XML xmlsql:xmlsqllist)
+		String instance = destinfo.getInstance();
+		for(String sql:destinfo.getPreInsertList())
 		{
-			String sql = xmlsql.getValue();
 			Misc.log(3,"preinsertsql: " + sql);
 			db.execsql(instance,sql);
 		}
 	}
 
-	protected void end(XML xmldest,XML xml) throws AdapterException
+	protected void end(UpdateDestInfo destinfo,XML xml) throws AdapterException
 	{
-		String instance = xmldest.getAttribute("instance_write");
-		if (instance == null) instance = xmldest.getAttribute("instance");
-		XML[] xmlsqllist = xmldest.getElements("postinsertsql");
-		for(XML xmlsql:xmlsqllist)
+		String instance = destinfo.getInstance();
+		for(String sql:destinfo.getPostInsertList())
 		{
-			String sql = xmlsql.getValue();
 			Misc.log(3,"postinsertsql: " + sql);
 			db.execsql(instance,sql);
 		}
 	}
 
-	private boolean customsql(String oper,XML xmldest,XML xml) throws AdapterException
+	private boolean customsql(SyncOper oper,UpdateDestInfo destinfo,XML xml) throws AdapterException
 	{
-		String instance = xmldest.getAttribute("instance_write");
-		if (instance == null) instance = xmldest.getAttribute("instance");
-		XML[] sqlxmllist = xmldest.getElements("custom" + oper + "sql");
-		if (sqlxmllist.length == 0) return false;
+		String instance = destinfo.getInstance();
+		ArrayList<XML> sqlxmllist = destinfo.getCustomSqlList(oper);
+		if (sqlxmllist.size() == 0) return false;
 
 		for(XML sqlxml:sqlxmllist)
 		{
@@ -332,19 +410,24 @@ class DatabaseUpdateSubscriber extends UpdateSubscriber
 			if (sql == null) return false;
 
 			XML[] fields = xml.getElements();
+			ArrayList<DBField> list = new ArrayList<DBField>();
 			for(XML field:fields)
-				sql = sql.replace("%" + field.getTagName() + "%",db.getValue(field));
+			{
+				sql = sql.replace("%" + field.getTagName() + "%",DB.replacement);
+				list.add(new DBField(destinfo.getTableName(),field.getTagName(),field.getValue()));
+			}
 
 			if (Misc.isLog(10)) Misc.log(oper + ": " + sql);
-			db.execsql(instance,sql);
+			db.execsql(instance,sql,list);
 		}
 
 		return true;
 	}
 
-	private String getWhereClause(XML xmldest,XML xml) throws AdapterException
+	private String getWhereClause(UpdateDestInfo destinfo,XML xml,List<DBField> list) throws AdapterException
 	{
 		XML[] fields = xml.getElements();
+		String table = destinfo.getTableName();
 
 		String sep = "where";
 		StringBuilder sql = new StringBuilder();
@@ -358,18 +441,16 @@ class DatabaseUpdateSubscriber extends UpdateSubscriber
 			String value = field.getValue();
 			if (value == null) value = field.getValue("oldvalue",null);
 
-			sql.append(" " + sep + " " + db.getFieldEqualsValue(quotefield + name + quotefield,value));
+			sql.append(" " + sep + " " + db.getFieldEqualsValue(quotefield,table,name,value,list));
 			sep = "and";
 		}
 
 		if (!sep.equals("and")) throw new AdapterException(xml,"dbsync: SQL operation without a key");
 
-		String idfield = xmldest.getAttribute("idfield");
+		String idfield = destinfo.getIdField();
 		if (idfield != null)
 		{
-			String table = xmldest.getAttribute("table");
-			String instance = xmldest.getAttribute("instance_write");
-			if (instance == null) instance = xmldest.getAttribute("instance");
+			String instance = destinfo.getInstance();
 
 			String sqlid = "select " + idfield + " from " + table + sql;
 			ArrayList<LinkedHashMap<String,String>> ids = db.execsql(instance,sqlid);
@@ -380,53 +461,49 @@ class DatabaseUpdateSubscriber extends UpdateSubscriber
 			}
 
 			String id = Misc.getFirstValue(ids.get(0));
-			return " where " + idfield + " = " + db.getValue(id);
+			list.add(new DBField(table,idfield,id));
+			return " where " + idfield + " = " + DB.replacement;
 		}
 
 		return sql.toString();
 	}
 
-	private void handleRetryException(AdapterDbException ex,XML xmldest,XML xml,boolean isretry) throws AdapterException
+	private void handleRetryException(AdapterDbException ex,UpdateDestInfo destinfo,XML xml,boolean isretry) throws AdapterException
 	{
-		String table = xmldest.getAttribute("table");
-		String instance = xmldest.getAttribute("instance_write");
-		if (instance == null) instance = xmldest.getAttribute("instance");
+		String table = destinfo.getTableName();
+		String instance = destinfo.getInstance();
 		XML[] fields = xml.getElements();
 
 		String message = ex.getMessage();
 		if (message == null) message = "";
 		if (Misc.isLog(20)) Misc.log("Retry exception: " + message);
 
-		Pattern ondupspattern = null;
-		String ondupsmatch = xmldest.getAttribute("on_duplicates_match");
-		if (ondupsmatch != null) ondupspattern = Pattern.compile(ondupsmatch);
+		Pattern ondupspattern = destinfo.getOnDupsPattern();
 
 		if ((ondupspattern != null && ondupspattern.matcher(message).find()) || (ondupspattern == null && (message.contains("unique constraint") || message.contains("contrainte unique") || message.contains("ORA-00001:") || message.contains("duplicate key") || message.contains("NoDupIndexTriggered") || message.contains("already exists") || message.contains("existe d\u00e9j\u00e0"))))
 		{
 			if (Misc.isLog(15))
 			{
 				Misc.log("Extracting current duplicate since message: " + message);
-				String sqlchk = "select * from " + table + getWhereClause(xmldest,xml);
-				db.execsql(instance,sqlchk);
+				ArrayList<DBField> list = new ArrayList<DBField>();
+				String sqlchk = "select * from " + table + getWhereClause(destinfo,xml,list);
+				db.execsql(instance,sqlchk,list);
 			}
 
 			if (!isretry)
 			{
-				switch(Field.getOnOper(xmldest,"on_duplicates",OnOper.MERGE,EnumSet.of(OnOper.MERGE,OnOper.CLEAR,OnOper.SUFFIX,OnOper.RECREATE,OnOper.WARNING,OnOper.ERROR,OnOper.IGNORE)))
+				switch(destinfo.getOnDuplicates())
 				{
 				case MERGE:
-					String mergefields = xmldest.getAttribute("merge_fields");
-					String[] attrs = mergefields == null ? null : mergefields.split("\\s*,\\s*");
-
-					String keyfields = xmldest.getAttribute("merge_keys");
-					String[] keys = keyfields == null ? null : keyfields.split("\\s*,\\s*");
+					String[] attrs = destinfo.getMergeFields();
+					String[] keys = destinfo.getMergeKeys();
 
 					XML updxml = new XML();
 					XML xmlop = updxml.add("update");
 					if (keys != null) for(String key:keys)
 					{
 						XML field = xml.getElement(key);
-						if (field == null) throw new AdapterException(xmldest,"Invalid key '" + key + "' in merge_keys attribute: " + xml);
+						if (field == null) destinfo.Exception("Invalid key '" + key + "' in merge_keys attribute: " + xml);
 						String value = field.getValue("oldvalue");
 						if (value == null) value = field.getValue();
 
@@ -447,40 +524,44 @@ class DatabaseUpdateSubscriber extends UpdateSubscriber
 						}
 					}
 					Misc.log(1,"WARNING: Record already present." + Misc.CR + "Updating record information with XML message: " + updxml);
-					update(xmldest,updxml,true);
+					update(destinfo,updxml,true);
 					break;
 				case CLEAR:
-					String clearfields = xmldest.getAttribute("clear_fields");
-					if (clearfields == null) throw new AdapterException(xmldest,"clear on_duplicates requires clear_fields attribute");
-					Misc.log(1,"WARNING: [" + getKeyValue() + "] Record already present. Clearing fields " + clearfields + ": " + xml);
+					String[] clearfields = destinfo.getClearFields();
+					if (clearfields == null) destinfo.Exception("clear on_duplicates requires clear_fields attribute");
+					Misc.log(1,"WARNING: [" + getKeyValue() + "] Record already present. Clearing fields " + Misc.implode(clearfields) + ": " + xml);
 					String sqlclear = "update " + table + " ";
 					String sepclear = "set ";
-					for(String field:clearfields.split("\\s*,\\s*"))
+					ArrayList<DBField> listclear = new ArrayList<DBField>();
+					for(String field:clearfields)
 					{
-						sqlclear += sepclear + field + "=NULL";
+						sqlclear += sepclear + field + " = " + DB.replacement;
+						listclear.add(new DBField(table,field,null));
 						sepclear = ",";
 					}
-					sqlclear += " " + getWhereClause(xmldest,xml);
-					db.execsql(instance,sqlclear);
+					sqlclear += " " + getWhereClause(destinfo,xml,listclear);
+					db.execsql(instance,sqlclear,listclear);
 					break;
 				case SUFFIX:
-					String suffixfields = xmldest.getAttribute("suffix_fields");
-					if (suffixfields == null) throw new AdapterException(xmldest,"suffix on_duplicates requires suffix_fields attribute");
-					Misc.log(1,"WARNING: [" + getKeyValue() + "] Record already present. Adding suffix '_' to fields " + suffixfields + ": " + xml);
+					String[] suffixfields = destinfo.getSuffixFields();
+					if (suffixfields == null) destinfo.Exception("suffix on_duplicates requires suffix_fields attribute");
+					Misc.log(1,"WARNING: [" + getKeyValue() + "] Record already present. Adding suffix '_' to fields " + Misc.implode(suffixfields) + ": " + xml);
 					String sqlsuf = "update " + table + " ";
 					String sepsuf = "set ";
-					for(String field:suffixfields.split("\\s*,\\s*"))
+					ArrayList<DBField> listsuffix = new ArrayList<DBField>();
+					for(String field:suffixfields)
 					{
-						sqlsuf += sepsuf + field + "=" + db.getConcat(instance,field,"'_'");
+						sqlsuf += sepsuf + field + " = " + DB.replacement;
+						listsuffix.add(new DBField(table,field,db.getConcat(instance,field,"'_'")));
 						sepsuf = ",";
 					}
-					sqlsuf += " " + getWhereClause(xmldest,xml);
-					db.execsql(instance,sqlsuf);
+					sqlsuf += " " + getWhereClause(destinfo,xml,listsuffix);
+					db.execsql(instance,sqlsuf,listsuffix);
 					break;
 				case RECREATE:
 					Misc.log(1,"WARNING: [" + getKeyValue() + "] Record already present. Record will be automatically recreated with XML message: " + xml);
-					remove(xmldest,xml);
-					add(xmldest,xml,true);
+					remove(destinfo,xml);
+					add(destinfo,xml,true);
 					break;
 				case WARNING:
 					Misc.log(1,"WARNING: [" + getKeyValue() + "] Record already present. Error: " + message + Misc.CR + "Ignored XML message: " + xml);	
@@ -495,23 +576,22 @@ class DatabaseUpdateSubscriber extends UpdateSubscriber
 		Misc.rethrow(ex);
 	}
 
-	protected void add(XML xmldest,XML xml) throws AdapterException
+	protected void add(UpdateDestInfo destinfo,XML xml) throws AdapterException
 	{
-		add(xmldest,xml,false);
+		add(destinfo,xml,false);
 	}
 
-	protected void add(XML xmldest,XML xml,boolean isretry) throws AdapterException
+	protected void add(UpdateDestInfo destinfo,XML xml,boolean isretry) throws AdapterException
 	{
-		String instance = xmldest.getAttribute("instance_write");
-		if (instance == null) instance = xmldest.getAttribute("instance");
-		if (customsql("add",xmldest,xml)) return;
+		String instance = destinfo.getInstance();
+		if (customsql(SyncOper.ADD,destinfo,xml)) return;
 
-		String table = xmldest.getAttribute("table");
-		if (table == null) throw new AdapterException(xmldest,"dbsync: destination 'table' attribute required");
+		String table = destinfo.getTableName();
+		if (table == null) destinfo.Exception("dbsync: destination 'table' attribute required");
 
-		XML[] customs = xmldest.getElements("customadd");
-		if (customs.length > 0)
-			throw new AdapterException(xmldest,"customadd not supported yet for SQL operations");
+		ArrayList<XML> customs = destinfo.getCustomList(SyncOper.ADD);
+		if (customs.size() > 0)
+			destinfo.Exception("customadd not supported yet for SQL operations");
 
 		String sql = "insert into " + table + " (";
 		String fieldnames = null;
@@ -532,14 +612,14 @@ class DatabaseUpdateSubscriber extends UpdateSubscriber
 		sql += fieldnames + ") values (";
 
 		String sep = "";
-		ArrayList<String> list = new ArrayList<String>();
+		ArrayList<DBField> list = new ArrayList<DBField>();
 		for(XML field:fields)
 		{
 			OnOper type = Field.getOnOper(field,"type");
 			if (type != null && (type == OnOper.INFO || type == OnOper.INFOAPI)) continue;
 
 			sql += sep + DB.replacement;
-			list.add(field.getValue());
+			list.add(new DBField(table,field.getTagName(),field.getValue()));
 			sep = ",";
 		}
 		sql += ")";
@@ -552,23 +632,23 @@ class DatabaseUpdateSubscriber extends UpdateSubscriber
 		}
 		catch(AdapterDbException ex)
 		{
-			handleRetryException(ex,xmldest,xml,isretry);
+			handleRetryException(ex,destinfo,xml,isretry);
 		}
 	}
 
-	protected void remove(XML xmldest,XML xml) throws AdapterException
+	protected void remove(UpdateDestInfo destinfo,XML xml) throws AdapterException
 	{
-		String instance = xmldest.getAttribute("instance_write");
-		if (instance == null) instance = xmldest.getAttribute("instance");
-		if (customsql("remove",xmldest,xml)) return;
+		String instance = destinfo.getInstance();
+		if (customsql(SyncOper.REMOVE,destinfo,xml)) return;
 
-		String table = xmldest.getAttribute("table");
-		if (table == null) throw new AdapterException(xmldest,"dbsync: destination 'table' attribute required");
+		String table = destinfo.getTableName();
+		if (table == null) destinfo.Exception("dbsync: destination 'table' attribute required");
 
-		ArrayList<String> list = new ArrayList<String>();
-		String sql = "delete from " + table + getWhereClause(xmldest,xml);
-		XML[] customs = xmldest.getElements("customremove");
-		if (customs.length > 0)
+		String sql;
+		ArrayList<DBField> list = new ArrayList<DBField>();
+		ArrayList<XML> customs = destinfo.getCustomList(SyncOper.REMOVE);
+
+		if (customs.size() > 0)
 		{
 			sql = "update " + table;
 			String sep = "set";
@@ -579,34 +659,35 @@ class DatabaseUpdateSubscriber extends UpdateSubscriber
 				String value = custom.getAttribute("value");
 				if (value == null) value = "";
 				sql += " " + sep + " " + quotefield + name + quotefield + "=" + DB.replacement;
-				list.add(Misc.substitute(value,xml));
+				list.add(new DBField(table,name,Misc.substitute(value,xml)));
 				sep = ",";
 			}
-			sql += getWhereClause(xmldest,xml);
+			sql += getWhereClause(destinfo,xml,list);
 		}
+		else
+			sql = "delete from " + table + getWhereClause(destinfo,xml,list);
 
 		if (Misc.isLog(10)) Misc.log("remove SQL: " + sql);
 		db.execsql(instance,sql,list);
 	}
 
-	protected void update(XML xmldest,XML xml) throws AdapterException
+	protected void update(UpdateDestInfo destinfo,XML xml) throws AdapterException
 	{
-		update(xmldest,xml,false);
+		update(destinfo,xml,false);
 	}
 
-	protected void update(XML xmldest,XML xml,boolean isretry) throws AdapterException
+	protected void update(UpdateDestInfo destinfo,XML xml,boolean isretry) throws AdapterException
 	{
-		String instance = xmldest.getAttribute("instance_write");
-		if (instance == null) instance = xmldest.getAttribute("instance");
-		if (customsql("update",xmldest,xml)) return;
+		String instance = destinfo.getInstance();
+		if (customsql(SyncOper.UPDATE,destinfo,xml)) return;
 
-		String table = xmldest.getAttribute("table");
-		if (table == null) throw new AdapterException(xmldest,"dbsync: destination 'table' attribute required");
+		String table = destinfo.getTableName();
+		if (table == null) destinfo.Exception("dbsync: destination 'table' attribute required");
 
 		String sql = "update " + table;
 		String sep = "set";
 		XML[] fields = xml.getElements();
-		ArrayList<String> list = new ArrayList<String>();
+		ArrayList<DBField> list = new ArrayList<DBField>();
 		for(XML field:fields)
 		{
 			XML old = field.getElement("oldvalue");
@@ -617,13 +698,13 @@ class DatabaseUpdateSubscriber extends UpdateSubscriber
 			if (type != null && (type == OnOper.INFO || type == OnOper.INFOAPI || type == OnOper.KEY || (type == OnOper.INITIAL && oldvalue != null))) continue;
 
 			sql += " " + sep + " " + quotefield + field.getTagName() + quotefield + " = " + DB.replacement;
-			list.add(field.getValue());
+			list.add(new DBField(table,field.getTagName(),field.getValue()));
 			sep = ",";
 		}
 
 		if (sep.equals("set")) return;
 
-		sql += getWhereClause(xmldest,xml);
+		sql += getWhereClause(destinfo,xml,list);
 
 		if (Misc.isLog(10)) Misc.log("update SQL: " + sql);
 
@@ -633,7 +714,7 @@ class DatabaseUpdateSubscriber extends UpdateSubscriber
 		}
 		catch(AdapterDbException ex)
 		{
-			handleRetryException(ex,xmldest,xml,isretry);
+			handleRetryException(ex,destinfo,xml,isretry);
 		}
 	}
 }

@@ -81,6 +81,7 @@ class ReaderServiceManagerRelations extends ReaderUtil
 	final String ParentLabel = "parent_ci";
 	final String ChildLabel = "child_ci";
 	final String RelTypeLabel = "relation_name";
+	final String RelParentTypeLabel = "relation_parent";
 	final String RelCiLabel = "relation_ci";
 	final String LevelLabel = "level";
 	final String OutageLabel = "outage";
@@ -95,21 +96,28 @@ class ReaderServiceManagerRelations extends ReaderUtil
 	};
 
 	class ChildResult {
-		ChildResult(int level,String type,String ci,boolean outage) {
+		ChildResult(int level,String type,String ci,boolean outage,String parent_type) {
 			this.level = level;
 			this.type = type;
+			this.parent_type = parent_type;
 			this.ci = ci;
 			this.outage = outage;
 		};
+
 		int level;
 		String type;
+		String parent_type;
 		String ci;
 		boolean outage;
+
+		public String toString() {
+			return "CI: " + ci + " type: " + type + " level: " + level + " outage: " + outage;
+		}
 	};
 
 	public ReaderServiceManagerRelations(XML xml) throws AdapterException
 	{
-		super(true);
+		setSorted(true);
 
 		String conn = xml.getAttribute("instance");
 		String sql = 
@@ -125,9 +133,11 @@ class ReaderServiceManagerRelations extends ReaderUtil
 "order by 1,2,3";
 		DBOper oper = db.makesqloper(conn,sql);
 
-		if (headers == null) headers = oper.getHeader();
+		String[] default_headers = {ParentLabel,ChildLabel,RelTypeLabel,RelCiLabel,LevelLabel,OutageLabel,RelParentTypeLabel};
+		if (headers == null) headers = new LinkedHashSet<String>(Arrays.asList(default_headers));
 		if (instance == null) instance = conn;
 
+		/* First step is to create "all_next", a list of all CIs with their associated children */
 		LinkedHashMap<String,String> row;
 		while((row = oper.next()) != null) {
 			String parent = row.get(ParentLabel);
@@ -144,34 +154,50 @@ class ReaderServiceManagerRelations extends ReaderUtil
 			}
 		}
 
+		/* Next step is to iterate through all CIs */
 		next_iterator = all_next.keySet().iterator();
+		/* Create an empty list of all possible descendent */
 		child_iterator = (new TreeMap<String,ChildResult>(db.getCollator())).entrySet().iterator();
 	}
 
-	private void getAllChildren(TreeMap<String,ChildResult> map,int level,String ci,boolean outage) throws AdapterException
+	private void getAllChildren(TreeMap<String,ChildResult> map,int level,String ci,boolean outage,String parent_relation) throws AdapterException
 	{
 		TreeMap<String,ChildExtract> children = all_next.get(ci);
 		if (children == null) return;
+		/* For a specific CI, search recursively for all its descendents and populate the "map" list with the result */
 		for(Map.Entry<String,ChildExtract> child:children.entrySet()) {
 			String childname = child.getKey();
 			ChildExtract childextract = child.getValue();
+			boolean childoutage = outage ? childextract.outage : outage;
+			String parent_type = parent_relation == null ? childextract.type : parent_relation;
 			ChildResult duplicatechild = map.get(childname);
-			if (outage) outage = childextract.outage;
-			if (duplicatechild != null)
+			if (duplicatechild == null)
 			{
-				// Priority is lowest level having outage
-				if (level <= duplicatechild.level && (outage || !duplicatechild.outage))
+				ChildResult newchild = new ChildResult(level,childextract.type,ci,childoutage,parent_type);
+				map.put(childname,newchild);
+			} else {
+				/* The descendent was already found in the results, we have to make the decision which one to keep
+				   between the one we just got and the one we found previously.
+				   The one to keep is:
+				   1- If new one has outage but not previous one, for any level, use new one
+				   2- If same outage scope and new one is lower level than previous one, use new one
+				   3- Otherwise, keep old one
+				*/
+				if ((childoutage && !duplicatechild.outage) 
+					|| (childoutage == duplicatechild.outage && level < duplicatechild.level))
 				{
 					duplicatechild.level = level;
 					duplicatechild.ci = ci;
-					duplicatechild.outage = outage;
+					duplicatechild.outage = childoutage;
 					duplicatechild.type = childextract.type;
+					duplicatechild.parent_type = parent_type;
+					// No continue statement here since we need to process better children as well
 				}
-				continue;
+				else
+					// New route is worst than old one
+					continue;
 			}
-			ChildResult newchild = new ChildResult(level,childextract.type,ci,outage);
-			map.put(childname,newchild);
-			getAllChildren(map,level+1,childname,outage);
+			getAllChildren(map,level+1,childname,childoutage,parent_type);
 		}
 		return;
 	}
@@ -179,11 +205,13 @@ class ReaderServiceManagerRelations extends ReaderUtil
 	@Override
 	public LinkedHashMap<String,String> nextRaw() throws AdapterException
 	{
-		if (!child_iterator.hasNext()) {
+		while(!child_iterator.hasNext()) {
+			/* We consumed all descendents, select next CI, if any */
 			if (!next_iterator.hasNext()) return null;
 			current_parent = next_iterator.next();
 			TreeMap<String,ChildResult> children = new TreeMap<String,ChildResult>();
-			getAllChildren(children,1,current_parent,true);
+			/* Get all descendents and iterate through them */
+			getAllChildren(children,1,current_parent,true,null);
 			child_iterator = children.entrySet().iterator();
 		}
 
@@ -193,6 +221,7 @@ class ReaderServiceManagerRelations extends ReaderUtil
 		row.put(ParentLabel,current_parent);
 		row.put(ChildLabel,child.getKey());
 		row.put(RelTypeLabel,childresult.type);
+		row.put(RelParentTypeLabel,childresult.parent_type);
 		row.put(RelCiLabel,childresult.ci);
 		row.put(LevelLabel,"" + childresult.level);
 		row.put(OutageLabel,childresult.outage ? "t" : "f");
@@ -248,54 +277,54 @@ class ServiceManagerUpdateSubscriber extends UpdateSubscriber
 		return sb.toString();
 	}
 
-	protected void add(XML xmldest,XML xmloper) throws AdapterException
+	protected void add(UpdateDestInfo destinfo,XML xmloper) throws AdapterException
 	{
-		oper(xmloper.getParent().getAttribute("name"),xmldest,xmloper);
+		oper(xmloper.getParent().getAttribute("name"),destinfo,xmloper);
 	}
 
-	protected void remove(XML xmldest,XML xmloper) throws AdapterException
+	protected void remove(UpdateDestInfo destinfo,XML xmloper) throws AdapterException
 	{
-		oper(xmloper.getParent().getAttribute("name"),xmldest,xmloper);
+		oper(xmloper.getParent().getAttribute("name"),destinfo,xmloper);
 	}
 
-	protected void update(XML xmldest,XML xmloper) throws AdapterException
+	protected void update(UpdateDestInfo destinfo,XML xmloper) throws AdapterException
 	{
-		oper(xmloper.getParent().getAttribute("name"),xmldest,xmloper);
+		oper(xmloper.getParent().getAttribute("name"),destinfo,xmloper);
 	}
 
-	protected void start(XML xmldest,XML xmloper) throws AdapterException {}
-	protected void end(XML xmldest,XML xmloper) throws AdapterException {}
+	protected void start(UpdateDestInfo destinfo,XML xmloper) throws AdapterException {}
+	protected void end(UpdateDestInfo destinfo,XML xmloper) throws AdapterException {}
 
-	protected void oper(String object,XML xmldest,XML xmloper) throws AdapterException
+	protected void oper(String object,UpdateDestInfo destinfo,XML xmloper) throws AdapterException
 	{
 		XML publisher = new XML();
 		XML pub = publisher.add("publisher");
 		pub.setAttribute("name",object);
-		pub.setAttribute("url",xmldest.getAttribute("url"));
-		pub.setAttribute("username",xmldest.getAttribute("username"));
-		pub.setAttribute("password",xmldest.getAttribute("password"));
+		pub.setAttribute("url",destinfo.getUrl());
+		pub.setAttribute("username",destinfo.getUserName());
+		pub.setAttribute("password",destinfo.getPassword());
 		pub.setAttribute("type","soap");
 
-		XML[] customs = null;
+		ArrayList<XML> customs = null;
 		SyncOper oper = Enum.valueOf(SyncOper.class,xmloper.getTagName().toUpperCase());
 		String soapoper;
 		switch(oper)
 		{
 		case ADD:
-			customs = xmldest.getElements("customadd");
-			if (customs.length > 0)
+			customs = destinfo.getCustomList(SyncOper.ADD);
+			if (customs.size() > 0)
 			{
-				String action = customs[0].getAttribute("action");
+				String action = customs.get(0).getAttribute("action");
 				soapoper = action == null ? "Update" : action;
 			}
 			else
 				soapoper = "Create";
 			break;
 		case REMOVE:
-			customs = xmldest.getElements("customremove");
-			if (customs.length > 0)
+			customs = destinfo.getCustomList(SyncOper.REMOVE);
+			if (customs.size() > 0)
 			{
-				String action = customs[0].getAttribute("action");
+				String action = customs.get(0).getAttribute("action");
 				soapoper = action == null ? "Update" : action;
 			}
 			else
@@ -333,7 +362,7 @@ class ServiceManagerUpdateSubscriber extends UpdateSubscriber
 					else
 						remove.add(update);
 				}
-				if (doremove) oper(object,xmldest,xmlremove);
+				if (doremove) oper(object,destinfo,xmlremove);
 			}
 			break;
 		default:
@@ -421,7 +450,7 @@ class ServiceManagerUpdateSubscriber extends UpdateSubscriber
 			setValue(struct,name,value);
 		}
 
-		if (customs != null && customs.length > 0)
+		if (customs != null && customs.size() > 0)
 		{
 			for(XML custom:customs)
 			{
@@ -435,26 +464,22 @@ class ServiceManagerUpdateSubscriber extends UpdateSubscriber
 
 		XML result = soap.publish(publisher);
 
-		Pattern ondupspattern = null;
-		String ondupsmatch = xmldest.getAttribute("on_duplicates_match");
-		if (ondupsmatch != null) ondupspattern = Pattern.compile(ondupsmatch);
-
+		Pattern ondupspattern = destinfo.getOnDupsPattern();
 		String message = getMessage(result);
 		if (message != null && oper == SyncOper.ADD && ((ondupspattern != null && ondupspattern.matcher(message).find()) || (ondupspattern == null && (message.contains("duplicate key") || message.contains("already associated") || message.contains("d\u00e9j\u00e0 associ\u00e9") || message.contains("already exists") || message.contains("existe d\u00e9j\u00e0")))))
 		{
 			soap.renameTag("Update" + object + "Request");
 			publisher.setAttribute("action","Update");
 
-			String keyfields = xmldest.getAttribute("merge_keys");
-			if (keyfields != null)
+			String[] newkeys = destinfo.getMergeKeys();
+			if (newkeys != null)
 			{
-				String[] newkeys = keyfields.split("\\s*,\\s*");
 				for(XML key:keys.getElements())
 					key.remove();
 				for(String key:newkeys)
 				{
 					XML field = xmloper.getElement(key);
-					if (field == null) throw new AdapterException(xmldest,"Invalid key '" + key + "' in merge_keys attribute: " + xmloper);
+					if (field == null) destinfo.Exception("Invalid key '" + key + "' in merge_keys attribute: " + xmloper);
 					String value = field.getValue("oldvalue",null);
 					if (value == null) value = field.getValue();
 

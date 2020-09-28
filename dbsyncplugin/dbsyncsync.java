@@ -13,6 +13,7 @@ class Sync
 	private String syncname;
 	private boolean dumplogfile = false;
 	private boolean isprocessed = false;
+	private boolean iserrors = true;
 	private Scope scope;
 
 	public Sync(DBSyncOper dbsync,XML xml) throws AdapterException
@@ -31,10 +32,18 @@ class Sync
 		if (dumplogfilestr != null && dumplogfilestr.equals("true"))
 			dumplogfile = true;
 
+		String errors = xml.getAttribute("show_errors");
+
 		if (xml.getTagName().equals("source"))
+		{
 			scope = Scope.SCOPE_SOURCE;
+			iserrors = errors == null || !errors.equals("false"); // true is default
+		}
 		else if (xml.getTagName().equals("destination"))
+		{
 			scope = Scope.SCOPE_DESTINATION;
+			iserrors = errors != null && errors.equals("true"); // false is default
+		}
 		else
 			throw new AdapterException(xml,"Only source and destination tags are supported for sync elements");
 	}
@@ -64,6 +73,11 @@ class Sync
 	protected Set<String> getKeys()
 	{
 		return keys;
+	}
+
+	public boolean isErrors()
+	{
+		return iserrors;
 	}
 
 	public Scope getScope()
@@ -199,6 +213,7 @@ class SyncSql extends Sync
 		}
 
 		Set<String> keys = getKeys();
+		ArrayList<DBField> list = new ArrayList<DBField>();
 
 		// Small unsorted source to large sql destination optimization
 		if (getScope() == Scope.SCOPE_DESTINATION && dbsync.getDoRemove() == DBSyncOper.doTypes.FALSE && dbsync.getSourceSync().getReader() instanceof SortTable)
@@ -218,7 +233,10 @@ class SyncSql extends Sync
 						if (value.isEmpty())
 							sb.append(sepand + "\"" + keyname + "\" is null");
 						else
-							sb.append(sepand + "\"" + keyname + "\"=" + db.getFieldValue(value));
+						{
+							sb.append(sepand + "\"" + keyname + "\"=" + DB.replacement);
+							list.add(new DBField(keyname,value));
+						}
 						sepand = " and ";
 					}
 					sb.append(")");
@@ -256,7 +274,8 @@ class SyncSql extends Sync
 
 		// Overwrite default reader
 		String trim = xml.getAttribute("trim");
-		setReader(new ReaderSQL(conn,sql,keys,issorted,!(trim != null && trim.equals("false"))));
+		boolean totrim = !(trim != null && trim.equals("false"));
+		setReader(new ReaderSQL.Builder(conn,sql).setDBFields(list).setKeys(keys).setTrim(totrim).setSorted(issorted).build());
 	}
 }
 

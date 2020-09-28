@@ -122,7 +122,11 @@ class Ucmdb
 			causes.add(cause);
 		}
 
-		if (causes.size() == 0) return error;
+		if (causes.size() == 0)
+		{
+			String[] lines = error.split("\n");
+			return lines[0]; // First line only
+		}
 		return Misc.implode(causes);
 	}
 
@@ -168,7 +172,7 @@ class ReaderUCMDB extends ReaderUtil
 
 	public ReaderUCMDB(XML xml) throws AdapterException
 	{
-		super(xml);
+		setXML(xml);
 
 		String viewname = xml.getAttribute("view");
 		String queryname = xml.getAttribute("query");
@@ -465,6 +469,8 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 				continue;
 			}
 
+			if (prefix.equals("END1") && id == null) id = xml.getValue("END1",null);
+			if (prefix.equals("END2") && id == null) id = xml.getValue("END2",null);
 			if (Misc.isLog(debug)) Misc.log("UCMDBAPI: Defining CI type " + value + " with ID " + prefix + (id == null ? "" : ": " + id));
 			CI ci = id == null ? factory.createCI(value) : factory.createCI(factory.restoreCIIdFromString(id),value);
 			elements.put(prefix,ci);
@@ -682,7 +688,7 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 					Misc.log("ERROR: uCMDB bulk " + currentoper.toString().toLowerCase() + " " + ucmdb.implode(data.getCIs()) + " " + ucmdb.implode(data.getRelations()) + ": " + getExceptionMessage(cause));
 					if (Misc.isLog(30)) Misc.log(cause);
 				}
-			} catch (ExecutionException ex) {
+			} catch (TopologyUpdateException | ExecutionException ex) {
 				throw new AdapterException(ex);
 			}
 		}
@@ -694,15 +700,15 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 			bulkcount = 0;
 			try {
 				update.execute(currentbulk);
-			} catch (ExecutionException ex) {
+			} catch (TopologyUpdateException | ExecutionException ex) {
 				throw new AdapterException(ex);
 			}
 		}
 	}
 
-	protected void add(XML xmldest,XML xml) throws AdapterException
+	protected void add(UpdateDestInfo destinfo,XML xml) throws AdapterException
 	{
-		XML[] customs = xmldest.getElements("customadd");
+		ArrayList<XML> customs = destinfo.getCustomList(SyncOper.ADD);
 		for(XML custom:customs)
 		{
 			String name = custom.getAttribute("name");
@@ -710,11 +716,11 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 			String value = custom.getAttribute("value");
 			if (value == null) value = "";
 			value = Misc.substitute(value,xml);
-			xml.add(name,value);
+			xml.setValue(name,value);
 			if (Misc.isLog(10)) Misc.log("Updating " + name + " with value " + value + " instead of adding: " + xml);
 		}
 
-		if (customs.length > 0)
+		if (customs.size() > 0)
 		{
 			updatemulti(SyncOper.ADD,xml);
 			return;
@@ -789,9 +795,9 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 		push(xml,SyncOper.UPDATE);
 	}
 
-	protected void remove(XML xmldest,XML xml) throws AdapterException
+	protected void remove(UpdateDestInfo destinfo,XML xml) throws AdapterException
 	{
-		XML[] customs = xmldest.getElements("customremove");
+		ArrayList<XML> customs = destinfo.getCustomList(SyncOper.REMOVE);
 		for(XML custom:customs)
 		{
 			String name = custom.getAttribute("name");
@@ -799,12 +805,12 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 			String value = custom.getAttribute("value");
 			if (value == null) value = "";
 			value = Misc.substitute(value,xml);
-			XML xmlval = xml.add(name,value);
+			XML xmlval = xml.setValue(name,value);
 			xmlval.add("oldvalue");
 			if (Misc.isLog(10)) Misc.log("UCMDBAPI: Updating " + name + " with value " + value + " instead of deleting: " + xml);
 		}
 
-		if (customs.length > 0)
+		if (customs.size() > 0)
 		{
 			updatemulti(SyncOper.REMOVE,xml);
 			return;
@@ -852,7 +858,7 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 		push(xml,SyncOper.REMOVE);
 	}
 
-	protected void update(XML xmldest,XML xml) throws AdapterException
+	protected void update(UpdateDestInfo destinfo,XML xml) throws AdapterException
 	{
 		String old1 = getUpdateValue(xml,"END1");
 		String old2 = getUpdateValue(xml,"END2");
@@ -873,16 +879,16 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 
 				push(delete,SyncOper.REMOVE);
 			}
-			add(xmldest,xml);
+			add(destinfo,xml);
 			return;
 		}
 
 		updatemulti(SyncOper.UPDATE,xml);
 	}
 
-	protected void start(XML xmldest,XML xml) throws AdapterException {}
+	protected void start(UpdateDestInfo destinfo,XML xml) throws AdapterException {}
 
-	protected void end(XML xmldest,XML xml) throws AdapterException
+	protected void end(UpdateDestInfo destinfo,XML xml) throws AdapterException
 	{
 		flush();
 	}

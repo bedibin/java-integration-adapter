@@ -10,8 +10,9 @@ class AMDBOper extends DBOper
 	private int pos = 0;
 	private XML[] rowresult;
 	private AMDB db;
+	private HashMap<String,String> attrtypes = new HashMap<String,String>();
 
-	public AMDBOper(AMDB db,String sql,List<String> list) throws AdapterDbException
+	public AMDBOper(AMDB db,String sql,List<DBField> list) throws AdapterDbException
 	{
 		if (list == null || list.size() == 0)
 			init(db,sql);
@@ -22,11 +23,78 @@ class AMDBOper extends DBOper
 			int x = 0;
 			while(matcher.find())
 			{
-				if (x >= list.size()) throw new AdapterDbException("Too many replacement characters " + list.size() + ": " + sql);
-				matcher.appendReplacement(sb,Matcher.quoteReplacement(db.getValue(list.get(x))));
+				if (x >= list.size()) throw new AdapterRuntimeException("Too many replacement characters " + list.size() + ": " + sql);
+				DBField field = list.get(x);
+				String value = field.getValue();
+				String tablename = field.getTableName();
+				String fieldname = field.getFieldName();
+				if (value == null)
+					value = "null";
+				else if (tablename != null && fieldname != null)
+				{
+					// https://docs.microfocus.com/itom/Asset_Manager:9.70/PrgmRefAmGetFieldUserType
+					// https://docs.microfocus.com/itom/Asset_Manager:9.70/PrgmRefAmGetFieldType
+					String attrtype = attrtypes.get(tablename + ":" + fieldname);
+					if (attrtype == null)
+					{
+						try {
+							long tableid = AmApi.AmGetTableFromName(db.getAMConnection(),tablename);
+							long fieldid = AmApi.AmGetFieldFromName(tableid,fieldname);
+							attrtype = AmApi.AmGetFieldUserType(fieldid) + ":" + AmApi.AmGetFieldType(fieldid);
+							attrtypes.put(tablename + ":" + fieldname,attrtype);
+							//Misc.log("AQLTYPE: " + tablename + ":" + fieldname + ":" + attrtype + ":" + AmApi.AmGetFieldType(fieldid) + ": " + value);
+						} catch(AmException ex) {
+							throw new AdapterDbException(ex);
+						}
+					}
+					switch(attrtype) {
+					case "0:6": // String
+					case "0:12": // Memo
+					case "8:6": // Custom list
+						value = "'" + value.replace("'","''") + "'";
+						break;
+					case "0:10": // Date
+						value = "#" + value.substring(0,10) + "#";
+						break;
+					case "0:1": // Byte
+					case "0:2": // Short
+					case "0:3": // Long
+					case "0:4": // Float
+					case "0:5": // Double
+					case "3:5": // Money
+					case "7:2": // System list
+						break;
+					case "0:11": // DateTime
+						try {
+							Date date = Misc.gmtdateformat.parse(value);
+							value = "#" + db.dateformat.format(date) + "#";
+						} catch(ParseException ex) {
+							throw new AdapterDbException(ex);
+						}
+						break;
+					default:
+						throw new AdapterRuntimeException("Unsupported AM type " + attrtype + " for field " + fieldname + " table " + tablename + ": " + value);
+					}
+				}
+				else
+					// Use default string processing
+					value = "'" + value.replace("'","''") + "'";
+
+				matcher.appendReplacement(sb,Matcher.quoteReplacement(value));
 				x++;
 			}
-			if (x < list.size()) throw new AdapterDbException("Not enough replacement characters " + list.size() + ": " + sql);
+			if (x < list.size())
+			{
+				StringBuffer sbf = new StringBuffer();
+				String sep = "";
+				for(DBField field:list)
+				{
+					sbf.append(sep);
+					sbf.append(field.getFieldName() + "=" + field.getValue());
+					sep = ",";
+				}
+				throw new AdapterRuntimeException("Not enough replacement characters " + sbf.toString() + ": " + sql);
+			}
 			matcher.appendTail(sb);
 			init(db,sb.toString());
 		}
@@ -161,48 +229,9 @@ class AMDB extends DB
 	}
 
 	@Override
-	protected String getDate(String value) throws AdapterDbException
-	{
-		try {
-			Date date = Misc.gmtdateformat.parse(value);
-			return "#" + dateformat.format(date) + "#";
-		} catch(ParseException ex) {
-			throw new AdapterDbException(ex);
-		}
-	}
-
-	@Override
-	public String getValue(String value,String name) throws AdapterDbException
-	{
-		if (value == null) return "null";
-		final Pattern pat = Pattern.compile("l\\w+id",Pattern.CASE_INSENSITIVE);
-		Matcher match = pat.matcher(name);
-		if (match.matches())
-			return value;
-		return getValue(value);
-	}
-
-	@Override
 	public String getConcat(String conn,String field,String addedfield)
 	{
 		return field + " + " + addedfield;
-	}
-
-	@Override
-	public String getValue(String value) throws AdapterDbException
-	{
-		if (value == null) return "null";
-		if (value.matches("\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}"))
-			return getDate(value);
-		if (value.matches("\\d{4}-\\d{2}-\\d{2}"))
-			// Do not do timezone conversion on a simple date
-			return "#" + value + "#";
-		if (value.matches("^(-[1-9]\\d*|0)") || value.matches("-?([1-9]\\d*|0)\\.\\d+"))
-			return value;
-		value = value.replace("'","''");
-		value = value.replace("\r","");
-		value = value.replace("\n","' + char(13) + char(10) + '");
-		return "'" + value + "'";
 	}
 
 	public synchronized static AMDB getInstance() throws AdapterException
@@ -216,7 +245,7 @@ class AMDB extends DB
 	}
 
 	@Override
-	public int execsqlresult(String conn,String sql,List<String> list) throws AdapterDbException
+	public int execsqlresult(String conn,String sql,List<DBField> list) throws AdapterDbException
 	{
 		AMDBOper oper = new AMDBOper(this,sql,list);
 		return oper.getResultCount();
@@ -235,7 +264,7 @@ class AMDB extends DB
 	}
 
 	@Override
-	public ArrayList<LinkedHashMap<String,String>> execsql(String conn,String sql,List<String> list) throws AdapterDbException
+	public ArrayList<LinkedHashMap<String,String>> execsql(String conn,String sql,List<DBField> list) throws AdapterDbException
 	{
 		AMDBOper oper = null;
 		ArrayList<LinkedHashMap<String,String>> result = null;
@@ -292,25 +321,25 @@ class AssetManagerRestSubscriber extends UpdateSubscriber
 		return value;
 	}
 
-	protected void add(XML xmldest,XML xmloper) throws AdapterException
+	protected void add(UpdateDestInfo destinfo,XML xmloper) throws AdapterException
 	{
-		oper("post",xmldest,xmloper);
+		oper("post",destinfo,xmloper);
 	}
 
-	protected void remove(XML xmldest,XML xmloper) throws AdapterException
+	protected void remove(UpdateDestInfo destinfo,XML xmloper) throws AdapterException
 	{
-		oper("delete",xmldest,xmloper);
+		oper("delete",destinfo,xmloper);
 	}
 
-	protected void update(XML xmldest,XML xmloper) throws AdapterException
+	protected void update(UpdateDestInfo destinfo,XML xmloper) throws AdapterException
 	{
-		oper("put",xmldest,xmloper);
+		oper("put",destinfo,xmloper);
 	}
 
-	protected void start(XML xmldest,XML xmloper) throws AdapterException {}
-	protected void end(XML xmldest,XML xmloper) throws AdapterException {}
+	protected void start(UpdateDestInfo destinfo,XML xmloper) throws AdapterException {}
+	protected void end(UpdateDestInfo destinfo,XML xmloper) throws AdapterException {}
 
-	protected void oper(String httpoper,XML xmldest,XML xmloper) throws AdapterException
+	protected void oper(String httpoper,UpdateDestInfo destinfo,XML xmloper) throws AdapterException
 	{
 		DB db = DB.getInstance();
 
@@ -325,16 +354,14 @@ class AssetManagerRestSubscriber extends UpdateSubscriber
 		pub.setAttribute("type","http");
 		pub.setAttribute("content_type","application/json");
 
-		String table = xmldest.getAttribute("table");
-		if (table == null) throw new AdapterException(xmldest,"dbsync: destination 'table' attribute required");
+		String table = destinfo.getTableName();
+		if (table == null) destinfo.Exception("dbsync: destination 'table' attribute required");
 
-		XML[] customs = null;
+		ArrayList<XML> customs = null;
 		SyncOper oper = Enum.valueOf(SyncOper.class,xmloper.getTagName().toUpperCase());
-		if (oper == SyncOper.ADD) customs = xmldest.getElements("customadd");
-		else if (oper.equals("remove")) customs = xmldest.getElements("customremove");
+		if (oper == SyncOper.ADD) customs = destinfo.getCustomList(SyncOper.ADD);
+		else if (oper.equals("remove")) customs = destinfo.getCustomList(SyncOper.REMOVE);
 
-		StringBuilder where = new StringBuilder("where");
-		String sep = "";
 		JSONObject js = new JSONObject();
 
 		String id = null;
@@ -360,8 +387,6 @@ class AssetManagerRestSubscriber extends UpdateSubscriber
 				if (type.equals("infoapi")) continue;
 				if (type.equals("key"))
 				{
-					where.append(" " + sep + db.getFieldEqualsValue(name,value));
-					sep = "and ";
 					js.put(name,getValue(value));
 					continue;
 				}
@@ -378,7 +403,7 @@ class AssetManagerRestSubscriber extends UpdateSubscriber
 			js.put(name,getValue(value));
 		}
 
-		if (customs != null && customs.length > 0)
+		if (customs != null && customs.size() > 0)
 		{
 			httpoper = "put";
 			for(XML custom:customs)
@@ -392,7 +417,7 @@ class AssetManagerRestSubscriber extends UpdateSubscriber
 		}
 
 		pub.setAttribute("method",httpoper);
-		//pub.setAttribute("url",xmldest.getAttribute("url") + table + "/" + java.net.URLEncoder.encode(where.toString(),"UTF-8").replace("%","\\%"));
+		//pub.setAttribute("url",destinfo.getUrl() + table + "/" + java.net.URLEncoder.encode(where.toString(),"UTF-8").replace("%","\\%"));
 		pub.setAttribute("url",xml.getValue("url") + table + "/" + id);
 
 		// Support for session persistency?

@@ -32,6 +32,31 @@ class AdapterException extends Exception
 	}
 }
 
+class AdapterRuntimeException extends RuntimeException
+{
+	private static final long serialVersionUID = -6225744304199313533L;
+
+	public AdapterRuntimeException(String message)
+	{
+		super(message);
+	}
+
+	public AdapterRuntimeException(Throwable cause)
+	{
+		super(cause);
+	}
+
+	public AdapterRuntimeException(String message,Object... args)
+	{
+		super(Misc.getMessage(message,args));
+	}
+
+	public AdapterRuntimeException(XML xml,String message,Object... args)
+	{
+		super(Misc.getMessage(xml,message,args));
+	}
+}
+
 class AdapterNotFoundException extends AdapterException
 {
 	AdapterNotFoundException(String str)

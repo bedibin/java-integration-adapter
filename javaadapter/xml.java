@@ -64,17 +64,22 @@ class XML
 			if (value == null) value = xml.getValue();
 		}
 
-		String getValue() throws AdapterException
+		String getValue()
 		{
 			if (substitute)
-                		return Misc.substitute(value,new Misc.Substituer() {
-					public String getValue(String param) throws AdapterException
-					{
-						DefaultVar var = defaultvars.get(param);
-						return var == null ? null : var.getValue();
-					}
-				});
-
+			{
+				try {
+					return Misc.substitute(value,new Misc.Substituer() {
+						public String getValue(String param) throws AdapterException
+						{
+							DefaultVar var = defaultvars.get(param);
+							return var == null ? null : var.getValue();
+						}
+					});
+				} catch(AdapterException ex) {
+					return null;
+				}
+			}
 			return value;
 		}
 	}
@@ -920,10 +925,13 @@ class XML
 			xmlnode.setValue(value);
 	}
 
-	public void setValue(String name,String value) throws AdapterXmlException
+	public XML setValue(String name,String value) throws AdapterXmlException
 	{
 		XML el = getElement(name);
-		if (el != null) el.setValue(value);
+		if (el == null)
+			return add(name,value);
+		el.setValue(value);
+		return el;
 	}
 
 	public void setValue(String value)

@@ -21,7 +21,7 @@ class ReaderExcel extends ReaderUtil
 
 	public ReaderExcel(XML xml) throws AdapterException
 	{
-		super(xml);
+		setXML(xml);
 
 		String filename = xml.getAttribute("filename");
 		Set<Path> paths = Misc.glob(filename);

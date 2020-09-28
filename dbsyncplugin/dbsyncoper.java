@@ -34,6 +34,7 @@ class DBSyncOper
 	private boolean directmode = false;
 	private Sync sourcesync;
 	private Sync destinationsync;
+	private UpdateDestInfo destinationinfo;
 	private DatabaseUpdateSubscriber update;
 	private LinkedHashSet<String> displayfields;
 	private HashSet<String> tracekeys;
@@ -193,7 +194,7 @@ class DBSyncOper
 
 		if (directmode)
 		{
-			if (!dbsyncplugin.preview_mode && destinationsync != null) update.oper(destinationsync.getXML(),xml);
+			if (!dbsyncplugin.preview_mode && destinationsync != null) update.oper(destinationinfo,xml);
 			return;
 		}
 
@@ -349,7 +350,7 @@ class DBSyncOper
 
 		if (directmode)
 		{
-			if (!dbsyncplugin.preview_mode && destinationsync != null) update.oper(destinationxml,xml);
+			if (!dbsyncplugin.preview_mode && destinationsync != null) update.oper(destinationinfo,xml);
 			return;
 		}
 		xmloperlist.add(xml);
@@ -912,6 +913,7 @@ class DBSyncOper
 
 						destinationsync = getSync(destinations[k],source,xmlsource);
 						if (destinationsync == null) continue;
+						destinationinfo = new UpdateDestInfo(destinationsync.getXML());
 						fields.setDefaultFields(destinationsync.getReader().getHeader(),Scope.SCOPE_DESTINATION);
 
 						XML[] fieldsxml = destinations[k].getElements("field");
@@ -996,6 +998,7 @@ class DBSyncOper
 					destinationsync = getSync(destination,null,xmlsource);
 					if (destinationsync == null) continue;
 
+					destinationinfo = new UpdateDestInfo(destinationsync.getXML());
 					fields.setDefaultFields(destinationsync.getReader().getHeader(),Scope.SCOPE_DESTINATION);
 
 					if (iscache)

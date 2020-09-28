@@ -898,6 +898,7 @@ elementFormDefault="qualified">
 								<xs:attribute name="on_duplicates_fields" type="xs:string"/>
 								<xs:attribute name="on_file_not_found" type="onnotfoundtypes" default="exception"/>
 								<xs:attribute name="ignore_fields" type="xs:string"/>
+								<xs:attribute name="show_errors" type="xs:boolean" default="true"/>
 								<xs:attributeGroup ref="operation"/>
 							</xs:extension></xs:complexContent></xs:complexType>
 						</xs:element>
@@ -935,6 +936,7 @@ elementFormDefault="qualified">
 								<xs:attribute name="ignore_fields" type="xs:string"/>
 								<xs:attribute name="on_file_not_found" type="onnotfoundtypes" default="exception"/>
 								<xs:attribute name="instance_write" type="xs:string"/> <!-- dbsyncplugin -->
+								<xs:attribute name="show_errors" type="xs:boolean" default="false"/>
 								<xs:attributeGroup ref="operation"/>
 								<!-- archivage -->
 								<xs:attribute name="reftable" type="xs:string"/>
