@@ -1,12 +1,10 @@
 import java.util.*;
 import java.io.*;
 
-class Sync
+class Sync implements Closeable
 {
 	private XML xml;
-	private XML origxml;
 	private DBSyncOper dbsync;
-	private DB db;
 	private Reader reader;
 	private Set<String> keys;
 	private CsvWriter csvout;
@@ -19,14 +17,12 @@ class Sync
 	public Sync(DBSyncOper dbsync,XML xml) throws AdapterException
 	{
 		this.dbsync = dbsync;
-		db = DB.getInstance();
 
 		Fields fields = dbsync.getFields();
 		keys = fields == null ? null : fields.getKeys();
 
 		if (xml == null) return;
 		this.xml = xml;
-		origxml = xml.copy(); // Needed because "fields" is copied during reader initialisation
 
 		String dumplogfilestr = xml.getAttribute("dumplogfile");
 		if (dumplogfilestr != null && dumplogfilestr.equals("true"))
@@ -53,9 +49,9 @@ class Sync
 		this.reader = reader;
 	}
 
-	public LinkedHashMap<String,String> next() throws AdapterException
+	public Map<String,String> next() throws AdapterException
 	{
-		LinkedHashMap<String,String> result = reader == null ? null : reader.next();
+		Map<String,String> result = reader == null ? null : reader.next();
 		if (result == null && !isprocessed) isprocessed = true;
 		return result;
 	}
@@ -114,6 +110,11 @@ class Sync
 
 	public void setPostInitReader() throws AdapterException
 	{
+		setPostInitReader(false);
+	}
+
+	public boolean setPostInitReader(boolean nosourcemode) throws AdapterException
+	{
 		// This must be called after all field elements are initialized since sort/cache will use them
 		if (this instanceof SyncSql)
 		{
@@ -126,7 +127,7 @@ class Sync
 		else if (!reader.isSorted()) reader = new SortTable(xml,this);
 
 		String dumpcsvfilename = xml.getAttribute("dumpcsvfilename");
-		if (dumpcsvfilename == null && dbsyncplugin.dumpcsv_mode)
+		if (dumpcsvfilename == null && dbsyncplugin.getDumpCsvMode())
 			dumpcsvfilename = javaadapter.getName() + "_" + dbsync.getName() + "_" + getName() + "_" + Misc.implode(keys,"_") + ".csv";
 
 		if (dumpcsvfilename != null)
@@ -137,15 +138,24 @@ class Sync
 			if (fieldsattr == null)
 			{
 				// Prioritize fields from reader
-				headers = new LinkedHashSet<String>(reader.getHeader());
+				headers = new LinkedHashSet<>(reader.getHeader());
 				headers.addAll(getResultHeader());
 			}
 			else headers = Misc.arrayToSet(fieldsattr.split("\\s*,\\s*"));
 			csvout = new CsvWriter(dumpcsvfilename,headers,xml);
 		}
+
+		Set<String> notused = getDBSync().getFields().getKeysNotUsed(this);
+		if (notused.size() != 0)
+		{
+			if (nosourcemode) return false;
+			throw new AdapterException("The following key fields are not seen in " + getName() + ": " + Misc.implode(notused));
+		}
+
+		return true;
 	}
 
-	public void makeDump(LinkedHashMap<String,String> result) throws AdapterException
+	public void makeDump(Map<String,String> result) throws AdapterException
 	{
 		if (csvout != null) csvout.write(result);
 		if (dumplogfile) Misc.log(Misc.implode(result));
@@ -164,6 +174,15 @@ class Sync
 	public DBSyncOper getDBSync()
 	{
 		return dbsync;
+	}
+
+	public void close()
+	{
+		try {
+			if (reader != null) reader.close();
+		} catch(IOException ex) {
+			throw new AdapterRuntimeException(ex);
+		}
 	}
 }
 
@@ -189,10 +208,14 @@ class SyncSql extends Sync
 {
 	private String conn;
 	private DB db;
+	private int maxnoremovekeys = 50;
 
 	public SyncSql(DBSyncOper dbsync,XML xml) throws AdapterException
 	{
 		super(dbsync,xml);
+
+		String maxprop = System.getProperty("javaadapter.sync.sql.maxnoremovekeys");
+		if (maxprop != null) maxnoremovekeys = Integer.parseInt(maxprop);
 
 		db = DB.getInstance();
 		conn = xml.getAttribute("instance");
@@ -213,17 +236,17 @@ class SyncSql extends Sync
 		}
 
 		Set<String> keys = getKeys();
-		ArrayList<DBField> list = new ArrayList<DBField>();
+		ArrayList<DBField> list = new ArrayList<>();
 
 		// Small unsorted source to large sql destination optimization
 		if (getScope() == Scope.SCOPE_DESTINATION && dbsync.getDoRemove() == DBSyncOper.doTypes.FALSE && dbsync.getSourceSync().getReader() instanceof SortTable)
 		{
-			TreeMap<String,LinkedHashMap<String,Set<String>>> map = ((SortTable)dbsync.getSourceSync().getReader()).getSortedMap();
-			if (map != null && map.size() <= (50 / keys.size()))
+			TreeMap<String,Map<String,Set<String>>> map = ((SortTable)dbsync.getSourceSync().getReader()).getSortedMap();
+			if (map != null && map.size() <= (maxnoremovekeys / keys.size()))
 			{
 				StringBuilder sb = new StringBuilder();
 				String sepor = "";
-				for(LinkedHashMap<String,Set<String>> entry:map.values())
+				for(Map<String,Set<String>> entry:map.values())
 				{
 					String sepand = "";
 					sb.append(sepor + "(");
@@ -247,8 +270,8 @@ class SyncSql extends Sync
 			}
 		}
 
-		sql = sql.replace("%LASTDATE%",dbsync.getLastDate() == null ? "" : Misc.gmtdateformat.format(dbsync.getLastDate()));
-		sql = sql.replace("%STARTDATE%",dbsync.getStartDate() == null ? "" : Misc.gmtdateformat.format(dbsync.getStartDate()));
+		sql = sql.replace("%LASTDATE%",dbsync.getLastDate() == null ? "" : Misc.getGmtDateFormat().format(dbsync.getLastDate()));
+		sql = sql.replace("%STARTDATE%",dbsync.getStartDate() == null ? "" : Misc.getGmtDateFormat().format(dbsync.getStartDate()));
 		sql = sql.replace("%NAME%",dbsync.getName());
 
 		String filtersql = xml.getAttribute("filter");
@@ -268,6 +291,9 @@ class SyncSql extends Sync
 			sql += db.getOrderBy(conn,keys.toArray(new String[keys.size()]),dbsync.getIgnoreCaseKeys());
 		}
 
+		String endsql = xml.getValue("endingsql",null);
+		if (endsql != null) sql += " " + endsql;
+
 		String presql = xml.getValue("preextractsql",null);
 		if (presql != null)
 			db.execsql(conn,presql);
@@ -281,8 +307,6 @@ class SyncSql extends Sync
 
 class SyncSoap extends Sync
 {
-	private XML xml;
-
 	public SyncSoap(DBSyncOper dbsync,XML xml) throws AdapterException
 	{
 		super(dbsync,xml);
@@ -300,8 +324,6 @@ class SyncSoap extends Sync
 
 class SyncXML extends Sync
 {
-	private XML xml;
-
 	public SyncXML(DBSyncOper dbsync,XML xml,XML xmlsource) throws AdapterException
 	{
 		super(dbsync,xml);

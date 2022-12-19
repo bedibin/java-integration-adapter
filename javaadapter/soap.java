@@ -4,7 +4,7 @@ class SoapRequest extends XML
 {
 	private String prefix;
 	private final String nsenv = System.getProperty("javaadapter.soap.nsenv");
-	private final String defnsenv = "http://schemas.xmlsoap.org/soap/envelope/";
+	private static final String defnsenv = "http://schemas.xmlsoap.org/soap/envelope/";
 
 	private void makeRequest(String request,String ns,XML header)
 	{
@@ -79,7 +79,8 @@ class SoapRequest extends XML
 		super(xml.dom,xml.node);
 	}
 
-	public SoapRequest add(XML node) throws AdapterXmlException
+	@Override
+	public SoapRequest add(XML node)
 	{
 		XML xml = super.add(node);
 		SoapRequest request = new SoapRequest(xml);
@@ -87,6 +88,7 @@ class SoapRequest extends XML
 		return request;
 	}
 
+	@Override
 	public SoapRequest add(String name)
 	{
 		XML xml = super.add(prefix + name);
@@ -95,6 +97,7 @@ class SoapRequest extends XML
 		return request;
 	}
 
+	@Override
 	public SoapRequest add(String name,String value)
 	{
 		XML xml = super.add(prefix + name,value);
@@ -121,11 +124,11 @@ class SoapRequest extends XML
 		XML faultsoap = bodysoap.getElement("Fault");
 		if (faultsoap != null)
 		{
-			publisher.setSessionID(xmlconfig.getAttribute("url"),null);
+			publisher.clearSession(xmlconfig.getAttribute("url"));
 
 			String faultdelay = xmlconfig.getAttribute("faultdelay");
 			if (faultdelay != null)
-				Misc.sleep(new Integer(faultdelay));
+				Misc.sleep(Integer.parseInt(faultdelay));
 			return faultsoap.copy();
 		}
 
@@ -142,7 +145,7 @@ class SoapRequest extends XML
 
 class SoapServer
 {
-	private ArrayList<Subscriber> sublist = new ArrayList<Subscriber>();
+	private List<Subscriber> sublist = new ArrayList<Subscriber>();
 	private XML xmlserver;
 
 	public SoapServer(XML xml) throws AdapterException
@@ -169,7 +172,7 @@ class SoapServer
 		return xmlserver;
 	}
 
-	public ArrayList<Subscriber> getSubscribers()
+	public List<Subscriber> getSubscribers()
 	{
 		return sublist;
 	}
@@ -179,7 +182,7 @@ class SoapServer
 		if (Misc.isLog(9)) Misc.log("SOAP request: " + request);
 
 		XML xml = new XML(new StringBuilder(request));
-		HashMap<String,String> attrs = xml.getAttributes();
+		Map<String,String> attrs = xml.getAttributes();
 		xml = xml.getElement("Body");
 		if (xml != null)
 		{
@@ -194,11 +197,10 @@ class SoapServer
 		xml = xml.copy();
 		if (attrs != null)
 		{
-			Iterator<String> itr = attrs.keySet().iterator();
-			while(itr.hasNext())
+			for(Map.Entry<String,String> entry:attrs.entrySet())
 			{
-				String key = itr.next();
-				String ns = attrs.get(key);
+				String key = entry.getKey();
+				String ns = entry.getValue();
 				if (ns != null && ns.indexOf("xmlsoap.org") == -1)
 					xml.setAttribute(key,ns);
 			}
@@ -230,11 +232,11 @@ class SoapLookup
 
 		XML requestnode = requestxml.getElement(null).copy();
 
-		Operation.setValueByPath(null,xml,requestnode,xmlconfig.getAttribute("getsourcevaluepath"),requestxml.getAttribute("setvaluepath"));
+		Operation.setValueByPath(xml,requestnode,xmlconfig.getAttribute("getsourcevaluepath"),requestxml.getAttribute("setvaluepath"),null);
 
 		XML[] valuelist = xmlconfig.getElements("valuepath");
 		for(XML valuexml:valuelist)
-			Operation.setValueByPath(null,xml,requestnode,valuexml.getAttribute("get"),valuexml.getAttribute("set"));
+			Operation.setValueByPath(xml,requestnode,valuexml.getAttribute("get"),valuexml.getAttribute("set"),valuexml.getAttribute("value"));
 
 		String ns = requestxml.getAttribute("ns");
 		String name = requestxml.getAttribute("name");

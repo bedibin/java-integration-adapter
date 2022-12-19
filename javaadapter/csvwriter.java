@@ -10,23 +10,43 @@ class CsvWriter
 	{
 		private boolean firstline = true;
 		private Writer writer;
+		private Writer origwriter;
 
 		WriterOper(Writer writer)
 		{
 			this.writer = writer;
+			if (crypto == null) return;
+			origwriter = writer;
+			this.writer = new StringWriter();
 		}
 
 		void writeLine(String line) throws IOException
 		{
-			if (firstline)
-				firstline = false;
-			else
+			if (crafter)
+			{
+				writer.write(line);
 				writer.write(Misc.CR);
-			writer.write(line);
+			}
+			else
+			{
+				if (firstline)
+					firstline = false;
+				else
+					writer.write(Misc.CR);
+				writer.write(line);
+			}
 		}
 
 		void close() throws IOException
 		{
+			if (crypto != null)
+			{
+				String text = ((StringWriter)writer).toString();
+				String crypt_text= crypto.encrypt(text);
+				origwriter.write(crypt_text);
+				origwriter.close();
+			}
+
 			writer.close();
 		}
 	}
@@ -37,16 +57,18 @@ class CsvWriter
 	private Collection<String> headers;
 	private char enclosure = '"';
 	private char delimiter = ',';
-	private char list_delimiter = '\n';
+	private char listdelimiter = '\n';
 	private boolean forceenclosure = false;
 	private String charset = "ISO-8859-1";
-	private boolean do_header = true;
+	private boolean doheader = true;
+	private boolean crafter = false;
+	private CryptoBase crypto;
 
-	public CsvWriter(String filename,String charset) throws AdapterException
+	private void init(String filename,String charset) throws AdapterException
 	{
 		this.filename = filename;
 		if (charset != null) this.charset = charset;
-		outlist = new HashMap<String,WriterOper>();
+		outlist = new HashMap<>();
 		if (Misc.isSubstituteDefault(filename)) return;
 		try {
 			defaultout = new WriterOper(new BufferedWriter(new OutputStreamWriter(new FileOutputStream(new File(javaadapter.getCurrentDir(),Misc.substitute(filename))),this.charset)));
@@ -55,52 +77,61 @@ class CsvWriter
 		}
 	}
 
+	public CsvWriter(String filename,String charset) throws AdapterException
+	{
+		init(filename,charset);
+	}
+
 	public CsvWriter(String filename) throws AdapterException
 	{
-		this(filename,(String)null);
+		init(filename,(String)null);
 	}
 
 	public CsvWriter(String filename,XML xml) throws AdapterException
 	{
-		this(filename,xml.getAttribute("charset"));
 		setDelimiters(xml);
+		crypto = Misc.getCipher(xml);
+		init(filename,xml.getAttribute("charset"));
 	}
 
 	public CsvWriter(String filename,String... headers) throws AdapterException
 	{
-		this(filename,Arrays.asList(headers));
+		this.headers = Arrays.asList(headers);
+		init(filename,(String)null);
+		if (defaultout != null) write(headers);
 	}
 
 	public CsvWriter(String filename,Collection<String> headers) throws AdapterException
 	{
-		this(filename);
 		this.headers = headers;
+		init(filename,(String)null);
 		if (defaultout != null) write(headers);
 	}
 
 	public CsvWriter(String filename,Collection<String> headers,XML xml) throws AdapterException
 	{
-		this(filename,xml.getAttribute("charset"));
 		setDelimiters(xml);
+		crypto = Misc.getCipher(xml);
+		init(filename,xml.getAttribute("charset"));
 		this.headers = headers;
-		if (defaultout != null && headers != null && do_header) write(headers);
+		if (defaultout != null && headers != null && doheader) write(headers);
 	}
 
-	public CsvWriter(Writer writer,Collection<String> headers) throws AdapterException
+	public CsvWriter(Writer out,Collection<String> headers) throws AdapterException
 	{
-		outlist = new HashMap<String,WriterOper>();
+		outlist = new HashMap<>();
 		this.headers = headers;
-		defaultout = new WriterOper(writer);
+		defaultout = new WriterOper(out);
 		write(headers);
 	}
 
-	public CsvWriter(Writer writer) throws AdapterException
+	public CsvWriter(Writer out)
 	{
-		outlist = new HashMap<String,WriterOper>();
-		defaultout = new WriterOper(writer);
+		outlist = new HashMap<>();
+		defaultout = new WriterOper(out);
 	}
 
-	public void setDelimiters(XML xml) throws AdapterException
+	void setDelimiters(XML xml) throws AdapterException
 	{
 		final String DELIMITER = "delimiter";
 		final String ENCLOSURE = "enclosure";
@@ -109,53 +140,57 @@ class CsvWriter
 		if (xml.isAttribute(DELIMITER))
 		{
 			this.delimiter = 0;
-			String delimiter = Misc.unescape(xml.getAttribute(DELIMITER));
-			if (delimiter != null) this.delimiter = delimiter.charAt(0);
+			String delimiterattr = Misc.unescape(xml.getAttribute(DELIMITER));
+			if (delimiterattr != null) delimiter = delimiterattr.charAt(0);
 		}
 
 		if (xml.isAttribute(ENCLOSURE))
 		{
 			this.enclosure = 0;
-			String enclosure = Misc.unescape(xml.getAttribute(ENCLOSURE));
-			if (enclosure != null) this.enclosure = enclosure.charAt(0);
+			String enclosureattr = Misc.unescape(xml.getAttribute(ENCLOSURE));
+			if (enclosureattr != null) enclosure = enclosureattr.charAt(0);
 		}
 
 		if (xml.isAttribute(LIST_DELIMITER))
 		{
-			this.list_delimiter = 0;
-			String list_delimiter = Misc.unescape(xml.getAttribute(LIST_DELIMITER));
-			if (list_delimiter != null) this.list_delimiter = list_delimiter.charAt(0);
+			this.listdelimiter = 0;
+			String listdelimiterattr = Misc.unescape(xml.getAttribute(LIST_DELIMITER));
+			if (listdelimiterattr != null) listdelimiter = listdelimiterattr.charAt(0);
 		}
 
-		String forceenclosure = xml.getAttribute("force_enclosure");
-		this.forceenclosure = forceenclosure != null && forceenclosure.equals("true");
+		String forceenclosureattr = xml.getAttribute("force_enclosure");
+		forceenclosure = forceenclosureattr != null && forceenclosureattr.equals("true");
 
 		String header = xml.getAttribute("header");
 		if (header != null && header.equals("false"))
-			do_header = false;
+			doheader = false;
+
+		String newline = xml.getAttribute("newline_suffix");
+		if (newline != null && newline.equals("true"))
+			crafter = true;
 	}
 
-	public void setDelimiters(char enclosure,char delimiter,char list_delimiter)
+	void setDelimiters(char enclosure,char delimiter,char listdelimiter)
 	{
 		this.enclosure = enclosure;
 		this.delimiter = delimiter;
-		this.list_delimiter = list_delimiter;
+		this.listdelimiter = listdelimiter;
 	}
 
-	private String escape(String value) throws AdapterException
+	String escape(String value) throws AdapterException
 	{
-		return escape(value,enclosure,delimiter,list_delimiter,forceenclosure);
+		return escape(value,enclosure,delimiter,listdelimiter,forceenclosure);
 	}
 
-	public static String escape(String value,char enclosure,char delimiter,char list_delimiter,boolean forceenclosure) throws AdapterException
+	public static String escape(String value,char enclosure,char delimiter,char listdelimiter,boolean forceenclosure) throws AdapterException
 	{
 		if (value == null) return "";
 		if (value.matches("\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}"))
 		{
 			// Dates in CSV files are local
 			try {
-				Date date = Misc.gmtdateformat.parse(value);
-				value = Misc.dateformat.format(date);
+				Date date = Misc.getGmtDateFormat().parse(value);
+				value = Misc.getLocalDateFormat().format(date);
 			} catch(ParseException ex) {
 				throw new AdapterException(ex);
 			}
@@ -167,30 +202,30 @@ class CsvWriter
 			if (forceenclosure || (value.contains("" + delimiter) || value.contains("" + enclosure) || value.contains("\n") || value.contains("\r")))
 				value = enclosure + value + enclosure;
 		}
-		if (list_delimiter == 0) value = value.replace("\n","");
-		else if (list_delimiter != '\n') value = value.replace('\n',list_delimiter);
+		if (listdelimiter == 0) value = value.replace("\n","");
+		else if (listdelimiter != '\n') value = value.replace('\n',listdelimiter);
 		return value;
 	}
 
 	private WriterOper getOut(Map<String,String> row) throws AdapterException
 	{
-		if (headers == null)
+		if (headers == null && row != null)
 		{
 			headers = row.keySet();
-			if (do_header && defaultout != null) write(defaultout,headers);
+			if (doheader && defaultout != null) write(defaultout,headers);
 		}
 
 		if (defaultout != null) return defaultout;
 		if (row == null) throw new AdapterException("Cannot use CSV writer on collections with parameterized filename");
 
-		String filename = Misc.substitute(this.filename,row);
-		WriterOper out = outlist.get(filename);
+		String filenameattr = Misc.substitute(filename,row);
+		WriterOper out = outlist.get(filenameattr);
 		if (out == null)
 		{
 			try {
-				out = new WriterOper(new BufferedWriter(new OutputStreamWriter(new FileOutputStream(new File(javaadapter.getCurrentDir(),filename)),"ISO-8859-1")));
-				outlist.put(filename,out);
-				if (do_header) write(out,headers);
+				out = new WriterOper(new BufferedWriter(new OutputStreamWriter(new FileOutputStream(new File(javaadapter.getCurrentDir(),filenameattr)),charset)));
+				outlist.put(filenameattr,out);
+				if (doheader) write(out,headers);
 			} catch(IOException ex) {
 				throw new AdapterException(ex);
 			}
@@ -201,12 +236,14 @@ class CsvWriter
 
 	public void write(String... row) throws AdapterException
 	{
-		write(getOut(null),Arrays.asList(row));
+		WriterOper out = getOut(null);
+		write(out,Arrays.asList(row));
 	}
 
 	public void write(Collection<String> row) throws AdapterException
 	{
-		write(getOut(null),row);
+		WriterOper out = getOut(null);
+		write(out,row);
 	}
 
 	private void write(WriterOper out,Collection<String> row) throws AdapterException

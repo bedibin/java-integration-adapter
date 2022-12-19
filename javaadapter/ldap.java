@@ -34,7 +34,7 @@ class directory
 
 			int limit = 0;
 			String str = System.getProperty("javaadapter.ldap.timeout");
-			if (str != null) limit = new Integer(str);
+			if (str != null) limit = Integer.parseInt(str);
 			sc.setTimeLimit(limit);
 
 			if (Misc.isLog(15)) Misc.log("Searching " + search + " on basedn " + basedn);
@@ -60,7 +60,7 @@ class directory
 			}
 
 			count++;
-			LinkedHashMap<String,String> row = new LinkedHashMap<String,String>();
+			LinkedHashMap<String,String> row = new LinkedHashMap<>();
 
 			SearchResult entry = results.next();
 			row.put("dn",entry.getNameInNamespace());
@@ -118,7 +118,7 @@ class directory
 
 	public LinkedHashMap<String,List<String>> read(String dn,String[] fields) throws NamingException
 	{
-		LinkedHashMap<String,List<String>> result = new LinkedHashMap<String,List<String>>();
+		LinkedHashMap<String,List<String>> result = new LinkedHashMap<>();
 		Attributes set = ctx.getAttributes(dn,fields);
 
 		NamingEnumeration<String> ids = set.getIDs();
@@ -127,7 +127,7 @@ class directory
 			String id = ids.next();
 			Attribute attr = set.get(id);
 
-			List<String> values = new ArrayList<String>();
+			List<String> values = new ArrayList<>();
 			for(int i = 0;i < attr.size();i++)
 				values.add(attr.get(i).toString());
 
@@ -323,7 +323,7 @@ class directory
 			ctx.unbind(dn);
 		else if (root.equals("update"))
 		{
-			ArrayList<ModificationItem> mods = new ArrayList<ModificationItem>();
+			ArrayList<ModificationItem> mods = new ArrayList<>();
 
 			XML[] xmllist = xml.getElements(null);
 			for(XML xmloper:xmllist)
@@ -437,7 +437,7 @@ class ldap extends directory
 		ld = new InitialLdapContext(env,null);
 
 		String str = System.getProperty("javaadapter.ldap.pagesize");
-		if (str != null) pageSize = new Integer(str);
+		if (str != null) pageSize = Integer.parseInt(str);
 
 		Control[] controls = new Control[sortattrs == null ? 1 : 2];
 		controls[0] = new PagedResultsControl(pageSize,Control.NONCRITICAL);
@@ -545,7 +545,7 @@ class dns extends directory
 	public List<String> readSRV(String dn) throws NamingException
 	{
 		String[] fields = {"SRV"};
-		List<String> servers = new ArrayList<String>();
+		List<String> servers = new ArrayList<>();
 		LinkedHashMap<String,List<String>> result = read(dn,fields);
 		for(Map.Entry<String,List<String>> entry:result.entrySet())
 		{

@@ -28,7 +28,7 @@ interface DBProcessor
 
 class DBProcessorManager
 {
-	static HashMap<String,DBProcessor> processorList = new HashMap<String,DBProcessor>();
+	static HashMap<String,DBProcessor> processorList = new HashMap<>();
 	static synchronized public void register(DBProcessor processor)
 	{
 		processorList.put(processor.getClass().getName(),processor);
@@ -44,34 +44,32 @@ class ConnectionTimeout extends Thread
 	private Connection conn;
 	private boolean sleep = true;
 	private SQLException exception;
-	private String username;
-	private String password;
+	private Properties props;
 	private String url;
 
-	public ConnectionTimeout(String url,String username,String password)
+	public ConnectionTimeout(String url,Properties props)
 	{
 		this.url = url;
-		this.username = username;
-		this.password = password;
+		this.props = props;
 	}
 
 	@Override
 	public void run()
 	{
 		try {
-			if (username == null)
+			if (props == null)
 				conn = DriverManager.getConnection(url);
 			else
-				conn = DriverManager.getConnection(url,username,password);
+				conn = DriverManager.getConnection(url,props);
 			sleep = false;
 		} catch (SQLException e) {
 			exception = e;
 		}
 	}
 
-	static public Connection getConnection(String name,String url,String username,String password) throws SQLException,AdapterException
+	static public Connection getConnection(String name,String url,Properties props) throws SQLException,AdapterException
 	{
-		ConnectionTimeout ct = new ConnectionTimeout(url,username,password);
+		ConnectionTimeout ct = new ConnectionTimeout(url,props);
 		ct.start();
 		for(int i=1;i<=60;i++)
 			if (ct.sleep)
@@ -92,7 +90,7 @@ class DBConnection implements VariableContext
 	private TimeZone timezone;
 	private XML xml;
 	private String name;
-	private Set<String> processors = new TreeSet<String>();
+	private Set<String> processors = new TreeSet<>();
 	private int querytimeout = 0;
 
 	public static final String ORACLEJDBCDRIVER = "oracle.jdbc.driver.OracleDriver";
@@ -115,11 +113,9 @@ class DBConnection implements VariableContext
 
 	private void execsql(String sql) throws AdapterDbException
 	{
-		try {
-			PreparedStatement stmt = conn.prepareStatement(sql);
+		try(PreparedStatement stmt = conn.prepareStatement(sql)) {
 			if (Misc.isLog(15)) Misc.log("Executing initialization statement: " + sql);
 			stmt.executeUpdate();
-			stmt.close();
 		} catch(SQLException ex) {
 			throw new AdapterDbException(ex);
 		}
@@ -130,14 +126,19 @@ class DBConnection implements VariableContext
 		name = xml.getAttribute("name");
 		String urlstr = xml.getValue("url",null);
 		String driverstr = xml.getValue("driver",null);
-		String connstr = (urlstr == null) ? "jdbc:oracle:thin:@" + xml.getValue("server") + ":" + xml.getValue("port","1521") + ":" + xml.getValue("instance") : urlstr;
+		String connstr = (urlstr == null) ? "jdbc:oracle:thin:@" + xml.getValue("server") + ":" + xml.getValue("port","1521") + ":" + xml.getValue("instance") : Misc.substitute(urlstr);
 
 		try
 		{
 			DriverManager.setLoginTimeout(30);
 			String username = xml.getValue("username",null);
 			String password = username == null ? null : xml.getValueCrypt("password");
-			conn = ConnectionTimeout.getConnection(name,connstr,username,password);
+			Properties props = new Properties();
+			if (username != null) props.setProperty("user",username);
+			if (password != null) props.setProperty("password",password);
+			if (driverstr.equals(SQLSERVERJDBCDRIVER) && File.separatorChar == '/') // Unix
+				props.setProperty("authenticationScheme","JavaKerberos");
+			conn = ConnectionTimeout.getConnection(name,connstr,props);
 		}
 		catch(SQLException ex)
 		{
@@ -191,7 +192,7 @@ class DBConnection implements VariableContext
 
 		XML timeout = xml.getElement("querytimeout");
 		if (timeout != null)
-			querytimeout = new Integer(timeout.getValue());
+			querytimeout = Integer.parseInt(timeout.getValue());
 
 		XML[] xmlinit = xml.getElements("initsql");
 		for(XML el:xmlinit)
@@ -340,16 +341,17 @@ class DBOper
 
 	protected DBOper() { }
 
-	static String implode(List<DBField> list)
+	public static String implode(List<DBField> list)
 	{
 		if (list == null) return "";
 		StringBuilder sb = new StringBuilder();
 		boolean first = true;
 		for(DBField field:list)
 		{
-			first = false;
 			sb.append(first ? ": " : ",");
-			sb.append(field.getValue());
+			String fieldname = field.getFieldName();
+			sb.append(fieldname == null ? field.getValue() : field.getFieldName() + "=" + field.getValue());
+			first = false;
 		}
 		return first ? "" : sb.toString();
 	}
@@ -378,7 +380,7 @@ class DBOper
 				else if (value.matches("\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}"))
 				{
 					try {
-						java.util.Date date = Misc.gmtdateformat.parse(value);
+						java.util.Date date = Misc.getGmtDateFormat().parse(value);
 						stmt.setTimestamp(x,new Timestamp(date.getTime()),dbc.getCalendar());
 					} catch(java.text.ParseException ex) {
 						throw new AdapterDbException(ex);
@@ -474,7 +476,7 @@ class DBOper
 	{
 		if (rset == null) return null;
 
-		Set<String> headers = new LinkedHashSet<String>();
+		Set<String> headers = new LinkedHashSet<>();
 
 		for(String name:columnnames)
 			headers.add(name);
@@ -493,9 +495,9 @@ class DBOper
 		return ((bytes[0] == (byte)(GZIPInputStream.GZIP_MAGIC)) && (bytes[1] == (byte)(GZIPInputStream.GZIP_MAGIC >> 8)));
 	}
 
-	public LinkedHashMap<String,String> next() throws AdapterDbException
+	public Map<String,String> next() throws AdapterDbException
 	{
-		LinkedHashMap<String,String> row = new LinkedHashMap<String,String>();
+		Map<String,String> row = new LinkedHashMap<>();
 
 		if (stmt == null) return null;
 		try {
@@ -561,7 +563,7 @@ class DBOper
 					value = rset.getString(i+1);
 				}
 
-				if (date != null) value = Misc.gmtdateformat.format(date);
+				if (date != null) value = Misc.getGmtDateFormat().format(date);
 				if (value == null) value = "";
 
 				row.put(columnnames[i],totrim ? value.trim() : value);
@@ -602,7 +604,7 @@ class DB
 	{
 		collator = new DBComparator();
 		collator_ignore_case = new DBComparatorIgnoreCase();
-		db = new HashMap<String,DBConnection>();
+		db = new HashMap<>();
 	}
 
 	public DB(XML xmlcfg) throws AdapterException
@@ -821,20 +823,20 @@ class DB
 		return execsqlresult(conn,sql,null);
 	}
 
-	public ArrayList<LinkedHashMap<String,String>> execsql(String conn,String sql) throws AdapterDbException
+	public List<Map<String,String>> execsql(String conn,String sql) throws AdapterDbException
 	{
 		return execsql(conn,sql,null);
 	}
 
-	public ArrayList<LinkedHashMap<String,String>> execsql(String conn,String sql,List<DBField> list) throws AdapterDbException
+	public List<Map<String,String>> execsql(String conn,String sql,List<DBField> list) throws AdapterDbException
 	{
 		DBConnection dbc = getConnectionByName(conn);
 		DBOper oper = null;
-		ArrayList<LinkedHashMap<String,String>> result = null;
+		List<Map<String,String>> result = null;
 
 		oper = new DBOper(dbc,sql,list,true);
-		result = new ArrayList<LinkedHashMap<String,String>>();
-		LinkedHashMap<String,String> row;
+		result = new ArrayList<>();
+		Map<String,String> row;
 
 		while((row = oper.next()) != null)
 			result.add(row);
@@ -844,13 +846,13 @@ class DB
 		return result;
 	}
 
-	public ArrayList<LinkedHashMap<String,String>> execsql(XML xml) throws AdapterException
+	public List<Map<String,String>> execsql(XML xml) throws AdapterException
 	{
 		String conn = xml.getAttribute("instance");
 		return execsql(conn,xml);
 	}
 
-	public ArrayList<LinkedHashMap<String,String>> execsql(String conn,XML xml) throws AdapterException
+	public List<Map<String,String>> execsql(String conn,XML xml) throws AdapterException
 	{
 		String sql = xml.getValue();
 		return execsql(conn,sql);
@@ -895,7 +897,7 @@ class DB
 		String sql = xmlsql.getValue();
 
 		final XML finalxml = xml;
-		final ArrayList<DBField> list = new ArrayList<DBField>();
+		final ArrayList<DBField> list = new ArrayList<>();
 		DBOper oper = makesqloper(conn,Misc.substitute(sql,new Misc.Substituer() {
 			public String getValue(String param) throws AdapterException
 			{
@@ -907,7 +909,7 @@ class DB
 			}
 		}),list);
 
-		LinkedHashMap<String,String> row;
+		Map<String,String> row;
 		XML xmltable = xml.add(conn);
 
 		while((row = oper.next()) != null)
@@ -939,7 +941,7 @@ public class dbsql
 		DBOper oper = db.makesqloper(instance,"select * from " + table);
 		CsvWriter csvout = new CsvWriter("select_" + table + ".csv");
 
-		LinkedHashMap<String,String> row;
+		Map<String,String> row;
 
 		while((row = oper.next()) != null)
 			csvout.write(row);
@@ -951,33 +953,33 @@ public class dbsql
 	{
 		ReaderCSV csvin = new ReaderCSV("select_" + table + ".csv");
 
-		LinkedHashMap<String,String> row;
+		Map<String,String> row;
 
 		while((row = csvin.next()) != null)
 		{
 			Set<String> headers = csvin.getHeader();
-			String sql = "insert into " + table + " (";
+			StringBuilder sql = new StringBuilder("insert into " + table + " (");
 			String sep = "";
 			for(String header:headers)
 			{
-				sql += sep + header;
+				sql.append(sep + header);
 				sep = ",";
 			}
-			sql += ") values (";
+			sql.append(") values (");
 			sep = "";
-			ArrayList<DBField> list = new ArrayList<DBField>();
+			ArrayList<DBField> list = new ArrayList<>();
 			for(String header:headers)
 			{
 				String value = row.get(header);
 				if (value.length() > 3000) value = value.substring(0,3000);
-				sql += sep + DB.replacement;
+				sql.append(sep + DB.replacement);
 				list.add(new DBField(table,header,value));
 				sep = ",";
 			}
-			sql += ")";
+			sql.append(")");
 			try
 			{
-				db.execsql(instance,sql,list);
+				db.execsql(instance,sql.toString(),list);
 			}
 			catch(Exception ex)
 			{
@@ -1015,14 +1017,14 @@ public class dbsql
 				if (exectype == EXECTYPE.EXEC)
 				{
 					DBOper oper = db.makesqloper(name,extract);
-					LinkedHashMap<String,String> row;
+					Map<String,String> row;
 					while((row = oper.next()) != null)
 						Misc.log("RESULT: " + Misc.implode(row));
 				}
 				else
 				{
-					ArrayList<LinkedHashMap<String,String>> results = db.execsql(name,extract);
-					for(LinkedHashMap<String,String> table:results)
+					List<Map<String,String>> results = db.execsql(name,extract);
+					for(Map<String,String> table:results)
 					{
 						String tablename = Misc.getFirstValue(table);
 						Misc.log("    " + tablename + "... ");

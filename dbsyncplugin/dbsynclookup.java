@@ -66,7 +66,7 @@ class SyncLookup
 				if ("insert_lookup".equals(xml.getTagName()))
 				{
 					loadingdone = true;
-					table = new HashMap<String,String>();
+					table = new HashMap<>();
 					return;
 				}
 
@@ -121,7 +121,7 @@ class SyncLookup
 
 			void doInitialLoading(FieldResult fieldresult) throws AdapterException
 			{
-				LinkedHashMap<String,String> result;
+				Map<String,String> result;
 				if (reader != null) while((result = reader.next()) != null)
 				{
 					String value;
@@ -136,12 +136,12 @@ class SyncLookup
 							throw new AdapterException(xml,"Preload query doesn't return " + resultname + " field");
 					}
 
-					if (table == null) table = new HashMap<String,String>();
-					if (datetable == null) datetable = new HashMap<String,String>();
+					if (table == null) table = new HashMap<>();
+					if (datetable == null) datetable = new HashMap<>();
 
 					if (fields == null)
 					{
-						fields = new TreeSet<String>(reader.getHeader());
+						fields = new TreeSet<>(reader.getHeader());
 						fields.addAll(result.keySet());
 						if (resultname != null) fields.remove(resultname);
 						if (datefield != null)
@@ -153,7 +153,7 @@ class SyncLookup
 						}
 						if (fieldresult != null)
 						{
-							HashSet<String> currentfields = new HashSet<String>(fieldresult.getSync().getResultHeader());
+							HashSet<String> currentfields = new HashSet<>(fieldresult.getSync().getResultHeader());
 							currentfields.addAll(fieldresult.getValues().keySet());
 							fields.retainAll(currentfields); // Lookup common fields + current fields
 						}
@@ -179,7 +179,7 @@ class SyncLookup
 					if (table.get(keyvaluelower) != null)
 					{
 						String duperror = xml.getAttribute("show_duplicates_error");
-						if ((duperror == null || duperror.equals("true")) && fieldresult.getSync().isErrors())
+						if ((duperror == null || duperror.equals("true")) && (fieldresult == null || fieldresult.getSync().isErrors()))
 							Misc.log("ERROR: [" + keyvalue + "] Preload for field '" + fieldname + "' returned more than one entries");
 						value = null;
 					}
@@ -196,7 +196,7 @@ class SyncLookup
 					if (datevalue != null) datetable.put(keyvaluelower,datevalue);
 				}
 
-				if (table == null && fieldresult.getSync().isErrors())
+				if (table == null && (fieldresult == null || fieldresult.getSync().isErrors()))
 					Misc.log("WARNING: Preload for field '" + fieldname + "' returned empty result");
 				loadingdone = true;
 			}
@@ -244,8 +244,8 @@ class SyncLookup
 						String[] keysplit = keyvaluelower.split("\n");
 						if (keysplit.length > 1)
 						{
-							ArrayList<String> resultlist = new ArrayList<String>();
-							ArrayList<String> discardedlist = new ArrayList<String>();
+							ArrayList<String> resultlist = new ArrayList<>();
+							ArrayList<String> discardedlist = new ArrayList<>();
 							for(String line:keysplit)
 							{
 								String lineresult = table.get(line);
@@ -259,8 +259,9 @@ class SyncLookup
 								result = null;
 							else
 							{
-								if (discardedlist.size() > 0 && fieldresult.getSync().isErrors())
-									Misc.log("WARNING: Discarded entries when looking up multiple values for field '" + fieldname + "': " + Misc.implode(discardedlist));
+								Sync sync = fieldresult.getSync();
+								if (discardedlist.size() > 0 && sync.isErrors())
+									Misc.log("WARNING: [" + sync.getName() + ":" + sync.getDBSync().getDisplayKey(sync.getKeys(),fieldresult.getValues()) + "] Discarded entries when looking up multiple values for field '" + fieldname + "': " + Misc.implode(discardedlist));
 								Collections.sort(resultlist,db.getCollator());
 								result = Misc.implode(resultlist,"\n");
 							}
@@ -283,8 +284,8 @@ class SyncLookup
 				if (mergedatevalue == null) return null;
 
 				try {
-					Date date = Misc.dateformat.parse(datevalue);
-					Date mergedate = Misc.dateformat.parse(mergedatevalue);
+					Date date = Misc.getLocalDateFormat().parse(datevalue);
+					Date mergedate = Misc.getLocalDateFormat().parse(mergedatevalue);
 
 					if (date.after(mergedate)) return null;
 				} catch(java.text.ParseException ex) {
@@ -297,6 +298,7 @@ class SyncLookup
 		private Preload preloadinfo;
 		protected XML xmllookup;
 		protected SyncLookupResultErrorOperationTypes erroroperation = SyncLookupResultErrorOperationTypes.NONE;
+		protected String errordetail;
 		private boolean onlookupusekey = false;
 		private DB db;
 		private String opername;
@@ -346,6 +348,7 @@ class SyncLookup
 				erroroperation = SyncLookupResultErrorOperationTypes.WARNING;
 				break;
 			}
+			errordetail = xml.getAttribute("error_detail");
 
 			if (Misc.isSubstituteDefault(xml.getElementValue()))
 			{
@@ -373,11 +376,11 @@ class SyncLookup
 			String sql = xmllookup.getValue();
 			String instance = xmllookup.getAttribute("instance");
 
-			ArrayList<DBField> list = new ArrayList<DBField>();
+			ArrayList<DBField> list = new ArrayList<>();
 			String str = result == null ? sql : db.substitute(instance,sql,result.getValues(),list);
 			DBOper oper = db.makesqloper(instance,str,list);
 
-			LinkedHashMap<String,String> nextrow = oper.next();
+			Map<String,String> nextrow = oper.next();
 			if (nextrow == null) return null;
 
 			return Misc.getFirstValue(nextrow);
@@ -390,7 +393,7 @@ class SyncLookup
 
 			String value = lookup(result);
 			if (value == null)
-				return new SyncLookupResultErrorOperation(erroroperation);
+				return new SyncLookupResultErrorOperation(erroroperation,errordetail);
 
 			result.setValue(value);
 			return new SyncLookupResultErrorOperation(SyncLookupResultErrorOperationTypes.NEWVALUE);
@@ -435,7 +438,7 @@ class SyncLookup
 		{
 			String value = lookup(result);
 			if (value == null)
-				return new SyncLookupResultErrorOperation(erroroperation);
+				return new SyncLookupResultErrorOperation(erroroperation,errordetail);
 
 			result.setValue(value);
 			return new SyncLookupResultErrorOperation(SyncLookupResultErrorOperationTypes.NEWVALUE);
@@ -457,7 +460,7 @@ class SyncLookup
 
 			String value = lookup(null);
 			if (value == null)
-				return new SyncLookupResultErrorOperation(erroroperation);
+				return new SyncLookupResultErrorOperation(erroroperation,errordetail);
 
 			result.setValue(value);
 			return new SyncLookupResultErrorOperation(SyncLookupResultErrorOperationTypes.NEWVALUE);
@@ -499,7 +502,7 @@ class SyncLookup
 			String value = lookup(result);
 			if (value == null || value.isEmpty())
 				return new SyncLookupResultErrorOperation();
-			return new SyncLookupResultErrorOperation(onexclude);
+			return new SyncLookupResultErrorOperation(onexclude,errordetail);
 		}
 	}
 
@@ -515,7 +518,7 @@ class SyncLookup
 		{
 			String value = lookup(result);
 			if (value == null)
-				return new SyncLookupResultErrorOperation(onexclude);
+				return new SyncLookupResultErrorOperation(onexclude,errordetail);
 			return new SyncLookupResultErrorOperation();
 		}
 	}
@@ -571,7 +574,7 @@ class SyncLookup
 		public SyncLookupResultErrorOperation oper(FieldResult result) throws AdapterException
 		{
 			try {
-				HashMap<String,String> fields = new HashMap<String,String>(result.getValues());
+				HashMap<String,String> fields = new HashMap<>(result.getValues());
 				for(String key:result.getSync().getResultHeader())
 				{
 					String value = fields.get(key);
@@ -585,16 +588,15 @@ class SyncLookup
 					return new SyncLookupResultErrorOperation(SyncLookupResultErrorOperationTypes.NEWVALUE);
 				}
 			} catch (AdapterScriptException ex) {
-				return new SyncLookupResultErrorOperation(onexception,"SCRIPT EXCEPTION: " + ex.getMessage());
+				return new SyncLookupResultErrorOperation(onexception,(errordetail == null ? "" : errordetail + " ") + "SCRIPT EXCEPTION: " + ex.getMessage());
 			}
 
 			return new SyncLookupResultErrorOperation();
 		}
 	}
 
-	private ArrayList<SimpleLookup> lookups = new ArrayList<SimpleLookup>();
+	private ArrayList<SimpleLookup> lookups = new ArrayList<>();
 	private String fieldname;
-	private String defaultlookupvalue;
 	private String defaultvalue;
 	private int count;
 

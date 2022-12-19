@@ -8,7 +8,7 @@ enum SyncOper { ADD, UPDATE, REMOVE, END, START};
 class DBSyncOper
 {
 
-	class RateCounter
+	static class RateCounter
 	{
 		int total = 0;
 		int add = 0;
@@ -108,14 +108,14 @@ class DBSyncOper
 
 	public String getDisplayKey(Set<String> keys,Map<String,String> map)
 	{
-		LinkedHashSet<String> set = new LinkedHashSet<String>();
+		LinkedHashSet<String> set = new LinkedHashSet<>();
 		if (displayfields != null)
 		{
-			ArrayList<String> displayvalues = Misc.getKeyValueList(displayfields,map);
+			List<String> displayvalues = Misc.getKeyValueList(displayfields,map);
 			if (displayvalues != null) set.addAll(displayvalues);
 		}
 
-		ArrayList<String> keyvalues = Misc.getKeyValueList(keys,map);
+		List<String> keyvalues = Misc.getKeyValueList(keys,map);
 		if (keyvalues != null) set.addAll(keyvalues);
 
 		return set.size() == 0 ? null : Misc.implode(set,"/");
@@ -147,7 +147,7 @@ class DBSyncOper
 
 	private void flush() throws AdapterException
 	{
-		if (dbsyncplugin.preview_mode || directmode)
+		if (dbsyncplugin.getPreviewMode() || directmode)
 		{
 			xmloperlist.clear();
 			return;
@@ -194,14 +194,14 @@ class DBSyncOper
 
 		if (directmode)
 		{
-			if (!dbsyncplugin.preview_mode && destinationsync != null) update.oper(destinationinfo,xml);
+			if (!dbsyncplugin.getPreviewMode() && destinationsync != null) update.oper(destinationinfo,xml);
 			return;
 		}
 
 		xmloperlist.add(xml);
 	}
 
-	private void push(SyncOper oper,LinkedHashMap<String,String> row,LinkedHashMap<String,String> rowold) throws AdapterException
+	private void push(SyncOper oper,Map<String,String> row,Map<String,String> rowold) throws AdapterException
 	{
 		XML sourcexml = sourcesync.getXML();
 		XML destinationxml = destinationsync == null ? null : destinationsync.getXML();
@@ -214,8 +214,8 @@ class DBSyncOper
 		if (destinationsync != null)
 			allfields = destinationheader = destinationsync.getResultHeader();
 
-		ArrayList<String> changes = new ArrayList<String>();
-		HashMap<String,String> cachevalues = new HashMap<String,String>();
+		ArrayList<String> changes = new ArrayList<>();
+		HashMap<String,String> cachevalues = new HashMap<>();
 		int updatecount = 0;
 
 		for(String key:allfields)
@@ -284,6 +284,7 @@ class DBSyncOper
 				if (deviation != null && deviation.check(rowold.get(key),newvalue))
 				{
 					isinfo = true;
+					type = OnOper.INFO;
 					xmlrow.setAttribute("type","info");
 				}
 
@@ -350,7 +351,7 @@ class DBSyncOper
 
 		if (directmode)
 		{
-			if (!dbsyncplugin.preview_mode && destinationsync != null) update.oper(destinationinfo,xml);
+			if (!dbsyncplugin.getPreviewMode() && destinationsync != null) update.oper(destinationinfo,xml);
 			return;
 		}
 		xmloperlist.add(xml);
@@ -359,7 +360,7 @@ class DBSyncOper
 			flush();
 	}
 
-	private void remove(LinkedHashMap<String,String> row) throws AdapterException
+	private void remove(Map<String,String> row) throws AdapterException
 	{
 		if (doremove == doTypes.ERROR) Misc.log("ERROR: [" + destinationsync.getName() + ':' + getDisplayKey(fields.getKeys(),row) + "] removing entry rejected: " + row);
 		if (doremove != doTypes.TRUE) return;
@@ -367,7 +368,7 @@ class DBSyncOper
 		push(SyncOper.REMOVE,row,null);
 	}
 
-	private void add(LinkedHashMap<String,String> row) throws AdapterException
+	private void add(Map<String,String> row) throws AdapterException
 	{
 		if (doadd == doTypes.ERROR) Misc.log("ERROR: [" + sourcesync.getName() + ':' + getDisplayKey(fields.getKeys(),row) + "] adding entry rejected: " + row);
 		if (doadd != doTypes.TRUE) return;
@@ -376,16 +377,17 @@ class DBSyncOper
 		push(SyncOper.ADD,row,null);
 	}
 
-	private void update(LinkedHashMap<String,String> rowold,LinkedHashMap<String,String> rownew) throws AdapterException
+	private void update(Map<String,String> rowold,Map<String,String> rownew) throws AdapterException
 	{
 		if (doupdate == doTypes.ERROR) Misc.log("ERROR: [" + sourcesync.getName() + ':' + getDisplayKey(fields.getKeys(),rownew) + "] updating entry rejected: " + rownew);
 		if (doupdate != doTypes.TRUE) return;
 		if (Misc.isLog(4))
 		{
 			String delta = null;
-			for(String key:rownew.keySet())
+			for(Map.Entry<String,String> entry:rownew.entrySet())
 			{
-				String newvalue = rownew.get(key);
+				String key = entry.getKey();
+				String newvalue = entry.getValue();
 				if (newvalue == null) newvalue = "";
 				String oldvalue = rowold.get(key);
 				if (oldvalue == null) oldvalue = "";
@@ -402,7 +404,7 @@ class DBSyncOper
 		push(SyncOper.UPDATE,rownew,rowold);
 	}
 
-	public String getKey(LinkedHashMap<String,String> row)
+	public String getKey(Map<String,String> row)
 	{
 		if (row == null) return "";
 		StringBuilder key = new StringBuilder();
@@ -492,7 +494,7 @@ class DBSyncOper
 		final String traceid = "COMPARE";
 		final Comparator<String> collator = db.getCollator();
 		final Comparator<String> collator_ignore_case = db.getCollatorIgnoreCase();
-		xmloperlist = new ArrayList<XML>();
+		xmloperlist = new ArrayList<>();
 		counter = new RateCounter();
 
 		if (Misc.isLog(2))
@@ -510,8 +512,8 @@ class DBSyncOper
 
 		push(SyncOper.START);
 
-		LinkedHashMap<String,String> row = fields.getNext(sourcesync);
-		LinkedHashMap<String,String> rowdest = null;
+		Map<String,String> row = fields.getNext(sourcesync);
+		Map<String,String> rowdest = null;
 		Set<String> comparefields = null;
 		if (destinationsync != null)
 		{
@@ -680,9 +682,9 @@ class DBSyncOper
 		if (dostr == null) return null;
 
 		if (dostr.equals("true"))
-			return new Boolean(true);
+			return true;
 		else if (dostr.equals("false"))
-			return new Boolean(false);
+			return false;
 		else
 			throw new AdapterException(xml,"Invalid " + attr + " attribute");
 	}
@@ -734,7 +736,7 @@ class DBSyncOper
 	}
 	private ArrayList<XML> getFilenamePatterns(XML sync) throws AdapterException
 	{
-		ArrayList<XML> results = new ArrayList<XML>();
+		ArrayList<XML> results = new ArrayList<>();
 
 		String filename = sync.getAttribute("filename");
 		if (filename == null)
@@ -759,8 +761,9 @@ class DBSyncOper
 				XML newsync = sync.copy();
 				String pathname = path.toString();
 
-				if (Misc.isLog(10)) Misc.log("Filename: " + pathname);
+				Misc.log(2,"Reading filename \"" + pathname + "\"...");
 				newsync.setAttribute("filename",pathname);
+
 				sync.getParent().copyAttribute("keyfield",newsync);
 				sync.getParent().copyAttribute("keyfields",newsync);
 
@@ -821,7 +824,7 @@ class DBSyncOper
 			XML jms = xmlcfg.getElement("jms");
 			maxqueuelength = jms == null ? 1 : DEFAULTMAXQUEUELENGTH; // Only JMS requires buffering
 			String maxqueue = xmlsync.getAttribute("maxqueuelength");
-			if (maxqueue != null) maxqueuelength = new Integer(maxqueue);
+			if (maxqueue != null) maxqueuelength = Integer.parseInt(maxqueue);
 
 			/* checkcolumns is obsolete and should no longer be used */
 			checkcolumn = true;
@@ -832,12 +835,12 @@ class DBSyncOper
 			String keyfield = xmlsync.getAttribute("keyfield");
 			if (keyfield == null) keyfield = xmlsync.getAttribute("keyfields");
 			String displaykeyfield = xmlsync.getAttribute("display_keyfield");
-			displayfields = displaykeyfield == null ? null : new LinkedHashSet<String>(Arrays.asList(displaykeyfield.split("\\s*,\\s*")));
+			displayfields = displaykeyfield == null ? null : new LinkedHashSet<>(Arrays.asList(displaykeyfield.split("\\s*,\\s*")));
 
 			String cache = xmlsync.getAttribute("preload_cache");
 			iscache = cache != null && cache.equals("true");
 
-			tracekeys = new HashSet<String>();
+			tracekeys = new HashSet<>();
 			XML[] traces = xmlsync.getElements("trace");
 			for(XML trace:traces)
 			{
@@ -848,7 +851,7 @@ class DBSyncOper
 			XML[] destinations = xmlsync.getElements("destination");
 			XML[] sources = xmlsync.getElements("source");
 
-			ArrayList<Field> globalfields = new ArrayList<Field>();
+			ArrayList<Field> globalfields = new ArrayList<>();
 			XML[] globalfieldsxml = xmlsync.getElements("field");
 			if (iscache)
 				for(XML globalfieldxml:globalfieldsxml)
@@ -856,7 +859,7 @@ class DBSyncOper
 
 			for(XML rawsource:sources)
 			{
-				ArrayList<Field> sourcefields = new ArrayList<Field>();
+				ArrayList<Field> sourcefields = new ArrayList<>();
 				XML[] sourcefieldsxml = rawsource.getElements("field");
 				if (iscache)
 					for(XML sourcefieldxml:sourcefieldsxml)
@@ -866,18 +869,14 @@ class DBSyncOper
 				{
 					if (source == null) continue;
 
-					String filename_source = source.getAttribute("filename");
-					if (filename_source != null)
-						Misc.log(2,"Reading filename \"" + filename_source + "\"...");
-
 					String keyfield_source = source.getAttribute("keyfield");
 					if (keyfield_source == null) keyfield_source = source.getAttribute("keyfields");
 					if (keyfield_source != null) keyfield = keyfield_source;
 					if (keyfield == null) throw new AdapterException(xmlsync,"keyfield is mandatory");
-					Set<String> keyfields = new LinkedHashSet<String>(Arrays.asList(keyfield.split("\\s*,\\s*")));
+					Set<String> keyfields = new LinkedHashSet<>(Arrays.asList(keyfield.split("\\s*,\\s*")));
 
 					String ignoreattr = source.getAttribute("ignore_fields");
-					ignorefields = ignoreattr == null ? null : new LinkedHashSet<String>(Arrays.asList(ignoreattr.split("\\s*,\\s*")));
+					ignorefields = ignoreattr == null ? null : new LinkedHashSet<>(Arrays.asList(ignoreattr.split("\\s*,\\s*")));
 
 					int k = 0;
 					for(;k < destinations.length;k++)
@@ -923,7 +922,9 @@ class DBSyncOper
 
 						compare();
 
-						sourcesync = destinationsync = null;
+						sourcesync.close();
+						destinationsync.close();
+
 						for(XML var:varsxml) fields.removeDefaultVar(var);
 					}
 
@@ -968,7 +969,7 @@ class DBSyncOper
 								Misc.rethrow(ex);
 						}
 
-						sourcesync = null;
+						sourcesync.close();
 						for(XML var:varsxml) fields.removeDefaultVar(var);
 					}
 				}
@@ -989,7 +990,7 @@ class DBSyncOper
 					if (keyfield == null) throw new AdapterException(xmlsync,"keyfield is mandatory");
 					keyfield += "," + operkey;
 
-					Set<String> keyfields = new LinkedHashSet<String>(Arrays.asList(keyfield.split("\\s*,\\s*")));
+					Set<String> keyfields = new LinkedHashSet<>(Arrays.asList(keyfield.split("\\s*,\\s*")));
 					fields = new Fields(this,keyfields);
 
 					if (destination == null) continue;
@@ -1010,23 +1011,33 @@ class DBSyncOper
 					for(XML field:fieldsxml) fields.add(new Field(field,Scope.SCOPE_DESTINATION));
 
 					counter = new RateCounter();
-					xmloperlist = new ArrayList<XML>();
+					xmloperlist = new ArrayList<>();
 
-					destinationsync.setPostInitReader();
+					if (!destinationsync.setPostInitReader(true))
+					{
+						destinationsync.close();
+						continue;
+					}
 
 					push(SyncOper.START);
-					LinkedHashMap<String,String> row;
+					Map<String,String> row;
 					while((row = fields.getNext(destinationsync)) != null)
 					{
 						String operstr = row.get(operkey);
 						if (operstr == null) throw new AdapterException("OPERATION is mandatory for destination only processing: " + Misc.implode(row));
-						SyncOper oper = Enum.valueOf(SyncOper.class,operstr.toUpperCase());
+						SyncOper oper;
+						try {
+							oper = Enum.valueOf(SyncOper.class,operstr.toUpperCase());
+						} catch(IllegalArgumentException ex) {
+							Misc.log("ERROR: [" + getDisplayKey(fields.getKeys(),row) + "] Invalid OPERATION field '" + operstr + "'");
+							continue;
+						}
 						row.remove(operkey);
 
 						LinkedHashMap<String,String> oldrow = null;
 						if (oper == SyncOper.UPDATE)
 						{
-							oldrow = new LinkedHashMap<String,String>();
+							oldrow = new LinkedHashMap<>();
 							for(Map.Entry<String,String> entry:row.entrySet())
 							{
 								String key = entry.getKey();
@@ -1039,8 +1050,10 @@ class DBSyncOper
 					push(SyncOper.END);
 					flush();
 
-					destinationsync = null;
+					destinationsync.close();
 				}
+
+				sourcesync.close();
 			}
 
 			exec(xmlsync,"postexec");

@@ -1,11 +1,11 @@
 import java.util.*;
 import javax.jms.*;
 
-class JMS extends AdapterExtend
+class JMS extends AdapterExtendPublish
 {
-	static protected JMS instance;
+	protected static JMS instance;
 
-	public synchronized static JMS getInstance()
+	public static synchronized JMS getInstance()
 	{
 		if (instance == null)
 		{
@@ -16,24 +16,28 @@ class JMS extends AdapterExtend
 	}
 }
 
-abstract class JMSBase extends AdapterExtendBase
+class JMSBase extends PublishBase
 {
-	void setMessageListener(String name,MessageListener listener) throws JMSException {};
-	void recover(String name) throws JMSException {};
-	void start(String name) throws JMSException {};
+	void setMessageListener(String name,MessageListener listener) throws JMSException {}
+	void recover(String name) throws JMSException {}
+	void start(String name) throws JMSException {}
+	String read(String name) throws AdapterException { throw new AdapterException("Read not supported"); }
+	@Override
+	public String getSupportedType() { return "jms"; }
 }
 
 class JMSServer
 {
-	class JMSInfo
+	static class JMSInfo
 	{
 		private Subscriber subscriber;
 		private JMSBase ctx;
 		private String name;
 		private int delay;
 
-		public JMSInfo(JMSBase ctx,int delay)
+		public JMSInfo(String name,JMSBase ctx,int delay)
 		{
+			this.name = name;
 			this.ctx = ctx;
 			this.delay = delay;
 		}
@@ -122,22 +126,22 @@ class JMSServer
 		}
 	}
 
-	private ArrayList<Subscriber> sublist;
-	private ArrayList<JMSInfo> infolist;
+	private List<Subscriber> sublist;
+	private List<JMSInfo> infolist;
 	private String srvname;
 
 	public JMSServer(String name,JMSBase ctx,XML xml) throws JMSException,AdapterException
 	{
 		srvname = name;
 		sublist = Misc.initSubscribers(xml);
-		infolist = new ArrayList<JMSInfo>();
+		infolist = new ArrayList<>();
 
 		String delaystr = xml.getAttribute("exceptiondelay");
 		int delay = 60;
-		if (delaystr != null) delay = new Integer(delaystr);
+		if (delaystr != null) delay = Integer.parseInt(delaystr);
 
 		for(Subscriber subscriber:sublist)
-			infolist.add(new JMSInfo(ctx,delay));
+			infolist.add(new JMSInfo(name,ctx,delay));
 
 		ctx.start(srvname);
 

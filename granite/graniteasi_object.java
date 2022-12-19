@@ -36,7 +36,7 @@ class ObjectRequestSubscriber
 		{
 			try
 			{
-				ASIobject object = new ASIobject(objectname,new Long(instid));
+				ASIobject object = new ASIobject(objectname,Long.parseLong(instid));
 				return new ASIobject[] { object };
 			}
 			catch(RuntimeException ex)

@@ -35,6 +35,7 @@ elementFormDefault="qualified">
 		<xs:enumeration value="direct"/>
 		<xs:enumeration value="ldap"/>
 		<xs:enumeration value="http"/>
+		<xs:enumeration value="post"/>
 	</xs:restriction>
 </xs:simpleType>
 
@@ -46,7 +47,7 @@ elementFormDefault="qualified">
 	</xs:restriction>
 </xs:simpleType>
 
-<xs:simpleType name="httptypes">
+<xs:simpleType name="httpmethods">
 	<xs:restriction base="xs:string">
 		<xs:enumeration value="get"/>
 		<xs:enumeration value="post"/>
@@ -99,6 +100,7 @@ elementFormDefault="qualified">
 	<xs:restriction base="xs:string">
 		<xs:enumeration value="am"/> <!-- assetmanagerplugin -->
 		<xs:enumeration value="ucmdb"/> <!-- ucmdbreader -->
+		<xs:enumeration value="ucmdb_management"/> <!-- ucmdbreader -->
 		<xs:enumeration value="db"/>
 	</xs:restriction>
 </xs:simpleType>
@@ -224,7 +226,7 @@ elementFormDefault="qualified">
 			<xs:attributeGroup ref="filter"/>
 			<xs:attributeGroup ref="result"/>
 		</xs:extension>
-	</xs:simpleContent>  
+	</xs:simpleContent>
 </xs:complexType>
 
 <xs:complexType name="simplestringcrypted">
@@ -232,7 +234,7 @@ elementFormDefault="qualified">
 		<xs:extension base="crypted">
 			<xs:attributeGroup ref="activate"/>
 		</xs:extension>
-	</xs:simpleContent>  
+	</xs:simpleContent>
 </xs:complexType>
 
 <xs:complexType name="simpleinteger">
@@ -242,17 +244,21 @@ elementFormDefault="qualified">
 			<xs:attributeGroup ref="filter"/>
 			<xs:attributeGroup ref="result"/>
 		</xs:extension>
-	</xs:simpleContent>  
+	</xs:simpleContent>
 </xs:complexType>
 
 <xs:complexType name="simplestringfile">
 	<xs:simpleContent>
 		<xs:extension base="xs:string">
 			<xs:attribute name="filename" type="xs:string"/>
+			<xs:attribute name="filename_cipher" type="xs:string"/>
+			<xs:attribute name="keystore_filename" type="xs:string"/>
+			<xs:attribute name="keystore_password" type="xs:string"/>
+			<xs:attribute name="charset" type="xs:string"/>
 			<xs:attributeGroup ref="activate"/>
 			<xs:attributeGroup ref="filter"/>
 		</xs:extension>
-	</xs:simpleContent>  
+	</xs:simpleContent>
 </xs:complexType>
 
 <xs:complexType name="anyxml" mixed="true">
@@ -260,6 +266,7 @@ elementFormDefault="qualified">
 		<xs:any minOccurs="0" processContents="skip"/>
 	</xs:sequence>
 	<xs:attribute name="filename" type="xs:string"/>
+	<xs:attribute name="charset" type="xs:string"/>
 	<xs:attributeGroup ref="activate"/>
 	<xs:attributeGroup ref="filter"/>
 	<xs:attributeGroup ref="result"/>
@@ -313,6 +320,7 @@ elementFormDefault="qualified">
 				<xs:element name="read" type="read"/>
 				<xs:element name="element" type="anyxml"/>
 			</xs:choice></xs:sequence>
+			<xs:attribute name="error_detail" type="xs:string"/>
 			<xs:attribute name="if_exists" type="xs:string"/>
 			<xs:attributeGroup ref="filter"/>
 		</xs:extension>
@@ -334,6 +342,26 @@ elementFormDefault="qualified">
 	<xs:attribute name="filename" type="xs:string"/>
 	<xs:attributeGroup ref="activate"/>
 </xs:complexType>
+
+<xs:attributeGroup name="publisher">
+	<xs:attribute name="url" type="xs:string"/>
+	<xs:attribute name="method" type="httpmethods" default="post"/>
+	<xs:attribute name="basedn" type="xs:string"/>
+	<xs:attribute name="filename" type="xs:string"/>
+	<xs:attribute name="command" type="xs:string"/>
+	<xs:attribute name="username" type="xs:string"/>
+	<xs:attribute name="password" type="crypted"/>
+	<xs:attribute name="charset" type="xs:string" default="UTF-8"/>
+	<xs:attribute name="authorization" type="xs:string"/>
+	<xs:attribute name="content_type" type="xs:string"/>
+	<xs:attribute name="action" type="xs:string"/>
+	<xs:attribute name="request" type="xs:string"/>
+	<xs:attribute name="notrustssl" type="xs:boolean" default="false"/>
+	<xs:attribute name="clientkeystore" type="xs:string"/>
+	<xs:attribute name="clientkeystorepassword" type="xs:string"/>
+	<xs:attribute name="clientkeystorekeypassword" type="xs:string"/>
+	<xs:attribute name="clientkeystorealias" type="xs:string"/>
+</xs:attributeGroup>
 
 <xs:complexType name="read" mixed="true"> <!-- dbsyncplugin -->
 	<xs:sequence><xs:choice minOccurs="0" maxOccurs="unbounded">
@@ -365,31 +393,24 @@ elementFormDefault="qualified">
 	<xs:attribute name="cached_directory" type="xs:string"/>
 	<xs:attribute name="enclosure" type="xs:string" default='"'/>
 	<xs:attribute name="list_delimiter" type="xs:string" default="&#xA;"/>
-	<xs:attribute name="force_enclosure" type="xs:boolean" default='false'/>
+	<xs:attribute name="force_enclosure" type="xs:boolean" default="false"/>
+	<xs:attribute name="newline_suffix" type="xs:boolean" default="false"/>
 	<xs:attribute name="delimiter" type="xs:string" default=","/>
 	<xs:attribute name="header" type="xs:boolean" default="true"/>
-	<xs:attribute name="charset" type="xs:string"/>
-	<xs:attribute name="filename" type="xs:string"/>
 	<xs:attribute name="worksheet" type="xs:string"/>
 	<xs:attribute name="start_row" type="xs:integer"/>
 	<xs:attribute name="class" type="xs:string"/>
-	<xs:attribute name="url" type="xs:string"/>
-	<xs:attribute name="username" type="xs:string"/>
-	<xs:attribute name="password" type="xs:string"/>
-	<xs:attribute name="clientkeystore" type="xs:string"/>
-	<xs:attribute name="clientkeystorepassword" type="xs:string"/>
-	<xs:attribute name="clientkeystorealias" type="xs:string"/>
-	<xs:attribute name="basedn" type="xs:string"/>
 	<xs:attribute name="query" type="xs:string"/>
+	<xs:attribute name="view" type="xs:string"/>
 	<xs:attribute name="root" type="xs:string"/>
 	<xs:attribute name="context" type="xs:string"/>
 	<xs:attribute name="referral" type="xs:string"/>
 	<xs:attribute name="derefAliases" type="xs:string"/>
-	<xs:attribute name="notrustssl" type="xs:boolean" default="false"/>
 	<xs:attribute name="resultpathrow" type="xs:string"/>
 	<xs:attribute name="resultpathcolumn" type="xs:string"/>
 	<xs:attribute name="resultattributename" type="xs:string"/>
 	<xs:attribute name="on_no_row" type="onnorowtypes" default="ignore"/>
+	<xs:attributeGroup ref="publisher"/>
 	<xs:attributeGroup ref="activate"/>
 </xs:complexType>
 
@@ -399,22 +420,7 @@ elementFormDefault="qualified">
 	</xs:sequence>
 	<xs:attribute name="type" type="publishertypes" default="jms"/>
 	<xs:attribute name="name" type="xs:string" use="required"/>
-	<xs:attribute name="username" type="xs:string"/>
-	<xs:attribute name="password" type="crypted"/>
-	<xs:attribute name="url" type="xs:string"/>
-	<xs:attribute name="wsdl" type="xs:anyURI"/>
-	<xs:attribute name="command" type="xs:string"/>
-	<xs:attribute name="filename" type="xs:string"/>
-	<xs:attribute name="action" type="xs:string"/>
-	<xs:attribute name="content_type" type="xs:string"/>
-	<xs:attribute name="method" type="httptypes" default="post"/>
-	<xs:attribute name="request" type="xs:string"/>
-	<xs:attribute name="basedn" type="xs:string"/>
-	<xs:attribute name="fields" type="xs:string"/>
-	<xs:attribute name="operation" type="xs:string"/>
-	<xs:attribute name="port" type="xs:string"/>
-	<xs:attribute name="charset" type="xs:string" default="UTF-8"/>
-	<xs:attribute name="notrustssl" type="xs:boolean" default="false"/>
+	<xs:attributeGroup ref="publisher"/>
 	<xs:attributeGroup ref="activate"/>
 </xs:complexType>
 
@@ -492,8 +498,9 @@ elementFormDefault="qualified">
 		<xs:element name="transformation" type="simplestring"/>
 		<xs:element name="valuepath">
 			<xs:complexType>
-				<xs:attribute name="get" type="xpath" use="required"/>
-				<xs:attribute name="set" type="xpath" use="required"/>
+				<xs:attribute name="get" type="xpath"/>
+				<xs:attribute name="set" type="xpath"/>
+				<xs:attribute name="value" type="xs:string"/>
 				<xs:attributeGroup ref="activate"/>
 				<xs:attributeGroup ref="filter"/>
 				<xs:attributeGroup ref="result"/>
@@ -502,7 +509,7 @@ elementFormDefault="qualified">
 		<xs:element name="splitpath">
 			<xs:complexType>
 				<xs:attribute name="path" type="xpath" use="required"/>
-				<xs:attribute name="value" type="xs:string" use="required"/>
+				<xs:attribute name="value" type="xs:string" default="&#xA;"/>
 				<xs:attribute name="name" type="xs:string" default="value"/>
 				<xs:attributeGroup ref="activate"/>
 				<xs:attributeGroup ref="filter"/>
@@ -610,6 +617,7 @@ elementFormDefault="qualified">
 	</xs:choice></xs:sequence>
 	<xs:attribute name="name" type="xs:string"/>
 	<xs:attribute name="for_sync" type="xs:string"/>
+	<xs:attribute name="multi_path" type="xs:string"/>
 	<xs:attributeGroup ref="activate"/>
 	<xs:attributeGroup ref="filter"/>
 	<xs:attributeGroup ref="result"/>
@@ -700,7 +708,7 @@ elementFormDefault="qualified">
 						<xs:attributeGroup ref="filter"/>
 						<xs:attributeGroup ref="activate"/>
 					</xs:extension>
-				</xs:simpleContent>  
+				</xs:simpleContent>
 			</xs:complexType>
 		</xs:element>
 		<xs:element name="function" type="function" minOccurs="0" maxOccurs="unbounded"/>
@@ -711,6 +719,13 @@ elementFormDefault="qualified">
 <xs:element name="configuration">
 	<xs:complexType>
 		<xs:sequence><xs:choice minOccurs="0" maxOccurs="unbounded">
+			<xs:element name="include">
+				<xs:complexType>
+					<xs:attribute name="filename" type="xs:string" use="required"/>
+					<xs:attributeGroup ref="activate"/>
+				</xs:complexType>
+			</xs:element>
+
 			<xs:element name="logfile">
 				<xs:complexType>
 					<xs:simpleContent>
@@ -720,7 +735,7 @@ elementFormDefault="qualified">
 							<xs:attribute name="charset" type="xs:string"/>
 							<xs:attributeGroup ref="activate"/>
 						</xs:extension>
-					</xs:simpleContent>  
+					</xs:simpleContent>
 				</xs:complexType>
 			</xs:element>
 
@@ -730,7 +745,22 @@ elementFormDefault="qualified">
 						<xs:extension base="simplestringcrypted">
 							<xs:attribute name="name" type="xs:string" use="required"/>
 						</xs:extension>
-					</xs:simpleContent>  
+					</xs:simpleContent>
+				</xs:complexType>
+			</xs:element>
+
+			<xs:element name="cipher">
+				<xs:complexType>
+					<xs:sequence><xs:choice minOccurs="0" maxOccurs="unbounded">
+						<xs:element name="charset" type="simplestring" default="ISO-8859-1"/>
+						<xs:element name="keystore_public_filename" type="simplestring"/>
+						<xs:element name="keystore_secret_filename" type="simplestring"/>
+						<xs:element name="keystore_secret_password" type="simplestringcrypted"/>
+						<xs:element name="url" type="simplestring"/>
+					</xs:choice></xs:sequence>
+					<xs:attribute name="class" type="xs:string" use="required"/>
+					<xs:attribute name="name" type="xs:string"/>
+					<xs:attributeGroup ref="activate"/>
 				</xs:complexType>
 			</xs:element>
 
@@ -745,7 +775,7 @@ elementFormDefault="qualified">
 							<xs:attribute name="value" type="xs:string"/>
 							<xs:attribute name="tagname" type="xs:string"/>
 						</xs:extension>
-					</xs:complexContent>  
+					</xs:complexContent>
 				</xs:complexType>
 			</xs:element>
 
@@ -762,6 +792,7 @@ elementFormDefault="qualified">
 						<xs:element name="password" type="simplestringcrypted"/>
 						<xs:element name="server" type="simplestring"/>
 						<xs:element name="protocol" type="simplestring"/>
+						<xs:element name="repository" type="simplestring"/>
 						<xs:element name="port" type="simpleinteger" default="1521"/>
 						<xs:element name="querytimeout" type="simpleinteger"/>
 						<xs:element name="bulksize" default="1">
@@ -820,7 +851,7 @@ elementFormDefault="qualified">
 										<xs:attribute name="clientid" type="xs:string"/>
 										<xs:attribute name="exceptiondelay" type="xs:integer" default="60"/>
 									</xs:extension>
-								</xs:complexContent>  
+								</xs:complexContent>
 							</xs:complexType>
 						</xs:element>
 					</xs:choice></xs:sequence>
@@ -885,6 +916,7 @@ elementFormDefault="qualified">
 									<xs:element name="remotefilter" type="simplestring"/>
 									<xs:element name="preextractsql" type="simplestringfile"/>
 									<xs:element name="extractsql" type="simplestringfile"/>
+									<xs:element name="endingsql" type="simplestringfile"/>
 									<xs:element name="read" type="read"/>
 									<xs:element name="element" type="anyxml"/>
 									<xs:element name="function" type="function"/>
@@ -909,6 +941,7 @@ elementFormDefault="qualified">
 									<xs:element name="dbsyncsorttable" type="sorttable"/>
 									<xs:element name="preextractsql" type="simplestringfile"/>
 									<xs:element name="extractsql" type="simplestringfile"/>
+									<xs:element name="endingsql" type="simplestringfile"/>
 									<xs:element name="read" type="read"/>
 									<xs:element name="element" type="anyxml"/>
 									<xs:element name="function" type="function"/>

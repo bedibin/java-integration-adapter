@@ -10,6 +10,7 @@ import com.hp.ucmdb.api.types.*;
 import com.hp.ucmdb.api.topology.*;
 import com.hp.ucmdb.api.topology.queryparameter.*;
 import com.hp.ucmdb.api.classmodel.*;
+import com.hp.ucmdb.api.users.*;
 
 /* Rules for relations:
 First prefix including the semicolumn is optionnal
@@ -20,36 +21,41 @@ If multiple relations between 2 CIs: END1:END2:REL_x
 */
 
 enum BulkType { BULK, DATA };
+enum ServiceType { TOPOLOGY, MANAGEMENT };
 
 class Ucmdb
 {
 	private static Ucmdb instance;
+	private static Ucmdb instanceManagement;
 	private UcmdbService service;
+	private UcmdbManagementService serviceManagement;
 	private String adapterinfo;
 	private int bulksize = 1;
 	private BulkType bulktype = BulkType.BULK;
 
-	private Ucmdb() throws AdapterException
+	private Ucmdb(ServiceType management) throws AdapterException
 	{
 		adapterinfo = "javaadapter/" + javaadapter.getName();
 
 		System.out.print("Connection to UCMDB... ");
-		XML xml = javaadapter.getConfiguration().getElementByPath("/configuration/connection[@type='ucmdb']");
-		if (xml == null) throw new AdapterException("No connection element with type 'ucmdb' specified");
+		String type = management == ServiceType.MANAGEMENT ? "ucmdb_management" : "ucmdb";
+		XML xml = javaadapter.getConfiguration().getElementByPath("/configuration/connection[@type='" + type + "']");
+		if (xml == null) throw new AdapterException("No connection element with type '" + type + "' specified");
 
 		String host = xml.getValue("server","localhost");
 		String protocol = xml.getValue("protocol","http");
 		String portstr = xml.getValue("port","8080");
-		int port = new Integer(portstr);
+		int port = Integer.parseInt(portstr);
 		String username = xml.getValue("username","admin");
 		String password = xml.getValueCrypt("password");
+		String repository = xml.getValue("repository",null);
 
 		XML bulkxml = xml.getElement("bulksize");
 		if (bulkxml != null)
 		{
 			String bulkprop = System.getProperty("javaadapter.ucmdb.bulksize");
 			String bulkstr = bulkprop == null ? bulkxml.getValue() : bulkprop;
-			bulksize = new Integer(bulkstr);
+			bulksize = Integer.parseInt(bulkstr);
 			bulktype = bulkxml.getAttributeEnum("type",BulkType.BULK,BulkType.class);
 		}
 
@@ -60,12 +66,15 @@ class Ucmdb
 			throw new AdapterException(ex);
 		}
 		ClientContext clientContext = serviceProvider.createClientContext(adapterinfo);
-		Credentials credentials = serviceProvider.createCredentials(username,password);
+		Credentials credentials = serviceProvider.createCredentials(username,password,repository);
 		int retry = 0;
 		while(true)
 		{
 			try {
-				service = serviceProvider.connect(credentials,clientContext);
+				if (management == ServiceType.MANAGEMENT)
+					serviceManagement = serviceProvider.connectManagement(credentials,clientContext);
+				else
+					service = serviceProvider.connect(credentials,clientContext);
 				break;
 			} catch (CustomerNotAvailableException ex) {
 				retry++;
@@ -97,11 +106,23 @@ class Ucmdb
 		return service.getViewService();
 	}
 
+	SystemUserService getUsers()
+	{
+		return serviceManagement.getSystemUserService();
+	}
+
 	public synchronized static Ucmdb getInstance() throws AdapterException
 	{
 		if (instance == null)
-			instance = new Ucmdb();
+			instance = new Ucmdb(ServiceType.TOPOLOGY);
 		return instance;
+	}
+
+	public synchronized static Ucmdb getManagementInstance() throws AdapterException
+	{
+		if (instanceManagement == null)
+			instanceManagement = new Ucmdb(ServiceType.MANAGEMENT);
+		return instanceManagement;
 	}
 
 	public int getBulkSize() { return bulksize; }
@@ -115,7 +136,7 @@ class Ucmdb
 		if (error == null) return ex.getClass().getName();
 
 		Matcher matcher = causedbypattern.matcher(error);
-		HashSet<String> causes = new HashSet<String>();
+		HashSet<String> causes = new HashSet<>();
 		while(matcher.find())
 		{
 			String cause = matcher.group(1);
@@ -158,6 +179,38 @@ class Ucmdb
 			sep = " ";
 		}
 		return out.toString();
+	}
+}
+
+class ReaderUCMDBUsers extends ReaderUtil
+{
+	Ucmdb ucmdb = Ucmdb.getManagementInstance();
+	Iterator<SystemUserInfo> users;
+
+	public ReaderUCMDBUsers(XML xml) throws AdapterException
+	{
+		setXML(xml);
+
+		SystemUserService userService = ucmdb.getUsers();
+		users = userService.getAllSystemUsers().iterator();
+	}
+
+	@Override
+	public Map<String,String> nextRaw() throws AdapterException
+	{
+		if (!users.hasNext()) return null;
+		SystemUserInfo user = users.next();
+		Map<String,String> row = new LinkedHashMap<>();
+		row.put("Name",user.getName());
+		row.put("FirstName",user.getFistName());
+		row.put("LastName",user.getLastName());
+		row.put("Email",user.getEmail());
+		row.put("Phone",user.getPhone());
+		row.put("Address",user.getAddress());
+		row.put("Location",user.getLocation());
+		row.put("Company",user.getCompany());
+		row.put("Origin",user.getDatastoreOrigin());
+		return row;
 	}
 }
 
@@ -234,14 +287,14 @@ class ReaderUCMDB extends ReaderUtil
 		{
 		case DATE:
 			Date date = (Date)value;
-			return Misc.gmtdateformat.format(date);
+			return Misc.getGmtDateFormat().format(date);
 		case STRING_LIST:
 			return Misc.implode((Iterable<String>)value,"\n");
 		}
 		return value.toString().trim();
 	}
 
-	private void setProperties(String prefix,LinkedHashMap<String,String> row,Element element)
+	private void setProperties(String prefix,Map<String,String> row,Element element)
 	{
 		String post = "";
 		if (prefix != null) post = prefix + ":";
@@ -277,7 +330,7 @@ class ReaderUCMDB extends ReaderUtil
 		return rootname.equals(name) ? null : name;
 	}
 
-	void getRelated(TopologyCI current,String prefix,HashMap<UcmdbId,String> ids,HashMap<String,Integer> counts,LinkedHashMap<String,String> row) throws AdapterException
+	void getRelated(TopologyCI current,String prefix,HashMap<UcmdbId,String> ids,HashMap<String,Integer> counts,Map<String,String> row) throws AdapterException
 	{
 		if (current == null) return;
 
@@ -320,16 +373,16 @@ class ReaderUCMDB extends ReaderUtil
 		}
 	}
 
-	private LinkedHashMap<String,String> propertiesToMap(List<Property> propertyList)
+	private Map<String,String> propertiesToMap(List<Property> propertyList)
 	{
-		LinkedHashMap<String,String> row = new LinkedHashMap<String,String>();
+		Map<String,String> row = new LinkedHashMap<>();
 		for(Property property:propertyList)
 			row.put(property.getName(),getValue(property));
 		return row;
 	}
 
 	@Override
-	public LinkedHashMap<String,String> nextRaw() throws AdapterException
+	public Map<String,String> nextRaw() throws AdapterException
 	{
 		if (viewIter != null)
 		{
@@ -337,7 +390,7 @@ class ReaderUCMDB extends ReaderUtil
 
 			ViewResultTreeNode viewItem = viewIter.next();
 			List<Property> propertyList = viewItem.viewProperties();
-			LinkedHashMap<String,String> row = propertiesToMap(propertyList);
+			Map<String,String> row = propertiesToMap(propertyList);
 			if (Misc.isLog(30)) Misc.log("uCMDB view row: " + row);
 			return row;
 		}
@@ -352,9 +405,9 @@ class ReaderUCMDB extends ReaderUtil
 			if (!cis.hasNext()) return null;
 		}
 
-		HashMap<UcmdbId,String> ids = new HashMap<UcmdbId,String>();
-		HashMap<String,Integer> counts = new HashMap<String,Integer>();
-		LinkedHashMap<String,String> row = new LinkedHashMap<String,String>();
+		HashMap<UcmdbId,String> ids = new HashMap<>();
+		HashMap<String,Integer> counts = new HashMap<>();
+		Map<String,String> row = new LinkedHashMap<>();
 		TopologyCI root = cis.next();
 
 		ids.put(root.getId(),null);
@@ -371,12 +424,36 @@ class ReaderUCMDB extends ReaderUtil
 
 class UCMDBUpdateSubscriber extends UpdateSubscriber
 {
-	class AttributeType
+	static class AttributeType
 	{
 		Type type;
 		String enumname;
 		Collection<String> enumvalues;
 	}
+
+	class Ends
+	{
+		private String end1;
+		private String end2;
+
+		Ends(String end1,String end2)
+		{
+			this.end1 = end1;
+			this.end2 = end2;
+		}
+
+		String getEnd1() { return end1; };
+		String getEnd2() { return end2; };
+
+		@Override
+		public boolean equals(Object obj)
+		{
+			if (!(obj instanceof Ends)) return false;
+			Ends ends = (Ends)obj;
+			return end1.equals(ends.end1) && end2.equals(ends.end2);
+		}
+	}
+
 
 	private TopologyUpdateService update;
 	private TopologyUpdateFactory factory;
@@ -386,7 +463,7 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 	private SyncOper bulkoper = SyncOper.START;
 	private EnumMap<SyncOper,TopologyModificationAction> actionmap;
 	private ClassModelService classmodel;
-	private HashMap<String,AttributeType> attrtypes = new HashMap<String,AttributeType>();
+	private HashMap<String,AttributeType> attrtypes = new HashMap<>();
 	private Ucmdb ucmdb;
 	private String adapterinfo;
 	private final Pattern relationTagPattern = Pattern.compile("^((([^:]+):)?([^:]*):((REL|RREL)(_(\\d+))*)):INFO$");
@@ -399,7 +476,7 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 		classmodel = ucmdb.getClassModel();
 		adapterinfo = ucmdb.getInfo();
 
-		actionmap = new EnumMap<SyncOper,TopologyModificationAction>(SyncOper.class);
+		actionmap = new EnumMap<>(SyncOper.class);
 		actionmap.put(SyncOper.UPDATE,TopologyModificationAction.UPDATE_IF_EXISTS);
 		actionmap.put(SyncOper.ADD,TopologyModificationAction.CREATE_OR_UPDATE);
 		actionmap.put(SyncOper.REMOVE,TopologyModificationAction.DELETE_IF_EXISTS);
@@ -408,7 +485,7 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 	private void FillUpdateData(TopologyModificationData data,XML xml,SyncOper oper) throws AdapterException
 	{
 		final int debug = 15;
-		HashMap<String,Element> elements = new HashMap<String,Element>();
+		HashMap<String,Element> elements = new HashMap<>();
 		XML[] fields = xml.getElements();
 
 		// First predefine all CIs
@@ -456,7 +533,8 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 					id = idxml.getValue();
 					if (id == null) id = idxml.getValue("oldvalue",null);
 				}
-			}
+			} else if (oper == SyncOper.REMOVE && idxml != null)
+				id = idxml.getValue();
 
 			if (value == null) throw new AdapterException(xml,"Value for element " + tagname + " cannot be empty");
 
@@ -574,21 +652,21 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 			{
 			case DOUBLE:
 				try {
-				element.setDoubleProperty(suffix,new Double(value));
+				element.setDoubleProperty(suffix,Double.parseDouble(value));
 				} catch (NumberFormatException ex) {
 				Misc.log("WARNING: [" + getKeyValue() + "] Cannot convert '" + value + "' for field '" + suffix + "' into a double: " + xml);
 				}
 				break;
 			case FLOAT:
 				try {
-				element.setFloatProperty(suffix,new Float(value));
+				element.setFloatProperty(suffix,Float.parseFloat(value));
 				} catch (NumberFormatException ex) {
 				Misc.log("WARNING: [" + getKeyValue() + "] Cannot convert '" + value + "' for field '" + suffix + "' into a float: " + xml);
 				}
 				break;
 			case LONG:
 				try {
-				element.setLongProperty(suffix,new Long(value));
+				element.setLongProperty(suffix,Long.parseLong(value));
 				} catch (NumberFormatException ex) {
 				Misc.log("WARNING: [" + getKeyValue() + "] Cannot convert '" + value + "' for field '" + suffix + "' into a long: " + xml);
 				}
@@ -596,7 +674,7 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 			case ENUM:
 			case INTEGER:
 				try {
-				element.setIntProperty(suffix,new Integer(value));
+				element.setIntProperty(suffix,Integer.parseInt(value));
 				} catch (NumberFormatException ex) {
 				Misc.log("WARNING: [" + getKeyValue() + "] Cannot convert '" + value + "' for field '" + suffix + "' into an integer: " + xml);
 				}
@@ -619,7 +697,7 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 				break;
 			case DATE:
 				try {
-					element.setDateProperty(suffix,Misc.gmtdateformat.parse(value));
+					element.setDateProperty(suffix,Misc.getGmtDateFormat().parse(value));
 				} catch(java.text.ParseException ex) {
 					throw new AdapterException(ex);
 				}
@@ -644,6 +722,8 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 
 	private void push(XML xml,SyncOper oper) throws AdapterException
 	{
+		if (Misc.isLog(30)) Misc.log("UCMDBAPI: Push " + oper + ": " + xml);
+
 		BulkType bulktype = ucmdb.getBulkType();
 		if (bulktype == BulkType.DATA && bulkcount > 0 && oper != bulkoper) flush();
 		if (bulkdata == null) bulkdata = factory.createTopologyModificationData();
@@ -862,24 +942,61 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 	{
 		String old1 = getUpdateValue(xml,"END1");
 		String old2 = getUpdateValue(xml,"END2");
-		if (old1 != null && old2 != null)
+		String new1 = getAddValue(xml,"END1");
+		String new2 = getAddValue(xml,"END2");
+		if (old1 != null && old2 != null && new1 != null && new2 != null)
 		{
 			String[] old1values = old1.split("\n");
 			String[] old2values = old2.split("\n");
+			String[] new1values = new1.split("\n");
+			String[] new2values = new2.split("\n");
 
 			if (Misc.isLog(10)) Misc.log("UCMDBAPI: Update causing relationship recreation: " + xml);
 
+			List<Ends> oldlist = new ArrayList<>();
 			for(String old1value:old1values) for(String old2value:old2values)
-			{
-				XML delete = new XML();
-				delete = delete.add("remove");
-				delete.add("END1",old1value);
-				delete.add("END2",old2value);
-				delete.add("INFO",xml.getValue("INFO",null));
+				oldlist.add(new Ends(old1value,old2value));
+			List<Ends> newlist = new ArrayList<>();
+			for(String new1value:new1values) for(String new2value:new2values)
+				newlist.add(new Ends(new1value,new2value));
 
-				push(delete,SyncOper.REMOVE);
+			List<Ends> updatelist = new ArrayList<>(newlist);
+			updatelist.retainAll(oldlist);
+			List<Ends> addlist = new ArrayList<>(newlist);
+			addlist.removeAll(oldlist);
+			List<Ends> removelist = new ArrayList<>(oldlist);
+			removelist.removeAll(newlist);
+
+			for(Ends remove:removelist)
+			{
+				XML tmpxml = new XML();
+				tmpxml = tmpxml.add("remove");
+				tmpxml.add("END1",remove.getEnd1());
+				tmpxml.add("END2",remove.getEnd2());
+				tmpxml.add("INFO",xml.getValue("INFO",null));
+				push(tmpxml,SyncOper.REMOVE);
 			}
-			add(destinfo,xml);
+
+			for(Ends add:addlist)
+			{
+				XML tmpxml = new XML();
+				tmpxml = tmpxml.add("add");
+				tmpxml.add(xml.getElements());
+				tmpxml.setValue("END1",add.getEnd1());
+				tmpxml.setValue("END2",add.getEnd2());
+				push(tmpxml,SyncOper.ADD);
+			}
+
+			for(Ends update:updatelist)
+			{
+				XML tmpxml = new XML();
+				tmpxml = tmpxml.add("update");
+				tmpxml.add(xml.getElements());
+				tmpxml.setValue("END1",update.getEnd1());
+				tmpxml.setValue("END2",update.getEnd2());
+				push(tmpxml,SyncOper.UPDATE);
+			}
+
 			return;
 		}
 
@@ -922,7 +1039,7 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 		TopologyQueryFactory queryFactory = queryService.getFactory();
 
 		ExecutableQuery executableQuery = queryService.createExecutableQuery("Test Query List");
-		ArrayList<String> parameterValue = new ArrayList<String>();
+		ArrayList<String> parameterValue = new ArrayList<>();
 		parameterValue.add("B521200");
 		//executableQuery.setStringListParameter("ValueList",parameterValue);
 		executableQuery.queryParameters().addValue("ValueList",parameterValue);
@@ -949,7 +1066,7 @@ class UcmdbLongName
   
 	public static String cutLongName(String longName)
 	{
-		return longName.substring(0, getMaxNameLengthAllow() - 12) + "_" + String.valueOf(Math.abs(longName.hashCode()));
+		return longName.substring(0, getMaxNameLengthAllow() - 12) + "_" + Math.abs(longName.hashCode());
 	}
 
 	public static int getMaxNameLengthAllow()

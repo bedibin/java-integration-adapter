@@ -14,7 +14,7 @@ class SoapServerStandAlone extends SoapServer implements HttpHandler
 	private String dirtarget;
 	private String httptype;
 
-	class ServerAuthenticator extends BasicAuthenticator
+	static class ServerAuthenticator extends BasicAuthenticator
 	{
 		private String username;
 		private String password;
@@ -29,8 +29,7 @@ class SoapServerStandAlone extends SoapServer implements HttpHandler
 		public boolean checkCredentials(String username,String password)
 		{
 			if (!username.equals(this.username)) return false;
-			if (!password.equals(this.password)) return false;
-			return true;
+			return password.equals(this.password);
 		}
 	}
 
@@ -45,7 +44,7 @@ class SoapServerStandAlone extends SoapServer implements HttpHandler
 		if (fileserver != null) dirtarget = fileserver.getValue();
 
 		HttpServerProvider provider = HttpServerProvider.provider();
-		InetSocketAddress addr = new InetSocketAddress(new Integer(xml.getAttribute("port")));
+		InetSocketAddress addr = new InetSocketAddress(Integer.parseInt(xml.getAttribute("port")));
 		HttpServer server;
 
 		String keystore = xml.getAttribute("keystore");
@@ -67,7 +66,7 @@ class SoapServerStandAlone extends SoapServer implements HttpHandler
 				TrustManagerFactory tmf = TrustManagerFactory.getInstance("SunX509");
 				tmf.init(ks);
 
-				SSLContext ssl = SSLContext.getInstance("TLS");
+				SSLContext ssl = SSLContext.getInstance("TLSv1.2");
 				ssl.init(kmf.getKeyManagers(),tmf.getTrustManagers(),null);
 
 				HttpsServer serverssl = provider.createHttpsServer(addr,0);
@@ -140,7 +139,7 @@ class SoapServerStandAlone extends SoapServer implements HttpHandler
 				String boundary = null;
 				if (matcher.find()) boundary = "--" + matcher.group(1);
 				Misc.log("Boundary: " + boundary);
-				int len = new Integer(headers.get("Content-length").get(0));
+				int len = Integer.parseInt(headers.get("Content-length").get(0));
 				Misc.log("Length: " + len);
 				byte[] raw = new byte[len];
 
@@ -196,8 +195,11 @@ class SoapServerStandAlone extends SoapServer implements HttpHandler
 						File file = new File(javaadapter.getCurrentDir(),dirtarget + File.separator + uploadfile);
 						FileOutputStream stream = new FileOutputStream(file,false);
 						int size = len - i - boundary.length() - 6;
-						stream.write(raw,i,size);
-						stream.close();
+						try {
+							stream.write(raw,i,size);
+						} finally {
+							stream.close();
+						}
 						message = "File " + uploadfile + " (size=" + size + ") uploaded successfully";
 					}
 					catch(IOException ex)
@@ -219,16 +221,16 @@ class SoapServerStandAlone extends SoapServer implements HttpHandler
 				Misc.log("Sending file " + file.getPath());
 				byte[] raw = new byte[(int)file.length()];
 				FileInputStream fis = new FileInputStream(file);
-				DataInputStream in = new DataInputStream(fis);
-				in.read(raw);
-				in.close();
+				try(DataInputStream in = new DataInputStream(fis)) {
+					in.read(raw);
+				}
 				rawSend(exchange,200,"application/octet-stream",raw);
 				return;
 			}
 
-			String body = "";
-			if (message != null) body += message + "<br>";
-			body += "<table border=1><tr><th>Filename</th></tr>";
+			StringBuilder body = new StringBuilder();
+			if (message != null) body.append(message + "<br>");
+			body.append("<table border=1><tr><th>Filename</th></tr>");
 			File dir = new File(javaadapter.getCurrentDir(),dirtarget);
 			File[] files = dir.listFiles();
 			if (files == null)
@@ -237,13 +239,13 @@ class SoapServerStandAlone extends SoapServer implements HttpHandler
 				return;
 			}
 			for(int i = 0;i < files.length;i++)
-				body += "<tr><td><a href=\"get/" + files[i].getName() + "\">" + files[i].getName() + "</a></td></tr>";
+				body.append("<tr><td><a href=\"get/" + files[i].getName() + "\">" + files[i].getName() + "</a></td></tr>");
 
-			body += "</table>";
-			body += "<form action=\"get\" method=\"POST\" enctype=\"multipart/form-data\"><input type=\"file\" name=\"file\">";
-			body += "<input type=\"submit\" value=\"Send file\"></form>";
+			body.append("</table>");
+			body.append("<form action=\"get\" method=\"POST\" enctype=\"multipart/form-data\"><input type=\"file\" name=\"file\">");
+			body.append("<input type=\"submit\" value=\"Send file\"></form>");
 
-			htmlSend(exchange,"Available files",body);
+			htmlSend(exchange,"Available files",body.toString());
 			return;
 		}
 

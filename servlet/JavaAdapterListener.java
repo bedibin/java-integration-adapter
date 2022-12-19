@@ -8,7 +8,7 @@ public final class JavaAdapterListener implements ServletContextListener
 		ServletContext ctx = event.getServletContext();
 		String cfgfile = ctx.getInitParameter("configurationFile");
 		String path = ctx.getRealPath("/");
-		javaadapter.currentdir = path + File.separatorChar + "WEB-INF";
+		javaadapter.setCurrentDir(path + File.separatorChar + "WEB-INF");
 		System.out.println("Java Adapter current directory: " + javaadapter.getCurrentDir());
 
 		try
@@ -25,7 +25,12 @@ public final class JavaAdapterListener implements ServletContextListener
 
 	public void contextDestroyed(ServletContextEvent event)
 	{
-		javaadapter.shutdown.run();
+		javaadapter.shutdown.start();
+		try {
+			javaadapter.shutdown.join(10000);
+		} catch(InterruptedException ex) {
+			System.out.println("Shutdown interrupted!");
+		}
 		System.out.println("Java Adapter listener context destroyed");
 	}
 

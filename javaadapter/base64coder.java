@@ -137,6 +137,9 @@ public static byte[] decode (char[] in) {
       if (op<oLen) out[op++] = (byte)o2; }
    return out; }
 
+public static boolean isbase64 (String s) {
+	return s.matches("^([A-Za-z0-9+/]{4})*([A-Za-z0-9+/]{3}=|[A-Za-z0-9+/]{2}==)?$"); }
+
 // Dummy constructor.
 private base64coder() {}
 

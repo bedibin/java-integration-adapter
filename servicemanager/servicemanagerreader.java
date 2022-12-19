@@ -41,13 +41,13 @@ class ReaderServiceManager extends ReaderXML
 		if (headers != null) return;
 		LinkedHashMap<String,String> first = getXML(0);
 		if (first != null)
-			headers = new LinkedHashSet<String>(first.keySet());
+			headers = new LinkedHashSet<>(first.keySet());
 	}
 
 	@Override
-	public LinkedHashMap<String,String> nextRaw() throws AdapterException
+	public Map<String,String> nextRaw() throws AdapterException
 	{
-		LinkedHashMap<String,String> row = getXML(position);
+		Map<String,String> row = getXML(position);
 		if (row == null)
 		{
 			String more = result.getAttribute("more");
@@ -73,20 +73,20 @@ class ReaderServiceManager extends ReaderXML
 class ReaderServiceManagerRelations extends ReaderUtil
 {
 	// all_next[parent][child] = ChildExtract
-	TreeMap<String,TreeMap<String,ChildExtract>> all_next = new TreeMap<String,TreeMap<String,ChildExtract>>(db.getCollator());
+	TreeMap<String,TreeMap<String,ChildExtract>> all_next = new TreeMap<>(db.getCollator());
 	Iterator<String> next_iterator;
 	Iterator<Map.Entry<String,ChildResult>> child_iterator;
 	String current_parent;
 
-	final String ParentLabel = "parent_ci";
-	final String ChildLabel = "child_ci";
-	final String RelTypeLabel = "relation_name";
-	final String RelParentTypeLabel = "relation_parent";
-	final String RelCiLabel = "relation_ci";
-	final String LevelLabel = "level";
-	final String OutageLabel = "outage";
+	static final String ParentLabel = "parent_ci";
+	static final String ChildLabel = "child_ci";
+	static final String RelTypeLabel = "relation_name";
+	static final String RelParentTypeLabel = "relation_parent";
+	static final String RelCiLabel = "relation_ci";
+	static final String LevelLabel = "level";
+	static final String OutageLabel = "outage";
 
-	class ChildExtract {
+	static class ChildExtract {
 		ChildExtract(String type,boolean outage) {
 			this.type = type;
 			this.outage = outage;
@@ -95,7 +95,7 @@ class ReaderServiceManagerRelations extends ReaderUtil
 		boolean outage;
 	};
 
-	class ChildResult {
+	static class ChildResult {
 		ChildResult(int level,String type,String ci,boolean outage,String parent_type) {
 			this.level = level;
 			this.type = type;
@@ -134,11 +134,11 @@ class ReaderServiceManagerRelations extends ReaderUtil
 		DBOper oper = db.makesqloper(conn,sql);
 
 		String[] default_headers = {ParentLabel,ChildLabel,RelTypeLabel,RelCiLabel,LevelLabel,OutageLabel,RelParentTypeLabel};
-		if (headers == null) headers = new LinkedHashSet<String>(Arrays.asList(default_headers));
+		if (headers == null) headers = new LinkedHashSet<>(Arrays.asList(default_headers));
 		if (instance == null) instance = conn;
 
 		/* First step is to create "all_next", a list of all CIs with their associated children */
-		LinkedHashMap<String,String> row;
+		Map<String,String> row;
 		while((row = oper.next()) != null) {
 			String parent = row.get(ParentLabel);
 			String child = row.get(ChildLabel);
@@ -148,7 +148,7 @@ class ReaderServiceManagerRelations extends ReaderUtil
 			if (all_next.containsKey(parent)) {
 				all_next.get(parent).put(child,new ChildExtract(reltype,outage));
 			} else {
-				TreeMap<String,ChildExtract> map = new TreeMap<String,ChildExtract>(db.getCollator());
+				TreeMap<String,ChildExtract> map = new TreeMap<>(db.getCollator());
 				map.put(child,new ChildExtract(reltype,outage));
 				all_next.put(parent,map);
 			}
@@ -209,14 +209,14 @@ class ReaderServiceManagerRelations extends ReaderUtil
 			/* We consumed all descendents, select next CI, if any */
 			if (!next_iterator.hasNext()) return null;
 			current_parent = next_iterator.next();
-			TreeMap<String,ChildResult> children = new TreeMap<String,ChildResult>();
+			TreeMap<String,ChildResult> children = new TreeMap<>();
 			/* Get all descendents and iterate through them */
 			getAllChildren(children,1,current_parent,true,null);
 			child_iterator = children.entrySet().iterator();
 		}
 
 		Map.Entry<String,ChildResult> child = child_iterator.next();
-		LinkedHashMap<String,String> row = new LinkedHashMap<String,String>();
+		LinkedHashMap<String,String> row = new LinkedHashMap<>();
 		ChildResult childresult = child.getValue();
 		row.put(ParentLabel,current_parent);
 		row.put(ChildLabel,child.getKey());
@@ -349,8 +349,8 @@ class ServiceManagerUpdateSubscriber extends UpdateSubscriber
 						String newvalue = update.getValue();
 						if (oldvalue != null && newvalue != null)
 						{
-							ArrayList<String> deleteset = new ArrayList<String>(Arrays.asList(oldvalue.split("\n")));
-							ArrayList<String> newset = new ArrayList<String>(Arrays.asList(newvalue.split("\n")));
+							ArrayList<String> deleteset = new ArrayList<>(Arrays.asList(oldvalue.split("\n")));
+							ArrayList<String> newset = new ArrayList<>(Arrays.asList(newvalue.split("\n")));
 							deleteset.removeAll(newset);
 							if (deleteset.size() > 0)
 							{
@@ -406,7 +406,7 @@ class ServiceManagerUpdateSubscriber extends UpdateSubscriber
 			{
 				name = name.substring("TABLE_".length());
 				Reader reader = new ReaderCSV(new StringReader(value));
-				LinkedHashMap<String,String> row;
+				Map<String,String> row;
 				XML array = instance.add(name);
 				Set<String> header = reader.getHeader();
 				while((row = reader.next()) != null)
@@ -479,7 +479,7 @@ class ServiceManagerUpdateSubscriber extends UpdateSubscriber
 				for(String key:newkeys)
 				{
 					XML field = xmloper.getElement(key);
-					if (field == null) destinfo.Exception("Invalid key '" + key + "' in merge_keys attribute: " + xmloper);
+					if (field == null) throw new AdapterException("Invalid key '" + key + "' in merge_keys attribute: " + xmloper);
 					String value = field.getValue("oldvalue",null);
 					if (value == null) value = field.getValue();
 

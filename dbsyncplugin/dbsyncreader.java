@@ -4,9 +4,9 @@ import java.text.*;
 import java.util.regex.*;
 import java.nio.file.Path;
 
-interface Reader
+interface Reader extends Closeable
 {
-	public LinkedHashMap<String,String> next() throws AdapterException;
+	public Map<String,String> next() throws AdapterException;
 	public Set<String> getHeader();
 	public String getName();
 	public boolean isSorted();
@@ -19,7 +19,7 @@ abstract class ReaderUtil implements Reader
 	private Set<String> keyfields;
 	private boolean issorted = false;
 	private boolean totrim = true;
-	private LinkedHashMap<String,String> last;
+	private Map<String,String> last;
 	private OnOper onempty;
 	private int rowcount;
 	private String colname;
@@ -111,12 +111,13 @@ abstract class ReaderUtil implements Reader
 
 	static final public void pushCurrent(Map<String,String> row,Map<String,Set<String>> map,boolean issorted) throws AdapterException
 	{
-		for(String keyrow:row.keySet())
+		for(Map.Entry<String,String> entry:row.entrySet())
 		{
+			String keyrow = entry.getKey();
 			Set<String> set = map.get(keyrow);
-			if (set == null) set = issorted ? new LinkedHashSet<String>() : new TreeSet<String>(DB.getInstance().getCollatorIgnoreCase());
+			if (set == null) set = issorted ? new LinkedHashSet<>() : new TreeSet<>(DB.getInstance().getCollatorIgnoreCase());
 
-			String rowvalue = row.get(keyrow);
+			String rowvalue = entry.getValue();
 			if (!rowvalue.isEmpty()) // Do not insert an empty value
 			{
 				rowvalue = XML.fixValue(rowvalue.replace("\r\n","\n"));
@@ -126,7 +127,7 @@ abstract class ReaderUtil implements Reader
 		}
 	}
 
-	abstract public LinkedHashMap<String,String> nextRaw() throws AdapterException;
+	abstract public Map<String,String> nextRaw() throws AdapterException;
 
 	private final void CheckEmpty() throws AdapterException
 	{
@@ -134,9 +135,9 @@ abstract class ReaderUtil implements Reader
 			throw new AdapterException("Reader " + getName() + " didn't return any record");
 	}
 
-	public final LinkedHashMap<String,String> next() throws AdapterException
+	public final Map<String,String> next() throws AdapterException
 	{
-		LinkedHashMap<String,String> row;
+		Map<String,String> row;
 		if (keyfields == null)
 		{
 			row = nextRaw();
@@ -145,18 +146,22 @@ abstract class ReaderUtil implements Reader
 			return row;
 		}
 
-		LinkedHashMap<String,String> current = last;
-		HashMap<String,Set<String>> currentmap = new HashMap<String,Set<String>>();
+		Map<String,String> current = last;
+		HashMap<String,Set<String>> currentmap = new HashMap<>();
 		if (current != null) pushCurrent(current,currentmap,issorted);
 
 		while((row = nextRaw()) != null)
 		{
 			rowcount++;
-			if (!row.keySet().containsAll(keyfields))
+			for(String key:keyfields)
 			{
-				if (Misc.isLog(3)) Misc.log("WARNING: Keys '" + Misc.implode(keyfields) + "' missing in extraction. Cannot merge multiple records sharing the same key: " + Misc.implode(row.keySet()));
-				keyfields = null;
-				return row;
+				String value = row.get(key);
+				if (value == null || value.isEmpty())
+				{
+					if (Misc.isLog(3)) Misc.log("WARNING: Keys '" + Misc.implode(keyfields) + "' missing in extraction. Cannot merge multiple records sharing the same key: " + Misc.implode(row.keySet()));
+					keyfields = null;
+					return row;
+				}
 			}
 
 			if (current == null)
@@ -197,12 +202,12 @@ abstract class ReaderUtil implements Reader
 		return current;
 	}
 
-	public final LinkedHashMap<String,String> normalizeFields(LinkedHashMap<String,String> row) throws AdapterException
+	public final Map<String,String> normalizeFields(Map<String,String> row) throws AdapterException
 	{
-		if (row == null) return null;
+		if (row == null) throw new AdapterRuntimeException("Cannot normalize null entries");
 		if (skipnormalize || headers == null) return row;
 
-		LinkedHashMap<String,String> result = new LinkedHashMap<String,String>();
+		LinkedHashMap<String,String> result = new LinkedHashMap<>();
 		for(String name:headers)
 		{
 			String value = row.get(name);
@@ -215,7 +220,7 @@ abstract class ReaderUtil implements Reader
 	{
 		Reader reader = ReaderUtil.getReader(xml,xmlsource);
 
-		LinkedHashMap<String,String> row;
+		Map<String,String> row;
 
 		XML xmltable = xmlsource.add(reader.getName());
 		xml.copyAttributes(xmltable);
@@ -273,7 +278,7 @@ abstract class ReaderUtil implements Reader
 
 	public final void getSubXML(LinkedHashMap<String,String> row,String prefix,XML xml) throws AdapterException
 	{
-		HashMap<String,String> attributes = xml.getAttributes();
+		Map<String,String> attributes = xml.getAttributes();
 		if (attributes == null) return;
 
 		for(Map.Entry<String,String> entry:attributes.entrySet())
@@ -296,7 +301,9 @@ abstract class ReaderUtil implements Reader
 			if (headers != null && !headers.contains(name)) headers.add(name);
 			String value = element.getValue();
 			if (value == null) value = "";
-			row.put(name,totrim ? value.trim() : value);
+			String oldvalue = row.get(name);
+			String newvalue = totrim ? value.trim() : value;
+			row.put(name,oldvalue == null ? newvalue : oldvalue + "\n" + newvalue);
 			getSubXML(row,name,element);
 		}
 	}
@@ -325,6 +332,11 @@ abstract class ReaderUtil implements Reader
 	{
 		return xmlreader;
 	}
+
+	public void close() throws IOException
+	{
+		// Nothing to close
+	}
 }
 
 class ReaderRow extends ReaderUtil
@@ -341,18 +353,18 @@ class ReaderRow extends ReaderUtil
 		rowpos = 0;
 		default_name = xml.getAttribute("default_field_name");
 
-		if (headers == null) headers = new HashSet<String>();
+		if (headers == null) headers = new HashSet<>();
 		if (default_name != null) headers.add(default_name);
 		rows = xml.getElements("row");
 		if (rows.length > 0) headers.addAll(rows[0].getAttributes().keySet());
 	}
 
 	@Override
-	public LinkedHashMap<String,String> nextRaw() throws AdapterException
+	public Map<String,String> nextRaw() throws AdapterException
 	{
 		if (rowpos >= rows.length) return null;
-		LinkedHashMap<String,String> attributes = rows[rowpos].getAttributes();
-		LinkedHashMap<String,String> result = normalizeFields(attributes);
+		Map<String,String> attributes = rows[rowpos].getAttributes();
+		Map<String,String> result = normalizeFields(attributes);
 		if (default_name != null && !attributes.containsKey(default_name))
 		{
 			String default_value = rows[rowpos].getValue();
@@ -364,7 +376,7 @@ class ReaderRow extends ReaderUtil
 	}
 }
 
-class ReaderCSV extends ReaderUtil
+class ReaderCSV extends ReaderUtil implements Closeable
 {
 	private char enclosure = '"';
 	private char delimiter = ',';
@@ -381,8 +393,8 @@ class ReaderCSV extends ReaderUtil
 		{
 			// Dates in CSV files are local
 			try {
-				Date date = Misc.dateformat.parse(value);
-				value = Misc.gmtdateformat.format(date);
+				Date date = Misc.getLocalDateFormat().parse(value);
+				value = Misc.getGmtDateFormat().format(date);
 			} catch(ParseException ex) {
 				throw new AdapterException(ex);
 			}
@@ -396,7 +408,7 @@ class ReaderCSV extends ReaderUtil
 		if (in == null) return null;
 
 		boolean inquote = false;
-		ArrayList<String> result = new ArrayList<String>();
+		ArrayList<String> result = new ArrayList<>();
 		StringBuilder sb = new StringBuilder();
 
 		try {
@@ -454,12 +466,12 @@ class ReaderCSV extends ReaderUtil
 	}
 
 	@Override
-	public LinkedHashMap<String,String> nextRaw() throws AdapterException
+	public Map<String,String> nextRaw() throws AdapterException
 	{
 		ArrayList<String> csv = readCSV();
 		if (csv == null) return null;
 
-		LinkedHashMap<String,String> row = new LinkedHashMap<String,String>();
+		LinkedHashMap<String,String> row = new LinkedHashMap<>();
 		int size = csv.size();
 		int i = 0;
 		for(String name:csvheaders)
@@ -473,7 +485,7 @@ class ReaderCSV extends ReaderUtil
 		return row;
 	}
 
-	private void initFile(String filename,String charset) throws AdapterException
+	private void initFile(String filename,String charset,CryptoBase crypto) throws AdapterException
 	{
 		if (filename == null)
 			throw new AdapterException("Filename is mandatory");
@@ -481,12 +493,19 @@ class ReaderCSV extends ReaderUtil
 		Set<Path> paths = Misc.glob(filename);
 		if (paths.size() != 1) throw new AdapterNotFoundException("File not found or multiple match: " + filename);
 		File file = new File(paths.iterator().next().toString());
-		initFile(file,charset);
+		initFile(file,charset,crypto);
 	}
 
-	private void initFile(File file,String charset) throws AdapterException
+	private void initFile(File file,String charset,CryptoBase crypto) throws AdapterException
 	{
-		in = Misc.getFileReader(file,charset);
+		if (crypto == null)
+			in = Misc.getFileReader(file,charset);
+		else
+		{
+			String content = Misc.readFile(file,charset);
+			String crypted_content = crypto.decrypt(content);
+			in = new BufferedReader(new StringReader(crypted_content));
+		}
 
 		ArrayList<String> row = readCSV();
 		if (row != null && row.size() > 0)
@@ -498,13 +517,13 @@ class ReaderCSV extends ReaderUtil
 			if (headers == null)
 			{
 				// Autodetect headers
-				headers = csvheaders = new LinkedHashSet<String>(row);
+				headers = csvheaders = new LinkedHashSet<>(row);
 				if (row.size() != csvheaders.size())
 					throw new AdapterException("Duplicated header values in CSV file " + file.getName() + ": " + Misc.findDuplicates(row));
 			}
 			else
 			{
-				ArrayList<String> commonheaders = new ArrayList<String>(row);
+				ArrayList<String> commonheaders = new ArrayList<>(row);
 				commonheaders.retainAll(headers);
 				if (commonheaders.size() == 0)
 				{
@@ -516,7 +535,7 @@ class ReaderCSV extends ReaderUtil
 				else
 				{
 					// Case where fields attribute is for limiting extracted columns
-					csvheaders = new LinkedHashSet<String>(row);
+					csvheaders = new LinkedHashSet<>(row);
 					if (row.size() != csvheaders.size())
 						throw new AdapterException("Duplicated header values in CSV file " + file.getName() + ": " + Misc.findDuplicates(row));
 				}
@@ -535,12 +554,12 @@ class ReaderCSV extends ReaderUtil
 		if (headers == null)
 		{
 			ArrayList<String> row = readCSV();
-			headers = csvheaders = new LinkedHashSet<String>(row);
+			if (row == null)
+				throw new AdapterException("CSV reader requires at least one header line or \"fields\" attribute");
+			headers = csvheaders = new LinkedHashSet<>(row);
 			if (row.size() != headers.size())
 				throw new AdapterException("Duplicated header values in CSV reader: " + Misc.findDuplicates(row));
 		}
-		if (headers == null)
-			throw new AdapterException("CSV reader requires at least one header line or \"fields\" attribute");
 
 		if (instance == null) instance = reader.getClass().getName();
 	}
@@ -557,33 +576,31 @@ class ReaderCSV extends ReaderUtil
 		if (enclosure != null) this.enclosure = enclosure.charAt(0);
 
 		String charset = xml.getAttribute("charset");
-		initFile(filename,charset);
+		CryptoBase crypto = Misc.getCipher(xml);
+		initFile(filename,charset,crypto);
 	}
 
 	public ReaderCSV(String filename,char delimiter,char enclosure) throws AdapterException
 	{
 		if (delimiter != 0) this.delimiter = delimiter;
 		if (enclosure != 0) this.enclosure = enclosure;
-		initFile(filename,null);
+		initFile(filename,null,null);
 	}
 
 	public ReaderCSV(String filename) throws AdapterException
 	{
-		initFile(filename,null);
+		initFile(filename,null,null);
 	}
 
 	public ReaderCSV(File file,String charset) throws AdapterException
 	{
-		initFile(file,charset);
+		initFile(file,charset,null);
 	}
 
-	public void close() throws AdapterException
+	@Override
+	public void close() throws IOException
 	{
-		try {
-			if (in != null) in.close();
-		} catch(IOException ex) {
-			throw new AdapterException(ex);
-		}
+		if (in != null) in.close();
 		in = null;
 	}
 }
@@ -591,7 +608,7 @@ class ReaderCSV extends ReaderUtil
 class ReaderLDAP extends ReaderUtil
 {
 	private directory ld;
-	private LinkedHashMap<String,String> first;
+	private Map<String,String> first;
 
 	private void init(String url,String context,String username,String password,String basedn,String search,String[] sortattrs,String auth,String referral,String deref,boolean notrust) throws AdapterException
 	{
@@ -609,7 +626,7 @@ class ReaderLDAP extends ReaderUtil
 				if (first == null)
 					throw new AdapterException("Processing empty LDAP content is not supported. Please set \"fields\" attribute");
 
-				headers = new HashSet<String>(first.keySet());
+				headers = new HashSet<>(first.keySet());
 			}
 			else
 				ld.search(basedn,search,headers.toArray(new String[headers.size()]));
@@ -646,9 +663,9 @@ class ReaderLDAP extends ReaderUtil
 	}
 
 	@Override
-	public LinkedHashMap<String,String> nextRaw() throws AdapterException
+	public Map<String,String> nextRaw() throws AdapterException
 	{
-		LinkedHashMap<String,String> row;
+		Map<String,String> row;
 
 		if (first == null)
 		{
@@ -702,6 +719,8 @@ class ReaderSQL extends ReaderUtil
 			conn = xml.getAttribute("instance");
 			XML sqlxml = xml.getElement("extractsql");
 			sql = sqlxml == null ? xml.getValue() : sqlxml.getValue();
+			XML endxml = xml.getElement("endingsql");
+			if (endxml != null) sql = sql + " " + endxml.getValue();
 		}
 
 		ReaderSQL build() throws AdapterException
@@ -736,9 +755,9 @@ class ReaderSQL extends ReaderUtil
 	}
 
 	@Override
-	public LinkedHashMap<String,String> nextRaw() throws AdapterException
+	public Map<String,String> nextRaw() throws AdapterException
 	{
-		LinkedHashMap<String,String> row = oper.next();
+		Map<String,String> row = oper.next();
 		if (row == null) return null;
 
 		row = normalizeFields(row);
@@ -756,7 +775,7 @@ class ReaderXML extends ReaderUtil
 	{
 		if (pos >= xmltable.length) return null;
 
-		LinkedHashMap<String,String> row = new LinkedHashMap<String,String>();
+		LinkedHashMap<String,String> row = new LinkedHashMap<>();
 		getSubXML(row,null,xmltable[pos]);
 		return row;
 	}
@@ -788,13 +807,13 @@ class ReaderXML extends ReaderUtil
 		if (first == null)
 			throw new AdapterException("Processing empty XML content is not supported. Please set \"fields\" attribute");
 
-		headers = new LinkedHashSet<String>(first.keySet());
+		headers = new LinkedHashSet<>(first.keySet());
 	}
 
 	@Override
-	public LinkedHashMap<String,String> nextRaw() throws AdapterException
+	public Map<String,String> nextRaw() throws AdapterException
 	{
-		LinkedHashMap<String,String> row = getXML(position);
+		Map<String,String> row = getXML(position);
 		if (row == null) return null;
 
 		position++;
@@ -841,7 +860,7 @@ class CacheReader implements Reader
 			Writer writer = new BufferedWriter(new OutputStreamWriter(fileoutput,"UTF8"));
 			CsvWriter csv = new CsvWriter(writer,reader.getHeader());
 
-			LinkedHashMap<String,String> row;
+			Map<String,String> row;
 			while((row = reader.next()) != null)
 				csv.write(row);
 
@@ -852,10 +871,14 @@ class CacheReader implements Reader
 		}
 	}
 
-	public LinkedHashMap<String,String> next() throws AdapterException
+	public Map<String,String> next() throws AdapterException
 	{
-		LinkedHashMap<String,String> result = csvreader.next();
-		if (result == null) close();
+		Map<String,String> result = csvreader.next();
+		try {
+			if (result == null) close();
+		} catch(IOException ex) {
+			throw new AdapterException(ex);
+		}
 		return result;
 	}
 
@@ -879,16 +902,13 @@ class CacheReader implements Reader
 		return sourcereader.toTrim();
 	}
 
-	public void close() throws AdapterException
+	@Override
+	public void close() throws IOException
 	{
-		try {
-			if (csvreader != null) csvreader.close();
-			if (fileoutput != null) fileoutput.close();
-			System.gc(); // Needed on Windows otherwise the file might not get deleted
-			if (csvfile != null) csvfile.delete();
-		} catch(IOException ex) {
-			throw new AdapterException(ex);
-		}
+		if (csvreader != null) csvreader.close();
+		if (fileoutput != null) fileoutput.close();
+		if (csvfile != null) csvfile.delete();
+		sourcereader.close();
 	}
 }
 
@@ -898,7 +918,7 @@ class SortTable implements Reader
 	private String conn;
 	private DB db = DB.getInstance();
 	private DBOper oper;
-	private TreeMap<String,LinkedHashMap<String,Set<String>>> sortedmap;
+	private TreeMap<String,Map<String,Set<String>>> sortedmap;
 	private Iterator<String> iterator;
 	private String instance;
 	private Set<String> header;
@@ -929,7 +949,7 @@ class SortTable implements Reader
 		if (tablename == null || conn == null)
 		{
 			instance = "memsort/" + reader.getName();
-			sortedmap = new TreeMap<String,LinkedHashMap<String,Set<String>>>(dbsync.getIgnoreCaseKeys() ? db.getCollatorIgnoreCase() : db.getCollator());
+			sortedmap = new TreeMap<>(dbsync.getIgnoreCaseKeys() ? db.getCollatorIgnoreCase() : db.getCollator());
 			Misc.log(7,"Initializing memory sort");
 		}
 		else
@@ -943,31 +963,39 @@ class SortTable implements Reader
 
 	public void put(Sync sync) throws AdapterException
 	{
-		LinkedHashMap<String,String> row;
+		Map<String,String> row;
 		Fields fields = dbsync.getFields();
+		boolean first = true;
+		boolean allempty = true;
+
 		while((row = fields.getNext(sync)) != null)
 		{
-			if (!row.keySet().containsAll(fields.getKeys()))
+			if (first && !row.keySet().containsAll(fields.getKeys()))
 				throw new AdapterException("Sort operation requires all keys [" + Misc.implode(fields.getKeys()) + "] while reading " + sync.getDescription() + ": " + Misc.implode(row));
-			put(row);
+			boolean isempty = put(row);
+			if (!isempty) allempty = false;
+			first = false;
 		}
+
+		if (!first && allempty)
+			throw new AdapterException("All records returned an empty key during sort operation while reading " + sync.getName() + ": " + Misc.implode(fields.getKeys()));
 	}
 
-	public void put(LinkedHashMap<String,String> row) throws AdapterException
+	public boolean put(Map<String,String> row) throws AdapterException
 	{
 		String key = dbsync.getKey(row);
-		if (key.length() == dbsync.getFields().getKeys().size()) return; // An empty key contains one ! per element
+		if (key.length() == dbsync.getFields().getKeys().size()) return true; // An empty key contains one ! per element
 
 		if (sortedmap != null)
 		{
-			LinkedHashMap<String,Set<String>> prevmap = sortedmap.get(key);
+			Map<String,Set<String>> prevmap = sortedmap.get(key);
 			if (prevmap == null)
 			{
-				prevmap = new LinkedHashMap<String,Set<String>>();
+				prevmap = new LinkedHashMap<>();
 				sortedmap.put(key,prevmap);
 			}
 			ReaderUtil.pushCurrent(row,prevmap,false);
-			return;
+			return false;
 		}
 
 		XML xml = new XML();
@@ -976,16 +1004,18 @@ class SortTable implements Reader
 		String value = xml.rootToString();
 		String sql = "insert into " + tablename + " values (" + DB.replacement + "," + DB.replacement + ")";
 
-		ArrayList<DBField> list = new ArrayList<DBField>();
+		ArrayList<DBField> list = new ArrayList<>();
 		list.add(new DBField(tablename,"key",key));
 		list.add(new DBField(tablename,"value",value));
 
 		db.execsql(conn,sql,list);
+
+		return false;
 	}
 
-	public LinkedHashMap<String,String> next() throws AdapterException
+	public Map<String,String> next() throws AdapterException
 	{
-		LinkedHashMap<String,String> row = new LinkedHashMap<String,String>();
+		Map<String,String> row = new LinkedHashMap<>();
 
 		if (sortedmap != null)
 		{
@@ -993,9 +1023,9 @@ class SortTable implements Reader
 				iterator = sortedmap.keySet().iterator();
 			if (!iterator.hasNext()) return null;
 			String key = iterator.next();
-			LinkedHashMap<String,Set<String>> map = sortedmap.get(key);
-			for(String keyrow:map.keySet())
-				row.put(keyrow,Misc.implode(map.get(keyrow),"\n"));
+			Map<String,Set<String>> map = sortedmap.get(key);
+			for(Map.Entry<String,Set<String>> entry:map.entrySet())
+				row.put(entry.getKey(),Misc.implode(entry.getValue(),"\n"));
 
 			if (Misc.isLog(15)) Misc.log("row [" + instance + "]: " + row);
 			return row;
@@ -1007,7 +1037,7 @@ class SortTable implements Reader
 			oper = db.makesqloper(conn,sql);
 		}
 
-		LinkedHashMap<String,String> result = oper.next();
+		Map<String,String> result = oper.next();
 		if (result == null)
 		{
 			db.execsql(conn,"truncate table " + tablename);
@@ -1048,33 +1078,38 @@ class SortTable implements Reader
 		return totrim;
 	}
 
-	public TreeMap<String,LinkedHashMap<String,Set<String>>> getSortedMap()
+	public TreeMap<String,Map<String,Set<String>>> getSortedMap()
 	{
 		return sortedmap;
+	}
+
+	public void close()
+	{
+		// Nothing to close
 	}
 }
 
 class ReaderJMS extends ReaderUtil
 {
-	private AdapterExtendBase jmsbase;
+	private JMSBase jmsbase;
 	private String name;
 
 	public ReaderJMS(XML xml) throws AdapterException
 	{
 		setXML(xml);
 
-		jmsbase = JMS.getInstance().getInstance(xml);
+		jmsbase = (JMSBase)JMS.getInstance().getInstance(xml);
 		name = xml.getAttribute("name");
 	}
 
 	@Override
-	public LinkedHashMap<String,String> nextRaw() throws AdapterException
+	public Map<String,String> nextRaw() throws AdapterException
 	{
 		String text = jmsbase.read(name);
 		if (text == null) return null;
 		XML xml = text.startsWith("{") && text.endsWith("}") ? new XML(new org.json.JSONObject(text)) : new XML(new StringBuilder(text));
 		xml = ProcessXML(getXML(),xml);
-		LinkedHashMap<String,String> row = new LinkedHashMap<String,String>();
+		LinkedHashMap<String,String> row = new LinkedHashMap<>();
 		getSubXML(row,null,xml);
 		return row;
 	}

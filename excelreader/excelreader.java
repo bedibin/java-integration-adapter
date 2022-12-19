@@ -8,6 +8,7 @@ import java.text.DecimalFormatSymbols;
 // Depend on library from https://poi.apache.org/
 import org.apache.poi.hssf.usermodel.HSSFWorkbook;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Cell;
@@ -29,20 +30,35 @@ class ReaderExcel extends ReaderUtil
 		File file = new File(paths.iterator().next().toString());
 		if (instance == null) instance = file.getName();
 
-		String sheetname = xml.getAttribute("worksheet");
-		Sheet worksheet;
+		Workbook workbook;
 		try {
-			try {
-				FileInputStream fis = new FileInputStream(file);
-				HSSFWorkbook workbook = new HSSFWorkbook(fis);
-				worksheet = sheetname == null ? workbook.getSheetAt(0) : workbook.getSheet(sheetname);
+			try(FileInputStream fis = new FileInputStream(file)) {
+				workbook = new HSSFWorkbook(fis);
 			} catch(OfficeXmlFileException ex) {
-				FileInputStream fis = new FileInputStream(file);
-				XSSFWorkbook workbook = new XSSFWorkbook(fis);
-				worksheet = sheetname == null ? workbook.getSheetAt(0) : workbook.getSheet(sheetname);
+				try(FileInputStream fis = new FileInputStream(file)) {
+					workbook = new XSSFWorkbook(fis);
+				}
 			}
 		} catch(IOException ex) {
 			throw new AdapterException(ex);
+		}
+
+		String sheetname = xml.getAttribute("worksheet");
+		Sheet worksheet = null;
+		if (sheetname == null)
+			worksheet = workbook.getSheetAt(0);
+		else
+		{
+			int count = workbook.getNumberOfSheets();
+			for(int x = 0;x <= workbook.getNumberOfSheets();x++)
+			{
+				String name = workbook.getSheetAt(x).getSheetName();
+				if (sheetname.equals(name) || Misc.matches(name,sheetname))
+				{
+					worksheet = workbook.getSheetAt(x);
+					break;
+				}
+			}
 		}
 
 		if (worksheet == null) throw new AdapterNotFoundException("Worksheet " + (sheetname == null ? "" : "\"" + sheetname + "\" ") + "not found in file: " + filename);
@@ -76,7 +92,7 @@ class ReaderExcel extends ReaderUtil
 		if (row == null) throw new AdapterException("Missing header row in sheet " + worksheet.getSheetName() + ": " + instance);
 		if (!rows.hasNext()) throw new AdapterException("Missing data row in sheet " + worksheet.getSheetName() + ": " + instance);
 
-		headers = new LinkedHashSet<String>();
+		headers = new LinkedHashSet<>();
 		Iterator<Cell> cells = row.iterator();
 		boolean isempty = false;
 		while (cells.hasNext())
@@ -113,7 +129,7 @@ class ReaderExcel extends ReaderUtil
 				if (HSSFDateUtil.isCellDateFormatted(cell))
 				{
 					Date date = cell.getDateCellValue();
-					value = Misc.gmtdateformat.format(date);
+					value = Misc.getGmtDateFormat().format(date);
 				} else {
 					final DecimalFormat df = new DecimalFormat("0",DecimalFormatSymbols.getInstance(Locale.ENGLISH));
 					df.setMaximumFractionDigits(340);
@@ -135,12 +151,12 @@ class ReaderExcel extends ReaderUtil
 	}
 
 	@Override
-	public LinkedHashMap<String,String> nextRaw() throws AdapterException
+	public Map<String,String> nextRaw() throws AdapterException
 	{
 		if (!rows.hasNext()) return null;
 
 		Row row = rows.next();
-		LinkedHashMap<String,String> result = new LinkedHashMap<String,String>();
+		Map<String,String> result = new LinkedHashMap<>();
 		int pos = 0;
 
 		for(String header:headers)

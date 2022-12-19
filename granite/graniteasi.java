@@ -27,7 +27,7 @@ class ASI
 	static public final String ROOTSERVICE = "RootService";
 	static public final String PARENTSERVICE = "ParentService";
 
-	public HashMap<String,HashMap<String,Object>> infoServices = new HashMap<String,HashMap<String,Object>>();
+	public HashMap<String,HashMap<String,Object>> infoServices = new HashMap<>();
 
 	public XML xml;
 	public String domain;
@@ -43,7 +43,7 @@ class ASI
 
 		init();
 
-		HashMap<String,Object> info = new HashMap<String,Object>();
+		HashMap<String,Object> info = new HashMap<>();
 		info.put(CORESERVICE,CoreServices.CABLE);
 		info.put(KEYCLASS,"generated.CableKey");
 		info.put(UDAGROUP,"OpenView - C\u00E2ble");
@@ -51,7 +51,7 @@ class ASI
 		info.put(INSTANCEID,"CableInstId");
 		infoServices.put("Cable",info);
 
-		info = new HashMap<String,Object>();
+		info = new HashMap<>();
 		info.put(CORESERVICE,CoreServices.PAIR);
 		info.put(KEYCLASS,"PairKey");
 		info.put(UDAGROUP,"OpenView - Paire/Fibre");
@@ -61,7 +61,7 @@ class ASI
 		info.put(PARENTSERVICE,"Cable");
 		infoServices.put("CablePair",info);
 
-		info = new HashMap<String,Object>();
+		info = new HashMap<>();
 		info.put(CORESERVICE,CoreServices.CARD);
 		info.put(KEYCLASS,"CardKey");
 		info.put(UDAGROUP,"OpenView - Carte");
@@ -71,7 +71,7 @@ class ASI
 		info.put(PARENTSERVICE,"Slot");
 		infoServices.put("Card",info);
 
-		info = new HashMap<String,Object>();
+		info = new HashMap<>();
 		info.put(CORESERVICE,CoreServices.SUBCARD);
 		info.put(KEYCLASS,"SubCardKey");
 		info.put(UDAGROUP,"OpenView - Carte");
@@ -81,7 +81,7 @@ class ASI
 		info.put(PARENTSERVICE,"Slot");
 		infoServices.put("SubCard",info);
 
-		info = new HashMap<String,Object>();
+		info = new HashMap<>();
 		info.put(CORESERVICE,CoreServices.CONTAINER);
 		info.put(KEYCLASS,"ContainerKey");
 		info.put(UDAGROUP,"OpenView - Equipement");
@@ -89,7 +89,7 @@ class ASI
 		info.put(INSTANCEID,"EquipInstId");
 		infoServices.put("Container",info);
 
-		info = new HashMap<String,Object>();
+		info = new HashMap<>();
 		info.put(KEYCLASS,"PathElementKey");
 		info.put(COREDATAOBJECT,CoreDataObjects.PATHELEMENT);
 		info.put(INSTANCEID,"ElementInstId");
@@ -97,7 +97,7 @@ class ASI
 		info.put(PARENTSERVICE,"Leg");
 		infoServices.put("Element",info);
 
-		info = new HashMap<String,Object>();
+		info = new HashMap<>();
 		info.put(KEYCLASS,"PathLegKey");
 		info.put(COREDATAOBJECT,CoreDataObjects.PATHLEG);
 		info.put(INSTANCEID,"LegInstId");
@@ -105,7 +105,7 @@ class ASI
 		info.put(PARENTSERVICE,"Path");
 		infoServices.put("Leg",info);
 
-		info = new HashMap<String,Object>();
+		info = new HashMap<>();
 		info.put(CORESERVICE,CoreServices.PATH);
 		info.put(KEYCLASS,"generated.PathKey");
 		info.put(UDAGROUP,"OpenView - Circuit");
@@ -113,7 +113,7 @@ class ASI
 		info.put(INSTANCEID,"CircPathInstId");
 		infoServices.put("Path",info);
 
-		info = new HashMap<String,Object>();
+		info = new HashMap<>();
 		info.put(CORESERVICE,CoreServices.PORT);
 		info.put(KEYCLASS,"PortKey");
 		info.put(UDAGROUP,"OpenView - Port");
@@ -123,7 +123,7 @@ class ASI
 		info.put(PARENTSERVICE,"Card");
 		infoServices.put("Port",info);
 
-		info = new HashMap<String,Object>();
+		info = new HashMap<>();
 		info.put(CORESERVICE,CoreServices.SEGMENT);
 		info.put(KEYCLASS,"generated.SegmentKey");
 		info.put(UDAGROUP,"OpenView - Segment");
@@ -131,7 +131,7 @@ class ASI
 		info.put(INSTANCEID,"CircInstId");
 		infoServices.put("Segment",info);
 
-		info = new HashMap<String,Object>();
+		info = new HashMap<>();
 		info.put(CORESERVICE,CoreServices.SHELF);
 		info.put(KEYCLASS,"ShelfKey");
 		info.put(UDAGROUP,"OpenView - Equipement");
@@ -139,7 +139,7 @@ class ASI
 		info.put(INSTANCEID,"EquipInstId");
 		infoServices.put("Shelf",info);
 
-		info = new HashMap<String,Object>();
+		info = new HashMap<>();
 		info.put(CORESERVICE,CoreServices.SLOT);
 		info.put(KEYCLASS,"SlotKey");
 		info.put(COREDATAOBJECT,CoreDataObjects.SLOT);
@@ -148,7 +148,7 @@ class ASI
 		info.put(PARENTSERVICE,"Shelf");
 		infoServices.put("Slot",info);
 
-		info = new HashMap<String,Object>();
+		info = new HashMap<>();
 		info.put(CORESERVICE,CoreServices.SUBCARD);
 		info.put(KEYCLASS,"SubCardKey");
 		info.put(UDAGROUP,"OpenView - Carte");
@@ -158,7 +158,7 @@ class ASI
 		info.put(PARENTSERVICE,"Slot");
 		infoServices.put("SubCard",info);
 
-		info = new HashMap<String,Object>();
+		info = new HashMap<>();
 		info.put(CORESERVICE,CoreServices.SITE);
 		info.put(KEYCLASS,"generated.SiteKey");
 		info.put(UDAGROUP,"OpenView - Site");
@@ -232,7 +232,7 @@ class ASI
 		String[] ids = objectid.split("\\\\");
 		if (ids.length < 3) return null;
 
-		Long idnum = new Long(ids[2]);
+		Long idnum = Long.parseLong(ids[2]);
 		if (idnum == 0) return null;
 
 		return idnum;
@@ -301,7 +301,7 @@ class ASI
 		if (licensexml == null) return;
 
 		String delaystr = licensexml.getAttribute("delay");
-		int delay = (delaystr == null) ? 0 : new Integer(delaystr);
+		int delay = (delaystr == null) ? 0 : Integer.parseInt(delaystr);
 
 		Thread.sleep(delay);
 
@@ -414,7 +414,7 @@ class ASIobject
 
 	private HashMap<String,Object> getAllAttributesImpl() throws Exception
 	{
-		HashMap<String,Object> result = new HashMap<String,Object>();
+		HashMap<String,Object> result = new HashMap<>();
 
 		Method[] methods = object.getClass().getMethods();
 		for (int i = 0;i < methods.length;i++)
@@ -491,11 +491,11 @@ class ASIobject
 
 			if (Misc.isLog(9)) Misc.log("Name: " + name + ", object: " + object.getClass().getName() + ", value: " + value.getClass().getName() + " , param: " + type);
 			if (type.equals("long") && value instanceof String)
-				setAttribute(method,new Long((String)value));
+				setAttribute(method,Long.parseLong((String)value));
 			else if (type.equals("int") && value instanceof String)
-				setAttribute(method,new Integer((String)value));
+				setAttribute(method,Integer.parseInt((String)value));
 			else if (type.equals("double") && value instanceof String)
-				setAttribute(method,new Double((String)value));
+				setAttribute(method,Double.parseDouble((String)value));
 			else
 				setAttribute(method,value);
 			return;
@@ -531,7 +531,7 @@ class ASIobject
 		}
 
 		if (parentInfoService != null && name.equals(parentInfoService.get(ASI.INSTANCEID)))
-			parentId = new Long(value);
+			parentId = Long.parseLong(value);
 
 		setAttributeImpl(name,(Object)value);
 	}
@@ -593,11 +593,11 @@ class ASIobject
 				{
 					if (Misc.isLog(5)) Misc.log("Parent field found");
 					ASIobject parentObject = new ASIobject((String)infoService.get(ASI.PARENTSERVICE),parentId);
-					rootId = new Long(parentObject.getAttribute((String)rootInfoService.get(ASI.INSTANCEID)));
+					rootId = Long.parseLong(parentObject.getAttribute((String)rootInfoService.get(ASI.INSTANCEID)));
 				}
 			}
 			else
-				rootId = new Long(getAttribute((String)rootInfoService.get(ASI.INSTANCEID)));
+				rootId = Long.parseLong(getAttribute((String)rootInfoService.get(ASI.INSTANCEID)));
 
 			if (rootId != null)
 			{

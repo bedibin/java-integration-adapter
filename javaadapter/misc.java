@@ -73,7 +73,7 @@ class AdapterNotFoundException extends AdapterException
 class Rate
 {
 	private int counter;
-	private long start_time;
+	private long startTime;
 	private double max;
 	private NumberFormat formatter = new DecimalFormat("#0.0000");
 
@@ -81,17 +81,17 @@ class Rate
 	{
 		counter = 0;
 		max = 0;
-		start_time = (new Date()).getTime();
+		startTime = (new Date()).getTime();
 	}
 
 	public String toString()
 	{
 		counter++;
-		double delay = ((new Date()).getTime() - start_time) / 1000;
+		long delay = ((new Date()).getTime() - startTime) / 1000;
 		if (delay < 1) delay = 1;
-		double current_rate = counter / delay;
-		if (current_rate > max) max = current_rate;
-		return formatter.format(current_rate);
+		long currentRate = counter / delay;
+		if (currentRate > max) max = currentRate;
+		return formatter.format(currentRate);
 	}
 
 	public String getMax()
@@ -101,7 +101,7 @@ class Rate
 
 	public String getCount()
 	{
-		return (new Integer(counter)).toString();
+		return String.valueOf(counter);
 	}
 }
 
@@ -119,13 +119,61 @@ class Tuple<T>
 	{
 		return this.list[idx];
 	}
+
+	@Override
+	public boolean equals(Object obj)
+	{
+		if (!(obj instanceof Tuple)) return false;
+		return Arrays.asList(list).equals(Arrays.asList(((Tuple)obj).list));
+	}
+
+	@Override
+	public String toString()
+	{
+		return "(" + Misc.implode(list) + ")";
+	}
+}
+
+class CacheManager<T>
+{
+	private class CacheResult<T>
+	{
+		long time;
+		T result;
+	}
+
+	private HashMap<String, CacheResult<T>> cache = new HashMap<>();
+	private long time = 15 * 60 * 1000; // Default 15 minutes
+
+	CacheManager() {}
+	CacheManager(long time)
+	{
+		this.time = time;
+	}
+
+	T get(String name)
+	{
+		CacheResult<T> current = cache.get(name);
+		if (current == null) return null;
+		if (System.currentTimeMillis() - time > current.time) return null;
+		current.time = System.currentTimeMillis();
+		return current.result;
+	}
+
+	void set(String name,T result)
+	{
+		CacheResult<T> current = cache.get(name);
+		if (current == null) current = new CacheResult<T>();
+		current.time = System.currentTimeMillis();
+		current.result = result;
+		cache.put(name,current);
+	}
 }
 
 class StreamGobbler implements Runnable
 {
 	private String name;
 	private InputStream is;
-	private Thread thread;
 	private int loglevel;
 	private String charset;
 
@@ -161,7 +209,7 @@ class StreamGobbler implements Runnable
 
 	public void start()
 	{
-		thread = new Thread(this);
+		Thread thread = new Thread(this);
 		thread.start();
 	}
 
@@ -197,8 +245,6 @@ class StreamGobbler implements Runnable
 class Misc
 {
 	public static final String DATEFORMAT = "yyyy-MM-dd HH:mm:ss";
-	public static final SimpleDateFormat dateformat = new SimpleDateFormat(DATEFORMAT);
-	public static SimpleDateFormat gmtdateformat;
 	public static final TimeZone gmttimezone = TimeZone.getTimeZone("UTC");
 	public static final String CR = System.getProperty("line.separator");
 
@@ -208,7 +254,7 @@ class Misc
 
 	private static int loglevel = 1;
 	private static boolean trace = false;
-	private static HashSet<String> tracearray = new HashSet<String>();
+	private static HashSet<String> tracearray = new HashSet<>();
 	private static long maxsize = 0;
 	private static String loglevelprop = System.getProperty("javaadapter.log.level");
 	private static String logmaxsizeprop = System.getProperty("javaadapter.log.maxsize");
@@ -221,13 +267,33 @@ class Misc
 
 	private Misc() {}
 
-	static
+	private static ThreadLocal<SimpleDateFormat> gmtDateFormat = new ThreadLocal<SimpleDateFormat>()
 	{
-		gmtdateformat = new SimpleDateFormat(DATEFORMAT);
-		gmtdateformat.setTimeZone(gmttimezone);
+		@Override
+		protected SimpleDateFormat initialValue() {
+			SimpleDateFormat gmtdateformat = new SimpleDateFormat(DATEFORMAT);
+			gmtdateformat.setTimeZone(gmttimezone);
+			return gmtdateformat;
+		}
+	};
+
+	private static ThreadLocal<SimpleDateFormat> localDateFormat = new ThreadLocal<SimpleDateFormat>()
+	{
+		@Override
+		protected SimpleDateFormat initialValue() {
+			return new SimpleDateFormat(DATEFORMAT);
+		}
+	};
+
+	public static SimpleDateFormat getLocalDateFormat() {
+		return localDateFormat.get();
 	}
 
-	static public String getHostName()
+	public static SimpleDateFormat getGmtDateFormat() {
+		return gmtDateFormat.get();
+	}
+
+	public static String getHostName()
 	{
 		try
 		{
@@ -241,7 +307,7 @@ class Misc
 		}
 	}
 
-	static private void setLogInfo(XML xmlconfig) throws AdapterXmlException
+	private static void setLogInfo(XML xmlconfig) throws AdapterXmlException
 	{
 		XML logxml = xmlconfig.getElement("logfile");
 		if (logxml != null)
@@ -252,14 +318,15 @@ class Misc
 			if (logmaxsizeprop == null) logmaxsizeprop = logxml.getAttribute("maxsize");
 		}
 
-		if (loglevelprop != null) loglevel = new Integer(loglevelprop);
-		if (logmaxsizeprop != null) maxsize = new Long(logmaxsizeprop);
+		if (loglevelprop != null) loglevel = Integer.parseInt(loglevelprop);
+		if (logmaxsizeprop != null) maxsize = Long.parseLong(logmaxsizeprop);
 	}
 
-	static public void initXML(XML xmlconfig) throws AdapterXmlException
+	public static void setConfig(XML xmlconfig) throws AdapterXmlException
 	{
 		if (hostname == null || "".equals(hostname)) hostname = getHostName();
 
+		xmlconfig.setInclude();
 		setLogInfo(xmlconfig);
 		XML.setDefaults(xmlconfig);
 
@@ -270,58 +337,63 @@ class Misc
 			if (name == null) continue;
 			String value = xml.getValueCrypt();
 			if (Misc.isLog(5)) Misc.log("Setting property " + name + " with value " + value);
-			System.setProperty(name,value);
+			System.setProperty(name,value == null ? "" : value);
 		}
 	}
 
-	static public String getGMTDate(java.util.Date date)
+	public static String getGMTDate(java.util.Date date)
 	{
-		return gmtdateformat.format(date);
+		return getGmtDateFormat().format(date);
 	}
 
-	static public String getGMTDate()
+	public static String getGMTDate()
 	{
 		return getGMTDate(new java.util.Date());
 	}
 
-	static public String getLocalDate(java.util.Date date)
+	public static String getLocalDate(Calendar calendar)
 	{
-		return dateformat.format(date);
+		return getLocalDateFormat().format(calendar.getTime());
 	}
 
-	static public String getLocalDate()
+	public static String getLocalDate(java.util.Date date)
+	{
+		return getLocalDateFormat().format(date);
+	}
+
+	public static String getLocalDate()
 	{
 		return getLocalDate(new java.util.Date());
 	}
 
-	static public void setTrace(String name)
+	public static void setTrace(String name)
 	{
 		tracearray.add(name);
 		trace = true;
 	}
 
-	static public void clearTrace(String name)
+	public static void clearTrace(String name)
 	{
 		tracearray.remove(name);
 		trace = !tracearray.isEmpty();
 	}
 
-	static public void setLogTag(String tag)
+	public static void setLogTag(String tag)
 	{
 		logtag = tag;
 	}
 
-	static public boolean isLog(int level)
+	public static boolean isLog(int level)
 	{
 		return (level <= loglevel || trace);
 	}
 
-	static public void log(String message,Object... args)
+	public static void log(String message,Object... args)
 	{
 		log(1,message,args);
 	}
 
-	static public void log(int level,String message,Object... args)
+	public static void log(int level,String message,Object... args)
 	{
 		if (level > loglevel && !trace) return;
 		if (message == null) return;
@@ -359,29 +431,30 @@ class Misc
 				file = new File(javaadapter.getCurrentDir(),filename);
 			}
 
-			FileOutputStream stream = new FileOutputStream(file,true);
-			OutputStreamWriter out = logcharset == null ? new OutputStreamWriter(stream) : new OutputStreamWriter(stream,logcharset);
-			out.write(text,0,text.length());
-			out.close();
-			stream.close();
+			try (
+				FileOutputStream stream = new FileOutputStream(file,true);
+				OutputStreamWriter out = logcharset == null ? new OutputStreamWriter(stream) : new OutputStreamWriter(stream,logcharset);
+			) {
+				out.write(text,0,text.length());
+			}
 		}
 		catch(IOException ex)
 		{
 		}
 	}
 
-	static public void log(Thread thread)
+	public static void log(Thread thread)
 	{
 		StringBuilder error = new StringBuilder("Current stack trace:" + CR);
 
-		StackTraceElement el[] = thread.getStackTrace();
+		StackTraceElement[] el = thread.getStackTrace();
 		for(int i = 1;i < el.length;i++)
 			error.append("\t" + el[i].toString() + CR);
 
 		log(1,error.toString());
 	}
 
-	static public void log(Throwable ex)
+	public static void log(Throwable ex)
 	{
 		StringBuilder error = new StringBuilder();
 
@@ -389,7 +462,7 @@ class Misc
 		{
 			if (cause != ex) error.append(CR + "Caused by:" + CR);
 			error.append(cause.toString() + CR);
-			StackTraceElement el[] = cause.getStackTrace();
+			StackTraceElement[] el = cause.getStackTrace();
 			for(int i = 0;i < el.length;i++)
 				error.append("\t" + el[i].toString() + CR);
 		}
@@ -397,7 +470,7 @@ class Misc
 		if (loglevel >= 20)
 		{
 			error.append(CR + "Catched by:" + CR);
-			StackTraceElement el[] = Thread.currentThread().getStackTrace();
+			StackTraceElement[] el = Thread.currentThread().getStackTrace();
 			for(int i = 1;i < el.length;i++)
 				error.append("\t" + el[i].toString() + CR);
 		}
@@ -405,138 +478,208 @@ class Misc
 		log(1,error.toString());
 	}
 
-	static public void toFile(String filename,String text,String charset,boolean append) throws AdapterException
+	public static void toFile(String filename,String text,String charset,boolean append) throws AdapterException
 	{
 		try {
 			File file = new File(javaadapter.getCurrentDir(),filename);
-			FileOutputStream stream = new FileOutputStream(file,append);
-			OutputStreamWriter out = charset == null ? new OutputStreamWriter(stream) : new OutputStreamWriter(stream,charset);
-			out.write(text,0,text.length());
-			out.close();
-			stream.close();
+			try (
+				FileOutputStream stream = new FileOutputStream(file,append);
+				OutputStreamWriter out = charset == null ? new OutputStreamWriter(stream) : new OutputStreamWriter(stream,charset);
+			) {
+				out.write(text,0,text.length());
+			}
 		} catch(IOException ex) {
 			throw new AdapterException(ex);
 		}
 	}
 
-	static public BufferedReader getFileReader(File file,String default_charset) throws AdapterException
+	public static BufferedReader getFileReader(File file,String defaultcharset) throws AdapterException
 	{
-		byte bom[] = new byte[4];
+		byte[] bom = new byte[4];
 
-		try {
-			FileInputStream fis = new FileInputStream(file);
-			int read = fis.read(bom);
-
+		try (FileInputStream fis = new FileInputStream(file)) {
 			// Try to auto-detect character set. See: http://www.unicode.org/faq/utf_bom.html#bom1
 			String charset = null;
-			int bom_size = 0;
+			int bomsize = 0;
+
+			int read = fis.read(bom);
 			if (read >= 4 && bom[0] == (byte)0xFF && bom[1] == (byte)0xFE && bom[2] == (byte)0x00 && bom[3] == (byte)0x00)
 			{
 				charset = "UTF-32LE";
-				bom_size = 4;
+				bomsize = 4;
 			}
 			else if (read >= 4 && bom[0] == (byte)0x00 && bom[1] == (byte)0x00 && bom[2] == (byte)0xFE && bom[3] == (byte)0xFF)
 			{
 				charset = "UTF-32BE";
-				bom_size = 4;
+				bomsize = 4;
 			}
 			else if (read >= 3 && bom[0] == (byte)0xEF && bom[1] == (byte)0xBB && bom[2] == (byte)0xBF)
 			{
 				charset = "UTF-8";
-				bom_size = 3;
+				bomsize = 3;
 			}
 			else if (read >= 2 && bom[0] == (byte)0xFF && bom[1] == (byte)0xFE)
 			{
 				charset = "UTF-16LE";
-				bom_size = 2;
+				bomsize = 2;
 			}
 			else if (read >= 2 && bom[0] == (byte)0xFE && bom[1] == (byte)0xFF)
 			{
 				charset = "UTF-16BE";
-				bom_size = 2;
+				bomsize = 2;
 			}
 
-			if (charset != null && default_charset != null && !charset.equalsIgnoreCase(default_charset))
-				throw new IOException("Detected charset " + charset + " for file '" + file.getName() + "' but " + default_charset + " is specified");
+			if (charset != null && defaultcharset != null && !charset.equalsIgnoreCase(defaultcharset))
+				throw new AdapterException("Detected charset " + charset + " for file '" + file.getName() + "' but " + defaultcharset + " is specified");
 
-			if (charset == null) charset = default_charset;
+			if (charset == null) charset = defaultcharset;
 			if (charset == null) charset = "ISO-8859-1";
 
-			fis = new FileInputStream(file);
-			if (bom_size > 0) fis.skip(bom_size);
+			FileInputStream fisnobom = new FileInputStream(file);
+			if (bomsize > 0)
+			{
+				long size = fisnobom.skip(bomsize);
+				if (size < bomsize) throw new AdapterException("File '" + file.getName() + "' too small");
+			}
 
-			return new BufferedReader(new InputStreamReader(fis,charset));
+			return new BufferedReader(new InputStreamReader(fisnobom,charset));
 		} catch(IOException ex) {
 			throw new AdapterException(ex);
 		}
 	}
 
-	static public String readFile(String filename)
+	public static CryptoBase getCipher(XML xml) throws AdapterException
 	{
-		try
-		{
-			InputStreamReader in = new InputStreamReader(new FileInputStream(new File(javaadapter.getCurrentDir(),filename)),"ISO-8859-1");
-			StringBuilder text = new StringBuilder();
+		String cipher = xml.getAttribute("filename_cipher");
+		if (cipher == null) return null;
 
-			int ch = in.read();
-			while (ch != -1)
-			{
-				text.append((char)ch);
-				ch = in.read();
-			}
+		CryptoBase crypto = Crypto.getCryptoInstance(cipher);
+		if (crypto == null)
+			throw new AdapterException(xml,"Cipher '" + cipher + "' not supported");
+		return crypto;
+	}
 
-			in.close();
+	public static String readFile(XML xml) throws AdapterException
+	{
+		String filename = xml.getAttribute("filename");
+		if (filename == null)
+			throw new AdapterException(xml,"Reading a file requires a 'filename' attribute");
+		String charset = xml.getAttribute("filename_charset");
+		if (charset == null) charset = xml.getAttribute("charset");
+		String content = readFile(filename,charset);
 
-			return text.toString();
-		}
-		catch(IOException ex)
-		{
-			return null;
+		CryptoBase crypto = getCipher(xml);
+		if (crypto == null) return content;
+		return crypto.decrypt(content);
+	}
+
+	public static byte[] inputStreamToBytes(InputStream is) throws IOException
+	{
+		ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+		int count;
+		byte[] data = new byte[16384];
+		while ((count = is.read(data,0,data.length)) != -1)
+			buffer.write(data,0,count);
+		return buffer.toByteArray();
+	}
+
+	public static String readFile(String filename) throws AdapterException
+	{
+		return readFile(filename,null);
+	}
+
+	public static String readFile(String filename,String charset) throws AdapterException
+	{
+		return readFile(new File(javaadapter.getCurrentDir(),filename),charset);
+	}
+
+	public static String readFile(File file,String charset) throws AdapterException
+	{
+		try (BufferedReader reader = getFileReader(file,charset)) {
+			return readFile(reader);
+		} catch(IOException ex) {
+			throw new AdapterException(ex);
 		}
 	}
 
-	static public String implode(String sep,String... strings)
+	public static String readFile(BufferedReader reader) throws AdapterException
+	{
+		try {
+			StringBuilder text = new StringBuilder();
+
+			int ch;
+			while ((ch = reader.read()) != -1)
+				text.append((char)ch);
+
+			return text.toString();
+		} catch(IOException ex) {
+			throw new AdapterException(ex);
+		}
+	}
+
+	public static String implode(String sep,Object... strings)
 	{
 		StringBuilder out = new StringBuilder();
 		String currentsep = "";
 
-		for(String string:strings)
+		for(Object string:strings)
 		{
 			if (string == null) continue;
-			out.append(currentsep + string);
+			out.append(currentsep + string.toString());
 			currentsep = sep;
 		}
 
 		return out.toString();
 	}
 
-	static public String implode(String[] strings)
+	public static String implode(Object[] strings)
 	{
 		return implode(strings,",");
 	}
 
-	static public String implode(String[] strings,String sep)
+	public static String implode(Object[] strings,String sep)
 	{
 		StringBuilder out = new StringBuilder();
 		String currentsep = "";
 
-		for(String string:strings)
+		for(Object string:strings)
 		{
 			if (string == null) continue;
 			out.append(currentsep);
-			out.append(string);
+			out.append(string.toString());
 			currentsep = sep;
 		}
 
 		return out.toString();
 	}
 
-	static public String implode(Iterable<String> strings)
+	public static String implode(Iterator<String> strings)
 	{
 		return implode(strings,",");
 	}
 
-	static public String implode(Iterable<String> strings,String sep)
+	public static String implode(Iterator<String> strings,String sep)
+	{
+		StringBuilder sb = new StringBuilder();
+		String currentsep = "";
+
+		while(strings.hasNext())
+		{
+			String string = strings.next();
+			sb.append(currentsep);
+			sb.append(string);
+			currentsep = sep;
+		}
+
+		return sb.toString();
+	}
+
+	public static String implode(Iterable<String> strings)
+	{
+		return implode(strings,",");
+	}
+
+	public static String implode(Iterable<String> strings,String sep)
 	{
 		StringBuilder sb = new StringBuilder();
 		String currentsep = "";
@@ -552,22 +695,22 @@ class Misc
 		return sb.toString();
 	}
 
-	static public String implode(Map<String,String> map)
+	public static String implode(Map<String,String> map)
 	{
 		return implode(map,null,",");
 	}
 
-	static public String implode(Map<String,String> map,String sep)
+	public static String implode(Map<String,String> map,String sep)
 	{
 		return implode(map,null,sep);
 	}
 
-	static public String implode(Map<String,String> map,Set<String> keys)
+	public static String implode(Map<String,String> map,Set<String> keys)
 	{
 		return implode(map,keys,",");
 	}
 
-	static public String implode(Map<String,String> map,Set<String> keys,String sep)
+	public static String implode(Map<String,String> map,Set<String> keys,String sep)
 	{
 		StringBuilder out = new StringBuilder();
 		String currentsep = "";
@@ -587,8 +730,8 @@ class Misc
 
 	public static <T> Set<T> findDuplicates(Collection<T> list)
 	{
-		Set<T> duplicates = new HashSet<T>();
-		Set<T> uniques = new HashSet<T>();
+		Set<T> duplicates = new HashSet<>();
+		Set<T> uniques = new HashSet<>();
 
 		for(T t:list)
 			if(!uniques.add(t)) duplicates.add(t);
@@ -640,7 +783,7 @@ class Misc
 		return true;
 	}
 
-	static public int indexOf(Object[] list,Object value)
+	public static int indexOf(Object[] list,Object value)
 	{
 		for(int i = 0;i < list.length;i++)
 		{
@@ -649,7 +792,7 @@ class Misc
 		return -1;
 	}
 
-	static public int indexOfIgnoreCase(String[] list,String value)
+	public static int indexOfIgnoreCase(String[] list,String value)
 	{
 		for(int i = 0;i < list.length;i++)
 		{
@@ -658,25 +801,25 @@ class Misc
 		return -1;
 	}
 
-	static public boolean endsWithIgnoreCase(String str,String end)
+	public static boolean endsWithIgnoreCase(String str,String end)
 	{
-		int str_size = str.length();
-		int end_size = end.length();
-		if (end_size > str_size) return false;
-		return str.substring(str_size - end_size).equalsIgnoreCase(end);
+		int strsize = str.length();
+		int endsize = end.length();
+		if (endsize > strsize) return false;
+		return str.substring(strsize - endsize).equalsIgnoreCase(end);
 	}
 
-	static public Object newObject(String object) throws AdapterException
+	public static Object newObject(String object) throws AdapterException
 	{
 		try {
 			Class<?> cl = Class.forName(object);
-			return cl.newInstance();
-		} catch(IllegalAccessException | InstantiationException | ClassNotFoundException ex) {
+			return cl.getDeclaredConstructor().newInstance();
+		} catch(InvocationTargetException | NoSuchMethodException | IllegalAccessException | InstantiationException | ClassNotFoundException ex) {
 			throw new AdapterException(ex);
 		}
 	}
 
-	static public Object newObject(String object,Object... args) throws AdapterException
+	public static Object newObject(String object,Object... args) throws AdapterException
 	{
 		try {
 			Class<?>[] types = new Class[args.length];
@@ -691,7 +834,7 @@ class Misc
 		}
 	}
 
-	static public Object invokeStatic(String object,String name,Object... args) throws AdapterException
+	public static Object invokeStatic(String object,String name,Object... args) throws AdapterException
 	{
 		Class<?>[] types = new Class[args.length];
 		for(int i = 0;i < args.length;i++)
@@ -709,16 +852,16 @@ class Misc
 		}
 	}
 
-	static public Object invoke(String object,String name,Object... args) throws AdapterException
+	public static Object invoke(String object,String name,Object... args) throws AdapterException
 	{
 		try {
-			return invoke(Class.forName(object).newInstance(),name,args);
-		} catch(IllegalAccessException | InstantiationException | ClassNotFoundException ex) {
+			return invoke(Class.forName(object).getDeclaredConstructor().newInstance(),name,args);
+		} catch(InvocationTargetException | NoSuchMethodException | IllegalAccessException | InstantiationException | ClassNotFoundException ex) {
 			throw new AdapterException(ex);
 		}
 	}
 
-	static public Object invoke(Object object,String name,Object... args) throws AdapterException
+	public static Object invoke(Object object,String name,Object... args) throws AdapterException
 	{
 		Class<?>[] types = new Class[args.length];
 		for(int i = 0;i < args.length;i++)
@@ -735,7 +878,7 @@ class Misc
 		}
 	}
 
-	static public Class getClass(String name) throws AdapterException
+	public static Class getClass(String name) throws AdapterException
 	{
 		try {
 			return Class.forName(name);
@@ -744,7 +887,7 @@ class Misc
 		}
 	}
 
-	static public Method getMethod(Object object,String name,Object... args)
+	public static Method getMethod(Object object,String name,Object... args)
 	{
 		Class<?>[] types = new Class[args.length];
 		for(int i = 0;i < args.length;i++)
@@ -752,12 +895,11 @@ class Misc
 
 		try
 		{
-			Method method = object.getClass().getMethod(name,types);
-			return method;
+			return object.getClass().getMethod(name,types);
 		}
 		catch(NoSuchMethodException ex)
 		{
-			Method methods[] = object.getClass().getMethods();
+			Method[] methods = object.getClass().getMethods();
 			for(Method method:methods)
 			{
 				if (!name.equals(method.getName())) continue;
@@ -782,7 +924,7 @@ class Misc
 		}
 	}
 
-	static public XML checkActivate(XML xml) throws AdapterXmlException
+	public static XML checkActivate(XML xml) throws AdapterXmlException
 	{
 		if (xml == null) return null;
 
@@ -793,7 +935,7 @@ class Misc
 		if (hostact == null) return xml;
 
 		String[] hosts = hostact.split("\\s*,\\s*");
-		boolean has_positive = false;
+		boolean haspositive = false;
 
 		for(String host:hosts)
 		{
@@ -804,14 +946,14 @@ class Misc
 			else
 			{
 				if (host.equalsIgnoreCase(hostname)) return xml;
-				has_positive = true;
+				haspositive = true;
 			}
 		}
 
-		return has_positive ? null : xml;
+		return haspositive ? null : xml;
 	}
 
-	static public boolean isFilterPass(XML xmlelement,XML xml) throws AdapterXmlException
+	public static boolean isFilterPass(XML xmlelement,XML xml) throws AdapterXmlException
 	{
 		if (xmlelement == null) return true;
 
@@ -824,7 +966,7 @@ class Misc
 		return result == expectedresult;
 	}
 
-	static public boolean isFilterPass(XML xmlelement,String value) throws AdapterXmlException
+	public static boolean isFilterPass(XML xmlelement,String value) throws AdapterXmlException
 	{
 		if (xmlelement == null) return true;
 
@@ -837,19 +979,18 @@ class Misc
 		if (Misc.isLog(30)) Misc.log("isFilterPass checking " + filter + " against: " + value);
 		Pattern pattern = Pattern.compile(filter);
 		Matcher matcher = pattern.matcher(value);
-		if (matcher.find() != result) return false;
 
-		return true;
+		return matcher.find() == result;
 	}
 
-	static public boolean isFilterPass(XML xmlelement,Map<String,String> map) throws AdapterXmlException
+	public static boolean isFilterPass(XML xmlelement,Map<String,String> map) throws AdapterXmlException
 	{
 		return isFilterPass(xmlelement,implode(map));
 	}
 
-	static public ArrayList<Subscriber> initSubscribers(XML xml) throws AdapterException
+	public static List<Subscriber> initSubscribers(XML xml) throws AdapterException
 	{
-		ArrayList<Subscriber> sublist = new ArrayList<Subscriber>();
+		ArrayList<Subscriber> sublist = new ArrayList<>();
 
 		XML[] classlist = xml.getElements("class");
 		for(XML el:classlist)
@@ -869,7 +1010,7 @@ class Misc
 		return sublist;
 	}
 
-	static public void initHooks(XML xml,ArrayList<Hook> hooklist) throws AdapterException
+	public static void initHooks(XML xml,List<Hook> hooklist) throws AdapterException
 	{
 		String interval = xml.getAttribute("interval");
 
@@ -891,7 +1032,7 @@ class Misc
 		}
 	}
 
-	static public void activateSubscribers(ArrayList<Subscriber> sublist) throws AdapterException
+	public static void activateSubscribers(List<Subscriber> sublist) throws AdapterException
 	{
 		for(int i = 0;i < sublist.size();i++)
 		{
@@ -901,10 +1042,10 @@ class Misc
 			if (classname == null) continue;
 
 			try {
-				Subscriber newsub = (Subscriber)Class.forName(classname).newInstance();
+				Subscriber newsub = (Subscriber)Class.forName(classname).getDeclaredConstructor().newInstance();
 				newsub.setOperation(sub);
 				sublist.set(i,newsub);
-			} catch(IllegalAccessException | InstantiationException | ClassNotFoundException ex) {
+			} catch(InvocationTargetException | NoSuchMethodException | IllegalAccessException | InstantiationException | ClassNotFoundException ex) {
 				throw new AdapterException(ex);
 			}
 		}
@@ -912,18 +1053,18 @@ class Misc
 		javaadapter.setForShutdown(sublist);
 	}
 
-	static public <T extends Exception> void rethrow(T ex,String message,Object... args) throws T
+	public static <T extends Exception> void rethrow(T ex,String message,Object... args) throws T
 	{
 		log(1,message,args);
 		rethrow(ex);
 	}
 
-	static public <T extends Exception> void rethrow(T ex) throws T
+	public static <T extends Exception> void rethrow(T ex) throws T
 	{
 		throw ex;
 	}
 
-	static public void activateHooks(ArrayList<Hook> hooklist) throws AdapterException
+	public static void activateHooks(List<Hook> hooklist) throws AdapterException
 	{
 		for(int i = 0;i < hooklist.size();i++)
 		{
@@ -933,10 +1074,10 @@ class Misc
 			if (classname == null) continue;
 
 			try {
-				Hook newhook = (Hook)Class.forName(classname).newInstance();
+				Hook newhook = (Hook)Class.forName(classname).getDeclaredConstructor().newInstance();
 				newhook.setOperation(hook);
 				hooklist.set(i,newhook);
-			} catch(IllegalAccessException | InstantiationException | ClassNotFoundException ex) {
+			} catch(InvocationTargetException | NoSuchMethodException | IllegalAccessException | InstantiationException | ClassNotFoundException ex) {
 				throw new AdapterException(ex);
 			}
 		}
@@ -947,12 +1088,12 @@ class Misc
 		javaadapter.setForShutdown(hooklist);
 	}
 
-	static public Process exec(String cmd) throws AdapterException
+	public static Process exec(String cmd) throws AdapterException
 	{
 		return exec(cmd,null);
 	}
 
-	static public String exec(String cmd,String charset,String input) throws IOException
+	public static String exec(String cmd,String charset,String input) throws IOException
 	{
 		Process process = Misc.execProcess(cmd);
 		if (process == null) return null;
@@ -992,7 +1133,7 @@ class Misc
 		return(new String(sbout));
 	}
 
-	static public Process exec(String cmd,String charset) throws AdapterException
+	public static Process exec(String cmd,String charset) throws AdapterException
 	{
 		try {
 			Process process = execProcess(cmd);
@@ -1009,14 +1150,14 @@ class Misc
 		}
 	}
 
-	static private Process execProcess(String cmd) throws IOException
+	private static Process execProcess(String cmd) throws IOException
 	{
 		if (cmd == null) return null;
 
 		if (env == null)
 		{
 			Map<String,String> mapenv = System.getenv();
-			ArrayList<String> list = new ArrayList<String>();
+			ArrayList<String> list = new ArrayList<>();
 
 			for(Map.Entry<String,String> entry:mapenv.entrySet())
 			{
@@ -1034,14 +1175,8 @@ class Misc
 
 		String[] cmds = {"/bin/sh","-c",cmd};
 		String currentdir = javaadapter.getCurrentDir();
-		Process process = Runtime.getRuntime().exec(cmds,env,currentdir == null ? null : new File(currentdir));
 
-		return process;
-	}
-
-	public static String strftime(String str,Date date)
-	{
-		return strftime(str,date,null);
+		return Runtime.getRuntime().exec(cmds,env,currentdir == null ? null : new File(currentdir));
 	}
 
 	private static String formatdate(String format,Date date,TimeZone tz)
@@ -1049,6 +1184,11 @@ class Misc
 		SimpleDateFormat df = new SimpleDateFormat(format);
 		if (tz != null) df.setTimeZone(tz);
 		return df.format(date);
+	}
+
+	public static String strftime(String str,Date date)
+	{
+		return strftime(str,date,null);
 	}
 
 	public static String strftime(String str,Date date,TimeZone tz)
@@ -1166,7 +1306,7 @@ class Misc
 						int value = Integer.parseInt(unicode.toString(), 16);
 						out.append((char)value);
 					}
-					catch(Exception ex) { }
+					catch(NumberFormatException ex) { }
 					unicode.setLength(0);
 					inUnicode = false;
 					hadSlash = false;
@@ -1232,12 +1372,12 @@ class Misc
 	public static Set<String> arrayToSet(String[] obj)
 	{
 		if (obj == null) return null;
-		return new LinkedHashSet<String>(Arrays.asList(obj));
+		return new LinkedHashSet<>(Arrays.asList(obj));
 	}
 
-	public static ArrayList<String> getKeyValueList(Set<String> keys,Map<String,String> map)
+	public static List<String> getKeyValueList(Set<String> keys,Map<String,String> map)
 	{
-		ArrayList<String> result = new ArrayList<String>();
+		ArrayList<String> result = new ArrayList<>();
 		for(String key:keys)
 		{
 			String value = map.get(key);
@@ -1250,8 +1390,8 @@ class Misc
 
 	public static String getKeyValue(Set<String> keys,Map<String,String> map)
 	{
-		ArrayList<String> result = getKeyValueList(keys,map);
-		return result.size() == 0 ? null : implode(result);
+		List<String> result = getKeyValueList(keys,map);
+		return result.isEmpty() ? null : implode(result);
 	}
 
 	public static String getStringValue(String text)
@@ -1299,12 +1439,6 @@ class Misc
 		return substitute(substitutepattern,str,sub);
 	}
 
-	private static String substituteEscape(String str)
-	{
-		if (str == null) return null;
-		return str.replace("\\\\","\\").replace("\\%","%");
-	}
-
 	public static String substituteGet(String param,String def,VariableContext ctx) throws AdapterException
 	{
 		if (param.startsWith("$PASSWORD"))
@@ -1316,6 +1450,8 @@ class Misc
 			String value = readFile(param.substring(1));
 			return value == null ? value : value.trim();
 		}
+		else if (param.startsWith("!") && param.endsWith("!"))
+			return javaadapter.crypter.decrypt(param);
 		else if (param.startsWith("!"))
 		{
 			try {
@@ -1326,15 +1462,9 @@ class Misc
 			}
 		}
 		else if (param.startsWith("@@"))
-		{
-			String value = strftime(param.substring(2),new Date(),ctx == null ? gmttimezone : ctx.getTimeZone());
-			return value;
-		}
+			return strftime(param.substring(2),new Date(),ctx == null ? gmttimezone : ctx.getTimeZone());
 		else if (param.startsWith("@"))
-		{
-			String value = strftime(param.substring(1),new Date());
-			return value;
-		}
+			return strftime(param.substring(1),new Date());
 		else if (def != null)
 			return def;
 		return null;
@@ -1477,7 +1607,7 @@ class Misc
 	{
 		if (dir == null) dir = "";
 
-		final TreeSet<Path> paths = new TreeSet<Path>();
+		final TreeSet<Path> paths = new TreeSet<>();
 		final PathMatcher matcher = FileSystems.getDefault().getPathMatcher("glob:" + glob);
 
 		try {
@@ -1499,7 +1629,7 @@ class Misc
 			throw new AdapterException(ex);
 		}
 
-		if (paths.size() == 0)
+		if (paths.isEmpty())
 		{
 			File file = new File(glob,dir);
 			if (file.exists())
@@ -1515,6 +1645,38 @@ class Misc
 		return paths;
 	}
 
+	public static boolean matches(String text,String glob)
+	{
+		String rest = null;
+		int pos = glob.indexOf('*');
+		if (pos != -1)
+		{
+			rest = glob.substring(pos + 1);
+			glob = glob.substring(0, pos);
+		}
+
+		if (glob.length() > text.length())
+			return false;
+
+		// handle the part up to the first *
+		for (int i = 0;i < glob.length();i++)
+			if (glob.charAt(i) != '?' && !glob.substring(i, i + 1).equalsIgnoreCase(text.substring(i,i + 1)))
+				return false;
+
+		// recurse for the part after the first *, if any
+		if (rest == null)
+			return glob.length() == text.length();
+		else
+		{
+			for (int i = glob.length();i <= text.length();i++)
+			{
+				if (matches(text.substring(i),rest))
+					return true;
+			}
+			return false;
+		}
+	}
+
 	public static void sleep(int delay) throws AdapterException
 	{
 		try {
@@ -1523,4 +1685,5 @@ class Misc
 			throw new AdapterException(ex);
 		}
 	}
+
 }

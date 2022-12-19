@@ -22,7 +22,7 @@ class HookIterator implements ScheduleIterator
 		Date currenttime = new Date();
 		if (interval == null || interval.length() == 0)
 		{
-			interval = (new Integer(Integer.MAX_VALUE)).toString();
+			interval = String.valueOf(Integer.MAX_VALUE);
 			return currenttime;
 		}
 
@@ -30,28 +30,28 @@ class HookIterator implements ScheduleIterator
 		if (pos.length < 1 || pos.length > 3) return null;
 
 		if (pos.length == 1)
-			return new Date(currenttime.getTime() + ((long)(new Integer(interval)) * 1000));
+			return new Date(currenttime.getTime() + ((long)(Integer.parseInt(interval)) * 1000));
 
 		Calendar calendar = Calendar.getInstance();
 		calendar.setTime(currenttime);
 		calendar.set(Calendar.MILLISECOND,0);
 		if (pos.length == 2)
 		{
-			calendar.set(Calendar.MINUTE,new Integer(pos[0]));
-			calendar.set(Calendar.SECOND,new Integer(pos[1]));
+			calendar.set(Calendar.MINUTE,Integer.parseInt(pos[0]));
+			calendar.set(Calendar.SECOND,Integer.parseInt(pos[1]));
 			if (calendar.getTime().before(currenttime))
 				calendar.add(Calendar.HOUR_OF_DAY,1);
 		}
 		else
 		{
-			calendar.set(Calendar.HOUR_OF_DAY,new Integer(pos[0]));
-			calendar.set(Calendar.MINUTE,new Integer(pos[1]));
-			calendar.set(Calendar.SECOND,new Integer(pos[2]));
+			calendar.set(Calendar.HOUR_OF_DAY,Integer.parseInt(pos[0]));
+			calendar.set(Calendar.MINUTE,Integer.parseInt(pos[1]));
+			calendar.set(Calendar.SECOND,Integer.parseInt(pos[2]));
 			if (calendar.getTime().before(currenttime))
 				calendar.add(Calendar.DATE,1);
 		}
 
-		if (Misc.isLog(5)) Misc.log("Next schedule for " + name + " is at " + Misc.dateformat.format(calendar.getTime()));
+		if (Misc.isLog(5)) Misc.log("Next schedule for " + name + " is at " + Misc.getLocalDate(calendar));
 		return calendar.getTime();
 	}
 }

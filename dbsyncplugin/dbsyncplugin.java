@@ -4,10 +4,13 @@ import java.sql.SQLException;
 
 class dbsyncplugin
 {
-	static public boolean preview_mode = false;
-	static public boolean dumpcsv_mode = false;
+	static private boolean previewmode = false;
+	static private boolean dumpcsvmode = false;
 
 	private dbsyncplugin() { }
+
+	static boolean getPreviewMode() { return previewmode; }
+	static boolean getDumpCsvMode() { return dumpcsvmode; }
 
 	public static void main(String[] args)
 	{
@@ -17,9 +20,9 @@ class dbsyncplugin
 		for(String arg:args)
 		{
 			if (arg.equals("-preview"))
-				preview_mode = true;
+				previewmode = true;
 			else if (arg.equals("-dumpcsv"))
-				dumpcsv_mode = true;
+				dumpcsvmode = true;
 			else
 				filename = arg;
 		}
@@ -102,10 +105,10 @@ class UpdateDestInfo
 	String username;
 	String password;
 	String url;
-	ArrayList<String> preinsertlist = new ArrayList<String>();
-	ArrayList<String> postinsertlist = new ArrayList<String>();
-	HashMap<SyncOper,ArrayList<XML>> customsqloperlist = new HashMap<SyncOper,ArrayList<XML>>();
-	HashMap<SyncOper,ArrayList<XML>> customoperlist = new HashMap<SyncOper,ArrayList<XML>>();
+	ArrayList<String> preinsertlist = new ArrayList<>();
+	ArrayList<String> postinsertlist = new ArrayList<>();
+	HashMap<SyncOper,ArrayList<XML>> customsqloperlist = new HashMap<>();
+	HashMap<SyncOper,ArrayList<XML>> customoperlist = new HashMap<>();
 	Pattern ondupspattern;
 	OnOper onduplicates;
 	String[] mergefields;
@@ -136,12 +139,12 @@ class UpdateDestInfo
 		SyncOper[] operlist = { SyncOper.ADD, SyncOper.REMOVE, SyncOper.UPDATE };
 		for(SyncOper oper:operlist)
 		{
-			ArrayList<XML> customlist = new ArrayList<XML>();
+			ArrayList<XML> customlist = new ArrayList<>();
 			xmlsqllist = xml.getElements("custom" + oper.toString().toLowerCase());
 			for(XML xmlsql:xmlsqllist)
 				customlist.add(xmlsql);
 			customoperlist.put(oper,customlist);
-			customlist = new ArrayList<XML>();
+			customlist = new ArrayList<>();
 			xmlsqllist = xml.getElements("custom" + oper.toString().toLowerCase() + "sql");
 			for(XML xmlsql:xmlsqllist)
 				customlist.add(xmlsql);
@@ -176,7 +179,6 @@ class UpdateDestInfo
 	String[] getMergeKeys() { return mergekeys; }
 	String[] getClearFields() { return clearfields; }
 	String[] getSuffixFields() { return suffixfields; }
-	void Exception(String text) throws AdapterException { throw new AdapterException(xml,text); }
 }
 
 abstract class UpdateSubscriber extends Subscriber
@@ -197,7 +199,7 @@ abstract class UpdateSubscriber extends Subscriber
 	{
 		keyvalue = "";
 
-		LinkedHashMap<String,String> displayvalues = new LinkedHashMap<String,String>();
+		LinkedHashMap<String,String> displayvalues = new LinkedHashMap<>();
 		if (displayfields != null) for(String field:displayfields)
 			displayvalues.put(field,"");
 
@@ -396,7 +398,7 @@ class DatabaseUpdateSubscriber extends UpdateSubscriber
 		}
 	}
 
-	private boolean customsql(SyncOper oper,UpdateDestInfo destinfo,XML xml) throws AdapterException
+	private boolean customsql(SyncOper oper,final UpdateDestInfo destinfo,XML xml) throws AdapterException
 	{
 		String instance = destinfo.getInstance();
 		ArrayList<XML> sqlxmllist = destinfo.getCustomSqlList(oper);
@@ -410,15 +412,23 @@ class DatabaseUpdateSubscriber extends UpdateSubscriber
 			if (sql == null) return false;
 
 			XML[] fields = xml.getElements();
-			ArrayList<DBField> list = new ArrayList<DBField>();
-			for(XML field:fields)
-			{
-				sql = sql.replace("%" + field.getTagName() + "%",DB.replacement);
-				list.add(new DBField(destinfo.getTableName(),field.getTagName(),field.getValue()));
-			}
+			final ArrayList<DBField> list = new ArrayList<>();
 
-			if (Misc.isLog(10)) Misc.log(oper + ": " + sql);
-			db.execsql(instance,sql,list);
+			String sqlresult = Misc.substitute(sql,new Misc.Substituer() {
+				public String getValue(String fieldname) throws AdapterException
+				{
+					XML field = xml.getElement(fieldname);
+					if (field != null)
+					{
+						list.add(new DBField(destinfo.getTableName(),fieldname,field.getValue()));
+						return DB.replacement;
+					}
+					return Misc.substituteGet(fieldname,null,null);
+				}
+			});
+
+			if (Misc.isLog(10)) Misc.log(oper + ": " + sqlresult);
+			db.execsql(instance,sqlresult,list);
 		}
 
 		return true;
@@ -453,7 +463,7 @@ class DatabaseUpdateSubscriber extends UpdateSubscriber
 			String instance = destinfo.getInstance();
 
 			String sqlid = "select " + idfield + " from " + table + sql;
-			ArrayList<LinkedHashMap<String,String>> ids = db.execsql(instance,sqlid);
+			List<Map<String,String>> ids = db.execsql(instance,sqlid);
 			if (ids.size() != 1)
 			{
 				Misc.log(1,"WARNING: Operation on table " + table + " cannot be done since key doesn't exists: " + sql);
@@ -485,7 +495,7 @@ class DatabaseUpdateSubscriber extends UpdateSubscriber
 			if (Misc.isLog(15))
 			{
 				Misc.log("Extracting current duplicate since message: " + message);
-				ArrayList<DBField> list = new ArrayList<DBField>();
+				ArrayList<DBField> list = new ArrayList<>();
 				String sqlchk = "select * from " + table + getWhereClause(destinfo,xml,list);
 				db.execsql(instance,sqlchk,list);
 			}
@@ -503,7 +513,7 @@ class DatabaseUpdateSubscriber extends UpdateSubscriber
 					if (keys != null) for(String key:keys)
 					{
 						XML field = xml.getElement(key);
-						if (field == null) destinfo.Exception("Invalid key '" + key + "' in merge_keys attribute: " + xml);
+						if (field == null) throw new AdapterException("Invalid key '" + key + "' in merge_keys attribute: " + xml);
 						String value = field.getValue("oldvalue");
 						if (value == null) value = field.getValue();
 
@@ -528,35 +538,35 @@ class DatabaseUpdateSubscriber extends UpdateSubscriber
 					break;
 				case CLEAR:
 					String[] clearfields = destinfo.getClearFields();
-					if (clearfields == null) destinfo.Exception("clear on_duplicates requires clear_fields attribute");
+					if (clearfields == null) throw new AdapterException("clear on_duplicates requires clear_fields attribute");
 					Misc.log(1,"WARNING: [" + getKeyValue() + "] Record already present. Clearing fields " + Misc.implode(clearfields) + ": " + xml);
-					String sqlclear = "update " + table + " ";
+					StringBuilder sqlclear = new StringBuilder("update " + table + " ");
 					String sepclear = "set ";
-					ArrayList<DBField> listclear = new ArrayList<DBField>();
+					ArrayList<DBField> listclear = new ArrayList<>();
 					for(String field:clearfields)
 					{
-						sqlclear += sepclear + field + " = " + DB.replacement;
+						sqlclear.append(sepclear + field + " = " + DB.replacement);
 						listclear.add(new DBField(table,field,null));
 						sepclear = ",";
 					}
-					sqlclear += " " + getWhereClause(destinfo,xml,listclear);
-					db.execsql(instance,sqlclear,listclear);
+					sqlclear.append(" " + getWhereClause(destinfo,xml,listclear));
+					db.execsql(instance,sqlclear.toString(),listclear);
 					break;
 				case SUFFIX:
 					String[] suffixfields = destinfo.getSuffixFields();
-					if (suffixfields == null) destinfo.Exception("suffix on_duplicates requires suffix_fields attribute");
+					if (suffixfields == null) throw new AdapterException("suffix on_duplicates requires suffix_fields attribute");
 					Misc.log(1,"WARNING: [" + getKeyValue() + "] Record already present. Adding suffix '_' to fields " + Misc.implode(suffixfields) + ": " + xml);
-					String sqlsuf = "update " + table + " ";
+					StringBuilder sqlsuf = new StringBuilder("update " + table + " ");
 					String sepsuf = "set ";
-					ArrayList<DBField> listsuffix = new ArrayList<DBField>();
+					ArrayList<DBField> listsuffix = new ArrayList<>();
 					for(String field:suffixfields)
 					{
-						sqlsuf += sepsuf + field + " = " + DB.replacement;
+						sqlsuf.append(sepsuf + field + " = " + DB.replacement);
 						listsuffix.add(new DBField(table,field,db.getConcat(instance,field,"'_'")));
 						sepsuf = ",";
 					}
-					sqlsuf += " " + getWhereClause(destinfo,xml,listsuffix);
-					db.execsql(instance,sqlsuf,listsuffix);
+					sqlsuf.append(" " + getWhereClause(destinfo,xml,listsuffix));
+					db.execsql(instance,sqlsuf.toString(),listsuffix);
 					break;
 				case RECREATE:
 					Misc.log(1,"WARNING: [" + getKeyValue() + "] Record already present. Record will be automatically recreated with XML message: " + xml);
@@ -587,14 +597,14 @@ class DatabaseUpdateSubscriber extends UpdateSubscriber
 		if (customsql(SyncOper.ADD,destinfo,xml)) return;
 
 		String table = destinfo.getTableName();
-		if (table == null) destinfo.Exception("dbsync: destination 'table' attribute required");
+		if (table == null) throw new AdapterException("dbsync: destination 'table' attribute required");
 
 		ArrayList<XML> customs = destinfo.getCustomList(SyncOper.ADD);
 		if (customs.size() > 0)
-			destinfo.Exception("customadd not supported yet for SQL operations");
+			throw new AdapterException("customadd not supported yet for SQL operations");
 
-		String sql = "insert into " + table + " (";
-		String fieldnames = null;
+		StringBuilder sql = new StringBuilder("insert into " + table + " (");
+		String sep = "";
 
 		XML[] fields = xml.getElements();
 		for(XML field:fields)
@@ -602,33 +612,30 @@ class DatabaseUpdateSubscriber extends UpdateSubscriber
 			OnOper type = Field.getOnOper(field,"type");
 			if (type != null && (type == OnOper.INFO || type == OnOper.INFOAPI)) continue;
 
-			if (fieldnames == null)
-				fieldnames = "";
-			else
-				fieldnames += ",";
-			fieldnames += quotefield + field.getTagName() + quotefield;
+			sql.append(sep + quotefield + field.getTagName() + quotefield);
+			sep = ",";
 		}
 
-		sql += fieldnames + ") values (";
+		sql.append(") values (");
 
-		String sep = "";
-		ArrayList<DBField> list = new ArrayList<DBField>();
+		sep = "";
+		ArrayList<DBField> list = new ArrayList<>();
 		for(XML field:fields)
 		{
 			OnOper type = Field.getOnOper(field,"type");
 			if (type != null && (type == OnOper.INFO || type == OnOper.INFOAPI)) continue;
 
-			sql += sep + DB.replacement;
+			sql.append(sep + DB.replacement);
 			list.add(new DBField(table,field.getTagName(),field.getValue()));
 			sep = ",";
 		}
-		sql += ")";
+		sql.append(")");
 
 		if (Misc.isLog(10)) Misc.log("add SQL: " + sql);
 
 		try
 		{
-			db.execsql(instance,sql,list);
+			db.execsql(instance,sql.toString(),list);
 		}
 		catch(AdapterDbException ex)
 		{
@@ -642,15 +649,15 @@ class DatabaseUpdateSubscriber extends UpdateSubscriber
 		if (customsql(SyncOper.REMOVE,destinfo,xml)) return;
 
 		String table = destinfo.getTableName();
-		if (table == null) destinfo.Exception("dbsync: destination 'table' attribute required");
+		if (table == null) throw new AdapterException("dbsync: destination 'table' attribute required");
 
-		String sql;
-		ArrayList<DBField> list = new ArrayList<DBField>();
+		StringBuilder sql = new StringBuilder();
+		ArrayList<DBField> list = new ArrayList<>();
 		ArrayList<XML> customs = destinfo.getCustomList(SyncOper.REMOVE);
 
 		if (customs.size() > 0)
 		{
-			sql = "update " + table;
+			sql.append("update " + table);
 			String sep = "set";
 			for(XML custom:customs)
 			{
@@ -658,17 +665,17 @@ class DatabaseUpdateSubscriber extends UpdateSubscriber
 				if (name == null) throw new AdapterException(custom,"Attribute 'name' required");
 				String value = custom.getAttribute("value");
 				if (value == null) value = "";
-				sql += " " + sep + " " + quotefield + name + quotefield + "=" + DB.replacement;
+				sql.append(" " + sep + " " + quotefield + name + quotefield + "=" + DB.replacement);
 				list.add(new DBField(table,name,Misc.substitute(value,xml)));
 				sep = ",";
 			}
-			sql += getWhereClause(destinfo,xml,list);
+			sql.append(getWhereClause(destinfo,xml,list));
 		}
 		else
-			sql = "delete from " + table + getWhereClause(destinfo,xml,list);
+			sql.append("delete from " + table + getWhereClause(destinfo,xml,list));
 
 		if (Misc.isLog(10)) Misc.log("remove SQL: " + sql);
-		db.execsql(instance,sql,list);
+		db.execsql(instance,sql.toString(),list);
 	}
 
 	protected void update(UpdateDestInfo destinfo,XML xml) throws AdapterException
@@ -682,12 +689,12 @@ class DatabaseUpdateSubscriber extends UpdateSubscriber
 		if (customsql(SyncOper.UPDATE,destinfo,xml)) return;
 
 		String table = destinfo.getTableName();
-		if (table == null) destinfo.Exception("dbsync: destination 'table' attribute required");
+		if (table == null) throw new AdapterException("dbsync: destination 'table' attribute required");
 
-		String sql = "update " + table;
+		StringBuilder sql = new StringBuilder("update " + table);
 		String sep = "set";
 		XML[] fields = xml.getElements();
-		ArrayList<DBField> list = new ArrayList<DBField>();
+		ArrayList<DBField> list = new ArrayList<>();
 		for(XML field:fields)
 		{
 			XML old = field.getElement("oldvalue");
@@ -697,20 +704,20 @@ class DatabaseUpdateSubscriber extends UpdateSubscriber
 			OnOper type = Field.getOnOper(field,"type");
 			if (type != null && (type == OnOper.INFO || type == OnOper.INFOAPI || type == OnOper.KEY || (type == OnOper.INITIAL && oldvalue != null))) continue;
 
-			sql += " " + sep + " " + quotefield + field.getTagName() + quotefield + " = " + DB.replacement;
+			sql.append(" " + sep + " " + quotefield + field.getTagName() + quotefield + " = " + DB.replacement);
 			list.add(new DBField(table,field.getTagName(),field.getValue()));
 			sep = ",";
 		}
 
 		if (sep.equals("set")) return;
 
-		sql += getWhereClause(destinfo,xml,list);
+		sql.append(getWhereClause(destinfo,xml,list));
 
 		if (Misc.isLog(10)) Misc.log("update SQL: " + sql);
 
 		try
 		{
-			db.execsql(instance,sql,list);
+			db.execsql(instance,sql.toString(),list);
 		}
 		catch(AdapterDbException ex)
 		{

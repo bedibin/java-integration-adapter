@@ -3,9 +3,9 @@ import java.io.*;
 
 class QueueDirPluginHook extends Hook
 {
-	class QueueDir
+	static class QueueDir
 	{
-		private ArrayList<Subscriber> sublist = new ArrayList<Subscriber>();
+		private List<Subscriber> sublist = new ArrayList<>();
 		private String dir;
 
 		public QueueDir(XML xml) throws AdapterException
@@ -31,7 +31,7 @@ class QueueDirPluginHook extends Hook
 		}
 	}
 
-	private ArrayList<QueueDir> queues = new ArrayList<QueueDir>();
+	private ArrayList<QueueDir> queues = new ArrayList<>();
 
 	public QueueDirPluginHook() throws AdapterException
 	{

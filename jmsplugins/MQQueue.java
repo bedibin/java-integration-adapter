@@ -32,7 +32,7 @@ class MQQueue extends JMSBase
 		}
 	};
 
-	private HashMap<String,MQInfo> infos = new HashMap<String,MQInfo>();
+	private HashMap<String,MQInfo> infos = new HashMap<>();
 
 	private synchronized MQInfo getInfo(String name)
 	{
@@ -61,7 +61,7 @@ class MQQueue extends JMSBase
 		JmsFactoryFactory ff = JmsFactoryFactory.getInstance(WMQConstants.WMQ_PROVIDER);
 		JmsConnectionFactory cf = ff.createConnectionFactory();
 		cf.setStringProperty(WMQConstants.WMQ_HOST_NAME,xml.getValue("host"));
-		cf.setIntProperty(WMQConstants.WMQ_PORT,new Integer(xml.getValue("port","1414")));
+		cf.setIntProperty(WMQConstants.WMQ_PORT,Integer.parseInt(xml.getValue("port","1414")));
 		cf.setIntProperty(WMQConstants.WMQ_CONNECTION_MODE,WMQConstants.WMQ_CM_CLIENT);
 		cf.setStringProperty(WMQConstants.WMQ_APPLICATIONNAME,javaadapter.getName());
 		cf.setBooleanProperty(WMQConstants.USER_AUTHENTICATION_MQCSP,true);
@@ -87,16 +87,19 @@ class MQQueue extends JMSBase
 			}
 	}
 
+	@Override
 	void publish(String name,String message)
 	{
 		getInfo(name).send(message);
 	}
 
+	@Override
 	void setMessageListener(String name,MessageListener listener)
 	{
 		getInfo(name).getConsumer().setMessageListener(listener);
 	}
 
+	@Override
 	String read(String name) throws AdapterException
 	{
 		try {
@@ -107,7 +110,7 @@ class MQQueue extends JMSBase
 			if (msg instanceof BytesMessage)
 			{
 				BytesMessage message = (BytesMessage)msg;
-				int len = new Long(message.getBodyLength()).intValue();
+				int len = Math.toIntExact(message.getBodyLength());
 				byte[] textBytes = new byte[len];
 				message.readBytes(textBytes,len);
 				String codePage = message.getStringProperty(WMQConstants.JMS_IBM_CHARACTER_SET);

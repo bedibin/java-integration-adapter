@@ -6,8 +6,7 @@ class Operation extends SchedulerTask
 	private String classname;
 	protected XML function;
 	private Rate rate;
-	protected enum ResultTypes { LAST, MERGE, TRANSPARENT };
-	private HashMap<String,String> variablelist = new HashMap<String,String>();
+	protected enum ResultTypes { LAST, MERGE, TRANSPARENT }
 
 	public void run() {}
 
@@ -61,11 +60,6 @@ class Operation extends SchedulerTask
 		return function;
 	}
 
-	public synchronized String getVariable(String name)
-	{
-		return variablelist.get(name);
-	}
-
 	private synchronized void setVariable(XML xml,String path,String name) throws AdapterXmlException
 	{
 		if (name == null || !name.startsWith("$"))
@@ -73,9 +67,8 @@ class Operation extends SchedulerTask
 			Misc.log("WARNING: Trying to set variable " + name + ". Variable name must start with $");
 			return;
 		}
-
 		String value = (path == null) ? xml.toString() : xml.getStringByPath(path);
-		variablelist.put(name,value);
+		XML.setDefaultVariable(name,value);
 	}
 
 	private void rateElement(XML element) throws AdapterXmlException
@@ -98,7 +91,7 @@ class Operation extends SchedulerTask
 
 		String levelstr = element.getAttribute("level");
 		if (levelstr != null)
-			level = new Integer(levelstr);
+			level = Integer.parseInt(levelstr);
 
 		String ratestr = rate.toString();
 
@@ -116,7 +109,7 @@ class Operation extends SchedulerTask
 			if (levelstr.equals("exception"))
 				exception = true;
 			else
-				level = new Integer(levelstr);
+				level = Integer.parseInt(levelstr);
 		}
 
 		String value = element.getValue();
@@ -126,11 +119,6 @@ class Operation extends SchedulerTask
 		String str = Misc.substitute(value,new Misc.Substituer() {
 			public String getValue(String param) throws AdapterException
 			{
-				if (param.startsWith("$"))
-				{
-					String var = getVariable(param);
-					if (var != null) return var;
-				}
 				return Misc.substituteGet(param,finalxml.getStringByPath(param),null);
 			}
 		});
@@ -165,7 +153,7 @@ class Operation extends SchedulerTask
 
 		if (Misc.isLog(3)) Misc.log("Processing function " + function.getAttribute("name"));
 
-		XML elements[] = function.getElements(null);
+		XML[] elements = function.getElements(null);
 		for(XML element:elements)
 		{
 			if (javaadapter.isShuttingDown()) return null;
@@ -184,9 +172,10 @@ class Operation extends SchedulerTask
 		ResultTypes resulttype = getResultType(element);
 
 		String name = xml.getTagName();
-		if (name != null && name.equals("javaadapter:multi"))
+		String multipath = element.getAttribute("multi_path");
+		if (name != null && (multipath != null || name.equals("javaadapter:multi")))
 		{
-			XML[] xmllist = xml.getElements(null);
+			XML[] xmllist = xml.getElementsByPath(multipath);
 			XML resultxml = null;
 
 			for(int i = 0;i < xmllist.length;i++)
@@ -212,6 +201,8 @@ class Operation extends SchedulerTask
 					}
 					if (currentxml != null) resultxml.add(currentxml);
 					break;
+				default:
+					break;
 				}
 			}
 
@@ -223,7 +214,7 @@ class Operation extends SchedulerTask
 		return xml;
 	}
 
-	static public void renameByPath(XML xml,String path,String name) throws AdapterXmlException
+	public static void renameByPath(XML xml,String path,String name) throws AdapterXmlException
 	{
 		if (path == null || name == null) return;
 
@@ -232,7 +223,7 @@ class Operation extends SchedulerTask
 			node.rename(name);
 	}
 
-	static public void addByPath(XML xml,String path,String name,String value) throws AdapterXmlException
+	public static void addByPath(XML xml,String path,String name,String value) throws AdapterXmlException
 	{
 		if (path == null)
 		{
@@ -245,7 +236,7 @@ class Operation extends SchedulerTask
 			node.add(name,value);
 	}
 
-	static public void removeByPath(XML xml,String path) throws AdapterXmlException
+	public static void removeByPath(XML xml,String path) throws AdapterXmlException
 	{
 		if (path == null) return;
 
@@ -265,30 +256,34 @@ class Operation extends SchedulerTask
 			String nodevalue = node.getValue();
 			if (nodevalue == null) continue;
 
-			String[] values = nodevalue.split(split);
+			String[] values = nodevalue.split(split == null ? "\n" : split);
 			for(String value:values)
 				node.add(name,value);
 		}
 	}
 
-	static public void setValueByPath(Operation oper,XML xmlget,XML xmlset,String getpath,String setpath) throws AdapterXmlException
+	public static void setValueByPath(XML xmlget,XML xmlset,String getpath,String setpath,String value) throws AdapterException
 	{
-		if (getpath == null) return;
-		if (setpath == null) return;
-
 		String sourcevalue = null;
-		if (oper != null) sourcevalue = oper.getVariable(getpath);
-		if (sourcevalue == null) sourcevalue = xmlget.getStringByPath(getpath);
+		if (getpath != null)
+		{
+			sourcevalue = XML.getDefaultVariable(getpath);
+			if (sourcevalue == null) sourcevalue = xmlget.getStringByPath(getpath);
+		}
+		if (sourcevalue == null && value != null) sourcevalue = Misc.substitute(value);
 		if (sourcevalue == null) return;
 
 		if (Misc.isLog(15)) Misc.log("setValueByPath value: " + sourcevalue);
 
-		xmlset.setValueByPath(setpath,sourcevalue);
+		if (setpath == null)
+			xmlset.setValue(sourcevalue);
+		else
+			xmlset.setValueByPath(setpath,sourcevalue);
 	}
 
 	public void setAttributeByPath(XML xmlget,XML xmlset,String getpath,String setpath,String name) throws AdapterXmlException
 	{
-		String sourcevalue = getVariable(getpath);
+		String sourcevalue = XML.getDefaultVariable(getpath);
 		if (sourcevalue == null) sourcevalue = xmlget.getStringByPath(getpath);
 		if (sourcevalue == null) return;
 
@@ -312,7 +307,7 @@ class Operation extends SchedulerTask
 		case MERGE:
 			xml = previousxml;
 			if (Misc.isLog(20)) Misc.log("Before merge: " + xml);
-			xml.add(currentxml);
+			if (xml != null) xml.add(currentxml);
 			if (Misc.isLog(18)) Misc.log("Merged result: " + xml);
 			return xml;
 		case TRANSPARENT:
@@ -345,9 +340,9 @@ class Operation extends SchedulerTask
 		else if (tagname.equals("transformation"))
 			xml = xml.transform(element.getValue());
 		else if (tagname.equals("sleep"))
-			Misc.sleep(new Integer(element.getValue()));
+			Misc.sleep(Integer.parseInt(element.getValue()));
 		else if (tagname.equals("valuepath"))
-			setValueByPath(this,xml,xml,element.getAttribute("get"),element.getAttribute("set"));
+			setValueByPath(xml,xml,element.getAttribute("get"),element.getAttribute("set"),element.getAttribute("value"));
 		else if (tagname.equals("splitpath"))
 			splitPath(xml,element.getAttribute("path"),element.getAttribute("value"),element.getAttribute("name"));
 		else if (tagname.equals("attributepath"))

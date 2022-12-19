@@ -28,7 +28,7 @@ public class notrustsslsocket extends SSLSocketFactory
 	public notrustsslsocket()
 	{
 		try {
-			SSLContext ctx = SSLContext.getInstance("TLS");
+			SSLContext ctx = SSLContext.getInstance("TLSv1.2");
 			ctx.init(null,new TrustManager[] { new DummyTrustmanager() }, new SecureRandom());
 			socketFactory = ctx.getSocketFactory();
 		} catch (Exception ex) {

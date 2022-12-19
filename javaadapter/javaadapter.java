@@ -3,7 +3,7 @@ import java.io.File;
 
 class Shutdown extends Thread
 {
-	private ArrayList<Object> closelist = new ArrayList<Object>();
+	private ArrayList<Object> closelist = new ArrayList<>();
 	private boolean shuttingdown = false;
 
 	public boolean isShuttingDown()
@@ -47,7 +47,7 @@ class Shutdown extends Thread
 		Misc.log(0,"Shutdown completed");
 	}
 
-	public void setCloseList(ArrayList<?> list)
+	public void setCloseList(List<?> list)
 	{
 		closelist.addAll(list);
 	}
@@ -60,66 +60,81 @@ class Shutdown extends Thread
 
 class AdapterExtend
 {
-	private HashMap<String,AdapterExtendBase> extendlist = new HashMap<String,AdapterExtendBase>();
-	private final String defaultname = "default";
+	private Map<String,AdapterExtendBase> extendlist = new LinkedHashMap<>();
+	private static final String DEFAULTNAME = "default";
 	protected String defaultclass;
 
 	protected AdapterExtend() {};
 
+	public Map<String,AdapterExtendBase> getInstances()
+	{
+		return extendlist;
+	}
+
+	public AdapterExtendBase getInstance(String name) throws AdapterException
+	{
+		AdapterExtendBase instance = extendlist.get(name);
+		if (instance == null) throw new AdapterException("Adapter " + getClass().getName() + " " + name + " not found");
+		return instance;
+	}
+
 	public AdapterExtendBase getInstance(XML xml) throws AdapterException
 	{
 		String instance = xml.getAttribute("instance");
-		if (instance == null) instance = defaultname + "/" + getClass().getName();
-		AdapterExtendBase ctx = extendlist.get(instance);
-		if (ctx == null)
+		String type = xml.getAttribute("type");
+		for(Map.Entry<String,AdapterExtendBase> entry:extendlist.entrySet())
 		{
-			String type = xml.getAttribute("type");
-			instance = type + "ExtendBase";
-			ctx = extendlist.get(instance);
-			if (ctx == null)
-			{
-				ctx = (AdapterExtendBase)Misc.invoke(instance,"getInstance");
-				extendlist.put(instance,ctx);
-			}
+			String key = entry.getKey();
+			AdapterExtendBase ctx = entry.getValue();
+			if (key.equals(instance)) return ctx;
+			if (key.equals(getClass().getName())) return ctx;
+			if (type != null && type.equals(ctx.getSupportedType())) return ctx;
 		}
-		return ctx;
+		throw new AdapterException(xml,"Cannot find instance for class " + getClass().getName());
 	}
 
 	public void setInstance(XML xml) throws AdapterException
 	{
-		String classname = xml.getValue("class",defaultclass);
-		String name = xml.getValue("name",defaultname + "/" + getClass().getName());
+		String classname = xml.getValue("class",null);
+		if (classname == null) classname = xml.getAttribute("class");
+		if (classname == null) classname = defaultclass;
+
 		AdapterExtendBase ctx = (AdapterExtendBase)Misc.newObject(classname,xml);
+		ctx.setXML(xml);
+
+		String name = xml.getAttribute("name");
+		if (name == null) name = classname;
 		extendlist.put(name,ctx);
+
 	}
 
-	public void publish(String string,XML xmlpublish) throws AdapterException
+	public void setInstance(AdapterExtendBase ctx)
 	{
-		AdapterExtendBase ctx = getInstance(xmlpublish);
-		String name = xmlpublish.getAttribute("name");
-		ctx.publish(name,string);
+		extendlist.put(ctx.getClass().getName(),ctx);
 	}
 }
 
-abstract class AdapterExtendBase
+class AdapterExtendBase
 {
-	abstract void publish(String name,String message) throws AdapterException;
-	abstract String read(String name) throws AdapterException;
+	private XML xml;
+	public String getSupportedType() { return null; };
+	public XML getXML() { return xml; };
+	public void setXML(XML xml) { this.xml = xml; };
 }
 
 public class javaadapter
 {
 	private static XML xmlconfig;
 	static Shutdown shutdown = new Shutdown();
-	private static HashMap<String,ArrayList<Subscriber>> subscriberlist;
-	static ArrayList<SoapServer> soapservers = new ArrayList<SoapServer>();
-	static crypt crypter = new crypt();
+	private static HashMap<String,List<Subscriber>> subscriberlist;
+	static ArrayList<SoapServer> soapservers = new ArrayList<>();
+	static crypt crypter;
 	static boolean isstarted = false;
 	static Date startdate = new Date();
 	static boolean dohooks = true;
-	static String currentdir;
+	private static String currentdir;
 	static String adaptername;
-	final static String DEFAULTCFGFILENAME = "javaadapter.xml";
+	static final String DEFAULTCFGFILENAME = "javaadapter.xml";
 
 	public static boolean isShuttingDown()
 	{
@@ -136,7 +151,7 @@ public class javaadapter
 		shutdown.setShuttingDown(true);
 	}
 
-	public static void setForShutdown(ArrayList<?> list)
+	public static void setForShutdown(List<?> list)
 	{
 		shutdown.setCloseList(list);
 	}
@@ -156,7 +171,12 @@ public class javaadapter
 		return currentdir;
 	}
 
-	public static synchronized ArrayList<Subscriber> subscriberGet(String name)
+	public static void setCurrentDir(String dir)
+	{
+		currentdir = dir;
+	}
+
+	public static synchronized List<Subscriber> subscriberGet(String name)
 	{
 		return subscriberlist.get(name);
 	}
@@ -173,13 +193,13 @@ public class javaadapter
 		{
 			if (args[0].equals("crypt"))
 			{
-				String str = crypter.encrypt(args[1]);
+				String str = (new DefaultCrypto()).encrypt(args[1]);
 				System.out.println(str);
 				return;
 			}
 			else if (args[0].equals("cryptStrong"))
 			{
-				String str = crypter.encryptStrong(args[1]);
+				String str = (new StrongCrypto()).encrypt(args[1]);
 				System.out.println(str);
 				return;
 			}
@@ -191,27 +211,34 @@ public class javaadapter
 		{
 			initShutdownHook();
 			init(filename);
-			while(true) Thread.sleep(Integer.MAX_VALUE);
+			while(true)
+			{
+				Thread.sleep(60);
+				if (isShuttingDown()) break;
+			}
 		}
 		catch(Throwable ex)
 		{
 			Misc.log(ex);
 			Misc.exit(1,10000);
 		}
+
+		System.exit(0);
 	}
 
 	static void init(String filename) throws AdapterException
 	{
-		ArrayList<Hook> hooklist = new ArrayList<Hook>();
+		ArrayList<Hook> hooklist = new ArrayList<>();
 
 		File file = new File(filename);
 		String[] parts = file.getName().split("\\.");
 		adaptername = parts[0];
 
 		xmlconfig = new XML(filename);
-		Misc.initXML(xmlconfig);
+		crypter = new crypt(xmlconfig);
+		Misc.setConfig(xmlconfig);
 
-		subscriberlist = new HashMap<String,ArrayList<Subscriber>>();
+		subscriberlist = new HashMap<>();
 
 		XML[] jms = xmlconfig.getElements("jms");
 		for(XML jmsxml:jms)
@@ -239,7 +266,7 @@ public class javaadapter
 			if (name == null) continue;
 
 			Misc.log(5,"Subscriber: " + name);
-			ArrayList<Subscriber> sublist = Misc.initSubscribers(el);
+			List<Subscriber> sublist = Misc.initSubscribers(el);
 			Misc.activateSubscribers(sublist);
 			subscriberlist.put(name,sublist);
 		}

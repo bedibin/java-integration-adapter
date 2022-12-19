@@ -62,7 +62,7 @@ class JNDITopic extends JMSBase
 		}
 	}
 
-	private HashMap<String,TopicInfo> infos = new HashMap<String,TopicInfo>();
+	private HashMap<String,TopicInfo> infos = new HashMap<>();
 
 	private synchronized TopicInfo getInfo(String name) throws JMSException
 	{
@@ -78,7 +78,7 @@ class JNDITopic extends JMSBase
 	public JNDITopic(XML xml) throws JMSException,NamingException,AdapterException
 	{
 		System.out.print("Connection to JMS (JNDI/Topic) bus... ");
-		Hashtable<String,String> env = new Hashtable<String,String>();
+		Hashtable<String,String> env = new Hashtable<>();
 		env.put(Context.INITIAL_CONTEXT_FACTORY,xml.getValue("context","weblogic.jndi.WLInitialContextFactory"));
 		env.put(Context.PROVIDER_URL,xml.getValue("url"));
 		env.put(Context.SECURITY_PRINCIPAL,xml.getValue("username"));
@@ -104,6 +104,7 @@ class JNDITopic extends JMSBase
 
 	}
 
+	@Override
 	void publish(String name,String message) throws AdapterException
 	{
 		try {
@@ -113,21 +114,25 @@ class JNDITopic extends JMSBase
 		}
 	}
 
+	@Override
 	void setMessageListener(String name,MessageListener listener) throws JMSException
 	{
 		getInfo(name).getSubscriber().setMessageListener(listener);
 	}
 
+	@Override
 	void start(String name) throws JMSException
 	{
 		getInfo(name).getConnection().start();
 	}
 
+	@Override
 	void recover(String name) throws JMSException
 	{
 		getInfo(name).getSession().recover();
 	}
 
+	@Override
 	String read(String name) throws AdapterException
 	{
 		try {

@@ -61,7 +61,7 @@ class QueryChangeHook extends Hook
 
 		java.util.Date currentdate = new java.util.Date();
 		long maxtimemillisec = currentdate.getTime() - (TIMEDELAY * 1000);
-		fileinfo.maxtime = Misc.dateformat.format(maxtimemillisec);
+		fileinfo.maxtime = Misc.getLocalDateFormat().format(maxtimemillisec);
 
 		XML xmlinfo = null;
 		try
@@ -78,14 +78,14 @@ class QueryChangeHook extends Hook
 		if (xmlname == null)
 		{
 			xmlname = xmlinfo.add(requestname);
-			String currenttime = Misc.dateformat.format(currentdate.getTime());
+			String currenttime = Misc.getLocalDateFormat().format(currentdate.getTime());
 			xmlname.add("lasttime",currenttime);
 
 			XML xmlid = position.getElement("idfield");
 			String idfield = xmlid.getValue().trim();
 			XML sql = xmlid.getElement("sql");
 
-			ArrayList<LinkedHashMap<String,String>> result = null;
+			List<Map<String,String>> result = null;
 			if (sql != null && idfield != null)
 				result = db.execsql(sql.getAttribute("name"),sql.getValue());
 
@@ -103,7 +103,7 @@ class QueryChangeHook extends Hook
 		fileinfo.mintime = xmlname.getValue("lasttime");
 		fileinfo.lastid = xmlname.getValue("lastid",null);
 
-		long mintimemillisec = Misc.dateformat.parse(fileinfo.mintime).getTime();
+		long mintimemillisec = Misc.getLocalDateFormat().parse(fileinfo.mintime).getTime();
 		long currenttimemillisec = currentdate.getTime();
 
 		if (currenttimemillisec - (TIMEDELAY * 2000) < mintimemillisec)
@@ -194,11 +194,11 @@ class QueryChangeHook extends Hook
 
 			if (sqlstr == null) continue;
 
-			ArrayList<LinkedHashMap<String,String>> result = db.execsql(sql.getAttribute("name"),sqlstr);
+			List<Map<String,String>> result = db.execsql(sql.getAttribute("name"),sqlstr);
 
 /*
-			result = new ArrayList<HashMap<String,String>>();
-			HashMap<String,String> r = new HashMap<String,String>();
+			result = new ArrayList<>();
+			HashMap<String,String> r = new HashMap<>();
 			r.put("ID","942236");
 			r.put("NEW","03");
 			r.put("INST_ID","29345");
@@ -210,7 +210,7 @@ class QueryChangeHook extends Hook
 			result.add(r);
 */
 
-			if (result != null) for(LinkedHashMap<String,String> row:result)
+			if (result != null) for(Map<String,String> row:result)
 			{
 				if (xmlcontent == null)
 					xmlcontent = new XML();

@@ -26,7 +26,7 @@ class Script
 		ScriptEngineManager sem = new ScriptEngineManager();
 		ScriptEngine engine = sem.getEngineByName(name);
 		engine.put(ScriptEngine.FILENAME,"script");
-		ScriptEngineFactory f = engine.getFactory();
+		engine.getFactory();
 
 		return engine;
 	}
@@ -118,8 +118,8 @@ public class script
 {
 	public static void main(String [] args) throws Exception
 	{
-		HashMap<String,Object> vars = new HashMap<String,Object>();
-		vars.put("test",new Integer(5));
+		HashMap<String,Object> vars = new HashMap<>();
+		vars.put("test",5);
 
 		String program = 
 			"var a = 2;\n" +

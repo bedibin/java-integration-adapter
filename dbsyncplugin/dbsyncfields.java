@@ -18,7 +18,7 @@ class FieldDeviation
 			type = DeviationType.PERCENTAGE;
 			attr = attr.substring(0,attr.length() - 1);
 		}
-		value = new Integer(attr);
+		value = Integer.parseInt(attr);
 	}
 
 	boolean check(String oldvalue,String newvalue)
@@ -27,8 +27,8 @@ class FieldDeviation
 		if (value == 0) return false;
 		if (oldvalue == null || !oldvalue.matches("^-?\\d+$")) return false;
 		if (newvalue == null || !newvalue.matches("^-?\\d+$")) return false;
-		int oldint = new Integer(oldvalue);
-		int newint = new Integer(newvalue);
+		int oldint = Integer.parseInt(oldvalue);
+		int newint = Integer.parseInt(newvalue);
 		int gap = type == DeviationType.PERCENTAGE ? oldint * value / 100 : value;
 		if (Misc.isLog(25)) Misc.log("Deviation " + gap + ": " + oldint + "," + newint);
 		return (newint >= oldint - gap) && (newint <= oldint + gap);
@@ -41,7 +41,7 @@ class FieldResult
 	private Map<String,String> values;
 	private Sync sync;
 	private Field field;
-	private Set<String> fields = new TreeSet<String>();
+	private Set<String> fields = new TreeSet<>();
 
 	FieldResult(Sync sync,Field field,Map<String,String> values)
 	{
@@ -311,13 +311,13 @@ class Fields
 	public Fields(DBSyncOper dbsync,Set<String> keyfields) throws AdapterException
 	{
 		this.dbsync = dbsync;
-		this.keyfields = new LinkedHashSet<String>(keyfields);
-		namefields = new LinkedHashSet<String>(keyfields);
-		fields = new ArrayList<Field>();
-		features = new EnumMap<Scope,EnumMap<FieldFeature,HashMap<String,FieldValue>>>(Scope.class);
-		features.put(Scope.SCOPE_SOURCE,new EnumMap<FieldFeature,HashMap<String,FieldValue>>(FieldFeature.class));
-		features.put(Scope.SCOPE_DESTINATION,new EnumMap<FieldFeature,HashMap<String,FieldValue>>(FieldFeature.class));
-		features.put(Scope.SCOPE_GLOBAL,new EnumMap<FieldFeature,HashMap<String,FieldValue>>(FieldFeature.class));
+		this.keyfields = new LinkedHashSet<>(keyfields);
+		namefields = new LinkedHashSet<>(keyfields);
+		fields = new ArrayList<>();
+		features = new EnumMap<>(Scope.class);
+		features.put(Scope.SCOPE_SOURCE,new EnumMap<>(FieldFeature.class));
+		features.put(Scope.SCOPE_DESTINATION,new EnumMap<>(FieldFeature.class));
+		features.put(Scope.SCOPE_GLOBAL,new EnumMap<>(FieldFeature.class));
 		for(String keyfield:keyfields)
 			add(new Field(keyfield));
 	}
@@ -328,7 +328,7 @@ class Fields
 		HashMap<String,FieldValue> mapoper = mapscope.get(feature);
 		if (mapoper == null)
 		{
-			mapoper = new HashMap<String,FieldValue>();
+			mapoper = new HashMap<>();
 			mapscope.put(feature,mapoper);
 		}
 
@@ -433,16 +433,16 @@ class Fields
 		String forceempty = field.getAttribute(forceemptyattr);
 
 		if ((scope == Scope.SCOPE_GLOBAL || scope == Scope.SCOPE_SOURCE) && dbsync.isValidSync(synclist,Scope.SCOPE_SOURCE))
-			setFeature(Scope.SCOPE_SOURCE,FieldFeature.FIELD_FEATURE_ONMULTIPLE,new FieldValue<OnOper>(field,onmultipleoper),field.isAttributeNoDefault(onmultipleattr));
+			setFeature(Scope.SCOPE_SOURCE,FieldFeature.FIELD_FEATURE_ONMULTIPLE,new FieldValue<>(field,onmultipleoper),field.isAttributeNoDefault(onmultipleattr));
 
 		if ((scope == Scope.SCOPE_GLOBAL || scope == Scope.SCOPE_DESTINATION) && dbsync.isValidSync(synclist,Scope.SCOPE_DESTINATION))
-			setFeature(Scope.SCOPE_DESTINATION,FieldFeature.FIELD_FEATURE_ONMULTIPLE,new FieldValue<OnOper>(field,onmultipleoper),field.isAttributeNoDefault(onmultipleattr));
+			setFeature(Scope.SCOPE_DESTINATION,FieldFeature.FIELD_FEATURE_ONMULTIPLE,new FieldValue<>(field,onmultipleoper),field.isAttributeNoDefault(onmultipleattr));
 
 		if (dbsync.isValidSync(synclist,Scope.SCOPE_GLOBAL))
 		{
-			setFeature(Scope.SCOPE_GLOBAL,FieldFeature.FIELD_FEATURE_IGNORE_CASE,new FieldValue<OnOper>(field,ignorecaseoper),field.isAttributeNoDefault(ignorecaseattr));
-			setFeature(Scope.SCOPE_GLOBAL,FieldFeature.FIELD_FEATURE_TYPE,new FieldValue<OnOper>(field,typeoper),field.isAttributeNoDefault(typeattr));
-			setFeature(Scope.SCOPE_GLOBAL,FieldFeature.FIELD_FEATURE_DEVIATION,new FieldValue<FieldDeviation>(field,deviation),field.isAttributeNoDefault(deviationattr));
+			setFeature(Scope.SCOPE_GLOBAL,FieldFeature.FIELD_FEATURE_IGNORE_CASE,new FieldValue<>(field,ignorecaseoper),field.isAttributeNoDefault(ignorecaseattr));
+			setFeature(Scope.SCOPE_GLOBAL,FieldFeature.FIELD_FEATURE_TYPE,new FieldValue<>(field,typeoper),field.isAttributeNoDefault(typeattr));
+			setFeature(Scope.SCOPE_GLOBAL,FieldFeature.FIELD_FEATURE_DEVIATION,new FieldValue<>(field,deviation),field.isAttributeNoDefault(deviationattr));
 		}
 
 		if (Misc.isLog(10)) Misc.log("Setting field " + field.getName() + " to pos " + pos + " isdefault=" + isdefault);
@@ -480,8 +480,8 @@ class Fields
 
 	public Set<String> getNames(Sync sync) throws AdapterException
 	{
-		Set<String> names = new LinkedHashSet<String>();
-		Map<String,String> renamed_names = new HashMap<String,String>();
+		Set<String> names = new LinkedHashSet<>();
+		Map<String,String> renamed_names = new HashMap<>();
 		for(Field field:fields)
 		{
 			Scope scope = field.getScope();
@@ -507,12 +507,34 @@ class Fields
 		return keyfields;
 	}
 
+	public Set<String> getKeysNotUsed(Sync sync) throws AdapterException
+	{
+		Set<String> keys = new LinkedHashSet<String>(keyfields);
+		for(Field field:fields)
+		{
+			if (field.isKey() || !field.isValid(sync)) continue;
+			Scope scope = field.getScope();
+			if (scope != Scope.SCOPE_GLOBAL && scope != sync.getScope())
+				continue;
+			keys.remove(field.getNewName() == null ? field.getName() : field.getNewName());
+			if (field.getCopyName() != null) keys.remove(field.getCopyName());
+		}
+		return keys;
+	}
+
+	public Set<String> getKeysUsed(Sync sync) throws AdapterException
+	{
+		Set<String> keys = new LinkedHashSet<String>(keyfields);
+		keys.removeAll(getKeysNotUsed(sync));
+		return keys;
+	}
+
 	public ArrayList<Field> getFields()
 	{
 		return fields;
 	}
 
-	private void doFunction(LinkedHashMap<String,String> result,XML function) throws AdapterException
+	private void doFunction(Map<String,String> result,XML function) throws AdapterException
 	{
 		if (function == null) return;
 		if (javaadapter.isShuttingDown()) return;
@@ -547,7 +569,7 @@ class Fields
 		}
 	}
 
-	public LinkedHashMap<String,String> getNext(Sync sync) throws AdapterException
+	public Map<String,String> getNext(Sync sync) throws AdapterException
 	{
 		try {
 			return getNextSub(sync);
@@ -557,10 +579,10 @@ class Fields
 		return null;
 	}
 
-	public LinkedHashMap<String,String> getNextSub(Sync sync) throws AdapterException
+	public Map<String,String> getNextSub(Sync sync) throws AdapterException
 	{
 		final String traceid = "GETNEXT";
-		LinkedHashMap<String,String> result;
+		Map<String,String> result;
 
 		boolean doprocessing = !sync.isProcessed();
 		if (!doprocessing && Misc.isLog(30))
@@ -574,7 +596,7 @@ class Fields
 				Misc.log((doprocessing ? "Processing" : "No processing") + " record " + sync.getName() + ": " + Misc.implode(result));
 
 			Set<String> keyset = getKeys();
-			Set<String> usedset = new HashSet<String>();
+			Set<String> usedset = new HashSet<>();
 
 			fieldloop: for(Field field:fields)
 			{
@@ -673,7 +695,7 @@ class Fields
 							result.remove(name);
 						continue;
 					case MERGE:
-						TreeSet<String> sortedmerge = new TreeSet<String>(DB.getInstance().getCollatorIgnoreCase());
+						TreeSet<String> sortedmerge = new TreeSet<>(DB.getInstance().getCollatorIgnoreCase());
 						sortedmerge.addAll(Arrays.asList(value.split("\n")));
 						value = Misc.implode(sortedmerge,",");
 						break;

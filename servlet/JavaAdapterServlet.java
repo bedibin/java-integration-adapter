@@ -95,7 +95,7 @@ public final class JavaAdapterServlet extends HttpServlet
 					return;
 				}
 
-				ArrayList<Subscriber> subs = server.getSubscribers();
+				List<Subscriber> subs = server.getSubscribers();
 				for(Subscriber sub:subs)
 				{
 					String action = path.substring(1);
@@ -176,7 +176,7 @@ public final class JavaAdapterServlet extends HttpServlet
 					return;
 				}
 
-				ArrayList<Subscriber> subs = server.getSubscribers();
+				List<Subscriber> subs = server.getSubscribers();
 				for(Subscriber sub:subs)
 				{
 					if (!actionstring.equals(sub.getName())) continue;
