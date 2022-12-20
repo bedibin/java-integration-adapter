@@ -530,7 +530,7 @@ class XML
 		String value = getAttribute(name);
 		if (value == null) return null;
 
-		return javaadapter.crypter.decrypt(value);
+		return Misc.getCrypter().decrypt(value);
 	}
 
 	public Map<String,String> getAttributes()
@@ -702,7 +702,7 @@ class XML
 		String value = getValue();
 		if (value == null) return null;
 
-		return javaadapter.crypter.decrypt(value);
+		return Misc.getCrypter().decrypt(value);
 	}
 
 	public String getElementValue()
@@ -737,7 +737,7 @@ class XML
 		String value = getValue(name);
 		if (value == null) return null;
 
-		return javaadapter.crypter.decrypt(value);
+		return Misc.getCrypter().decrypt(value);
 	}
 
 	public String getValue(String name) throws AdapterXmlException

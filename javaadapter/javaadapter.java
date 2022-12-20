@@ -128,7 +128,6 @@ public class javaadapter
 	static Shutdown shutdown = new Shutdown();
 	private static HashMap<String,List<Subscriber>> subscriberlist;
 	static ArrayList<SoapServer> soapservers = new ArrayList<>();
-	static crypt crypter;
 	static boolean isstarted = false;
 	static Date startdate = new Date();
 	static boolean dohooks = true;
@@ -234,9 +233,7 @@ public class javaadapter
 		String[] parts = file.getName().split("\\.");
 		adaptername = parts[0];
 
-		xmlconfig = new XML(filename);
-		crypter = new crypt(xmlconfig);
-		Misc.setConfig(xmlconfig);
+		xmlconfig = Misc.readConfig(filename);
 
 		subscriberlist = new HashMap<>();
 

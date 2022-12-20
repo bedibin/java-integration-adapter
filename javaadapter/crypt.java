@@ -240,7 +240,7 @@ class FileCrypto extends CryptoBase
 				throw new AdapterException("File not found: " + file);
 			BufferedReader reader = new BufferedReader(new StringReader(str));
 			str = reader.readLine();
-			return javaadapter.crypter.decrypt(str);
+			return Misc.getCrypter().decrypt(str);
 		} catch (AdapterException | IOException e) {
 			throw new AdapterRuntimeException("Could not decrypt: " + e.toString());
 		}
@@ -263,7 +263,7 @@ class EnvCrypto extends CryptoBase
 			Context ctx = new InitialContext();
 			Context env = (Context)ctx.lookup("java:comp/env");
 			str = (String)env.lookup(str);
-			return javaadapter.crypter.decrypt(str);
+			return Misc.getCrypter().decrypt(str);
 		} catch (NamingException e) {
 			throw new AdapterRuntimeException("Could not decrypt: " + e.toString());
 		}

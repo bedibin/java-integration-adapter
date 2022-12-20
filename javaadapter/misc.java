@@ -262,10 +262,13 @@ class Misc
 	private static String logfile = System.getProperty("javaadapter.log.filename");
 	private static String hostname = System.getProperty("javaadapter.hostname");
 	private static String logtag;
+	private static crypt crypter;
 
 	private static String[] env;
 
 	private Misc() {}
+
+	public static crypt getCrypter() { return crypter; };
 
 	private static ThreadLocal<SimpleDateFormat> gmtDateFormat = new ThreadLocal<SimpleDateFormat>()
 	{
@@ -322,11 +325,13 @@ class Misc
 		if (logmaxsizeprop != null) maxsize = Long.parseLong(logmaxsizeprop);
 	}
 
-	public static void setConfig(XML xmlconfig) throws AdapterXmlException
+	public static XML readConfig(String filename) throws AdapterException
 	{
 		if (hostname == null || "".equals(hostname)) hostname = getHostName();
 
+		XML xmlconfig = new XML(filename);
 		xmlconfig.setInclude();
+		crypter = new crypt(xmlconfig);
 		setLogInfo(xmlconfig);
 		XML.setDefaults(xmlconfig);
 
@@ -339,6 +344,8 @@ class Misc
 			if (Misc.isLog(5)) Misc.log("Setting property " + name + " with value " + value);
 			System.setProperty(name,value == null ? "" : value);
 		}
+
+		return xmlconfig;
 	}
 
 	public static String getGMTDate(java.util.Date date)
@@ -1442,7 +1449,7 @@ class Misc
 	public static String substituteGet(String param,String def,VariableContext ctx) throws AdapterException
 	{
 		if (param.startsWith("$PASSWORD"))
-			return javaadapter.crypter.decrypt(XML.getDefaultVariable(param,ctx));
+			return crypter.decrypt(XML.getDefaultVariable(param,ctx));
 		else if (param.startsWith("$"))
 			return XML.getDefaultVariable(param,ctx);
 		else if (param.startsWith("<"))
@@ -1451,7 +1458,7 @@ class Misc
 			return value == null ? value : value.trim();
 		}
 		else if (param.startsWith("!") && param.endsWith("!"))
-			return javaadapter.crypter.decrypt(param);
+			return crypter.decrypt(param);
 		else if (param.startsWith("!"))
 		{
 			try {
