@@ -756,7 +756,9 @@ class DBSyncOper
 			Matcher matchervar = Misc.substitutepattern.matcher(filevar);
 
 			Set<Path> paths = Misc.glob(fileglob);
-			for(Path path:paths)
+			if (paths.isEmpty())
+				results.add(sync);
+			else for(Path path:paths)
 			{
 				XML newsync = sync.copy();
 				String pathname = path.toString();

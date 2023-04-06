@@ -520,11 +520,6 @@ class XML
 		return buffer.toString();
 	}
 
-	public void renameTag(String name)
-	{
-		dom.renameNode(node,null,name);
-	}
-
 	public String getAttributeCrypt(String name) throws AdapterXmlException
 	{
 		String value = getAttribute(name);

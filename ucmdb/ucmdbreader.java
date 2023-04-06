@@ -129,6 +129,7 @@ class Ucmdb
 	public BulkType getBulkType() { return bulktype; }
 
 	static final Pattern causedbypattern = Pattern.compile("Caused by:\\s.*?:\\s+(\\S.+)$",Pattern.MULTILINE);
+	static final Pattern exceptionpattern = Pattern.compile("^([\\w\\.]+: +\\S.*)$",Pattern.MULTILINE);
 
 	public static String cleanupException(Exception ex)
 	{
@@ -145,8 +146,18 @@ class Ucmdb
 
 		if (causes.size() == 0)
 		{
+			matcher = exceptionpattern.matcher(error);
+			while(matcher.find())
+			{
+				String cause = matcher.group(1);
+				causes.add(cause);
+			}
+		}
+
+		if (causes.size() == 0)
+		{
 			String[] lines = error.split("\n");
-			return lines[0]; // First line only
+			causes.add(lines[0]); // First line only
 		}
 		return Misc.implode(causes);
 	}

@@ -121,7 +121,7 @@ class DBConnection implements VariableContext
 		}
 	}
 
-	private void init(XML xml) throws AdapterException
+	private synchronized void init(XML xml) throws AdapterException
 	{
 		name = xml.getAttribute("name");
 		String urlstr = xml.getValue("url",null);
@@ -199,10 +199,10 @@ class DBConnection implements VariableContext
 			execsql(el.getValue());
 	}
 
-	public void checkConnectionState(boolean force) throws AdapterDbException
+	public void checkConnectionState(boolean forceclose) throws AdapterDbException
 	{
 		try {
-			if (!force && !conn.isClosed()) return;
+			if (!forceclose && !conn.isClosed()) return;
 		} catch(SQLException ex) {}
 
 		Misc.log(1,"Database connection " + name + " closed, trying reconnect");
@@ -429,7 +429,15 @@ class DBOper
 
 		try
 		{
-			makeStatement(sql,list);
+			try
+			{
+				makeStatement(sql,list);
+			}
+			catch(IllegalThreadStateException ex)
+			{
+				dbc.checkConnectionState(true);
+				makeStatement(sql,list);
+			}
 		}
 		catch(SQLException ex)
 		{
