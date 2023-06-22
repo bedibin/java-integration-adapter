@@ -437,7 +437,7 @@ class Publisher
 
 	public synchronized void clearSession(String name)
 	{
-		sessioncookies.remove(name);
+		sessioncookies.remove(Thread.currentThread().getName() + "-" + name);
 	}
 
 	public synchronized void setSessionProperty(String name,String property)
@@ -451,11 +451,11 @@ class Publisher
 			String value = token[1];
 		
 			if (Misc.isLog(9)) Misc.log("Setting property for name " + name + " with key " + key + (Misc.isLog(30) ? ": " + value : ""));
-			Map<String,String> cookies = sessioncookies.get(name);
+			Map<String,String> cookies = sessioncookies.get(Thread.currentThread().getName() + "-" + name);
 			if (cookies == null)
 			{
 				cookies = new LinkedHashMap<String,String>();
-				sessioncookies.put(name,cookies);
+				sessioncookies.put(Thread.currentThread().getName() + "-" + name,cookies);
 			}
 			cookies.put(key,value);
 		}
@@ -463,7 +463,7 @@ class Publisher
 
 	public synchronized void setRequestProperties(String name,HttpURLConnection rc)
 	{
-		Map<String,String> cookies = sessioncookies.get(name);
+		Map<String,String> cookies = sessioncookies.get(Thread.currentThread().getName() + "-" + name);
 		if (cookies == null)
 		{
 			rc.setReadTimeout(default_soap_first_read_timeout);

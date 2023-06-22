@@ -924,6 +924,7 @@ elementFormDefault="qualified">
 								</xs:choice></xs:sequence>
 								<xs:attribute name="filter" type="xs:string"/>
 								<xs:attribute name="dumpcsvfilename" type="xs:string"/>
+								<xs:attribute name="csv_charset" type="xs:string"/>
 								<xs:attribute name="csv_fields" type="xs:string"/>
 								<xs:attribute name="dumplogfile" type="xs:boolean" default="false"/>
 								<xs:attribute name="on_duplicates" type="ondupstypes" default="merge"/>
@@ -957,6 +958,7 @@ elementFormDefault="qualified">
 								<xs:attribute name="table" type="xs:string"/>
 								<xs:attribute name="filter" type="xs:string"/>
 								<xs:attribute name="dumpcsvfilename" type="xs:string"/>
+								<xs:attribute name="csv_charset" type="xs:string"/>
 								<xs:attribute name="csv_fields" type="xs:string"/>
 								<xs:attribute name="dumplogfile" type="xs:boolean"/>
 								<xs:attribute name="stop_on_error" type="xs:boolean" default="false"/>
@@ -970,6 +972,7 @@ elementFormDefault="qualified">
 								<xs:attribute name="on_file_not_found" type="onnotfoundtypes" default="exception"/>
 								<xs:attribute name="instance_write" type="xs:string"/> <!-- dbsyncplugin -->
 								<xs:attribute name="show_errors" type="xs:boolean" default="false"/>
+								<xs:attribute name="pool_size" type="xs:integer"/>
 								<xs:attributeGroup ref="operation"/>
 								<!-- archivage -->
 								<xs:attribute name="reftable" type="xs:string"/>

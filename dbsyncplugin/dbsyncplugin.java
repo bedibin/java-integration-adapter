@@ -1,5 +1,6 @@
 import java.util.*;
 import java.util.regex.*;
+import java.util.concurrent.*;
 import java.sql.SQLException;
 
 class dbsyncplugin
@@ -115,6 +116,9 @@ class UpdateDestInfo
 	String[] mergekeys;
 	String[] clearfields;
 	String[] suffixfields;
+	String[] displayfields;
+	ExecutorService pool;
+	BlockingQueue<XML> queue;
 
 	UpdateDestInfo(XML xml) throws AdapterException
 	{
@@ -134,8 +138,11 @@ class UpdateDestInfo
 			postinsertlist.add(xmlsql.getValue());
 		idfield = xml.getAttribute("idfield");
 		tablename = xml.getAttribute("table");
+		String displayfield = xml.getAttribute("display_keyfield");
+		if (displayfield != null) displayfields = displayfield.split("\\s*,\\s*");
 		String ondupsmatch = xml.getAttribute("on_duplicates_match");
 		if (ondupsmatch != null) ondupspattern = Pattern.compile(ondupsmatch);
+
 		SyncOper[] operlist = { SyncOper.ADD, SyncOper.REMOVE, SyncOper.UPDATE };
 		for(SyncOper oper:operlist)
 		{
@@ -159,6 +166,13 @@ class UpdateDestInfo
 		if (clearfieldsattr != null) clearfields = clearfieldsattr.split("\\s*,\\s*");
 		String suffixfieldsattr = xml.getAttribute("suffix_fields");
 		if (suffixfieldsattr != null) suffixfields = suffixfieldsattr.split("\\s*,\\s*");
+
+		String poolsize = xml.getAttribute("pool_size");
+		if (poolsize != null)
+		{
+			pool = Executors.newFixedThreadPool(Integer.parseInt(poolsize));
+			queue = new ArrayBlockingQueue<>(Integer.parseInt(poolsize));
+		}
 	}
 
 	XML getXML() { return xml; }
@@ -179,27 +193,30 @@ class UpdateDestInfo
 	String[] getMergeKeys() { return mergekeys; }
 	String[] getClearFields() { return clearfields; }
 	String[] getSuffixFields() { return suffixfields; }
+	String[] getDisplayFields() { return displayfields; }
+	ExecutorService getPool() { return pool; };
+	BlockingQueue<XML> getBlockingQueue() { return queue; };
 }
 
 abstract class UpdateSubscriber extends Subscriber
 {
 	private String keyvalue;
-	private String[] displayfields;
 	private Rate rate;
 	private int addcounter;
 	private int removecounter;
 	private int updatecounter;
+	private UpdateDestInfo destinfo;
+	private Throwable poolexception;
 
-	protected final String getKeyValue()
-	{
-		return keyvalue;
-	}
+	protected final String getKeyValue() { return keyvalue; }
+	protected final UpdateDestInfo getDestInfo() { return destinfo; }
 
 	protected void setKeyValue(XML xml) throws AdapterException
 	{
 		keyvalue = "";
 
 		LinkedHashMap<String,String> displayvalues = new LinkedHashMap<>();
+		String[] displayfields = destinfo.getDisplayFields();
 		if (displayfields != null) for(String field:displayfields)
 			displayvalues.put(field,"");
 
@@ -227,33 +244,79 @@ abstract class UpdateSubscriber extends Subscriber
 	@Override
 	public XML run(XML xml) throws AdapterException
 	{
-		String name = xml.getAttribute("name");
-		if (name == null) throw new AdapterException(xml,"Missing name attribute");
-		String type = xml.getAttribute("type");
-		if (type == null) throw new AdapterException(xml,"Missing type attribute");
-
-		String path = "/configuration/dbsync[@name='" + name + "']/destination[@type='" + type + "'";
-
-		String instance = xml.getAttribute("instance");
-		if (instance != null) path += " and @instance='" + instance + "'";
-		String table = xml.getAttribute("table");
-		if (table != null) path += " and @table='" + table + "'";
-
-		path += "]";
-		XML xmldest = javaadapter.getConfiguration().getElementByPath(path);
-		if (xmldest == null) throw new AdapterException(xml,"Non matching destination element: " + path);
-
-		UpdateDestInfo destinfo = new UpdateDestInfo(xmldest);
-
-		String displayfield = xml.getAttribute("display_keyfield");
-		if (displayfield != null) displayfields = displayfield.split("\\s*,\\s*");
-
 		XML[] xmloperlist = xml.getElements(null);
 		for(XML xmloper:xmloperlist)
 		{
 			if (javaadapter.isShuttingDown()) return null;
+
+			SyncOper oper = Enum.valueOf(SyncOper.class,xmloper.getTagName().toUpperCase());
+			if (oper == SyncOper.START)
+			{
+				if (destinfo != null) throw new AdapterException(xml,"Start operation but last one didn't complete");
+
+				String name = xml.getAttribute("name");
+				if (name == null) throw new AdapterException(xml,"Missing name attribute");
+				String type = xml.getAttribute("type");
+				if (type == null) throw new AdapterException(xml,"Missing type attribute");
+
+				String path = "/configuration/dbsync[@name='" + name + "']/destination[@type='" + type + "'";
+
+				String instance = xml.getAttribute("instance");
+				if (instance != null) path += " and @instance='" + instance + "'";
+				String table = xml.getAttribute("table");
+				if (table != null) path += " and @table='" + table + "'";
+
+				path += "]";
+				XML xmldest = javaadapter.getConfiguration().getElementByPath(path);
+				if (xmldest == null) throw new AdapterException(xml,"Non matching destination element: " + path);
+
+				destinfo = new UpdateDestInfo(xmldest);
+			}
+
+			if (destinfo == null) throw new AdapterException(xml,"Start operation must be done before processing");
 			setKeyValue(xmloper);
-			oper(destinfo,xmloper);
+
+			ExecutorService pool = destinfo.getPool();
+			if (pool == null)
+				oper(xmloper);
+			else
+			{
+				BlockingQueue<XML> queue = destinfo.getBlockingQueue();
+				try {
+					queue.put(xmloper);
+				} catch(InterruptedException ex) {
+					throw new AdapterException(ex);
+				}
+				pool.execute(new Runnable() {
+					@Override
+					public void run()
+					{
+						try {
+							oper(xmloper);
+							queue.take();
+						} catch(Throwable ex) {
+							// try to catch first exception and stop processing as soon as possible
+							if (poolexception == null) poolexception = ex;
+							Misc.log(ex);
+						}
+					}
+				});
+				if (poolexception != null || oper == SyncOper.END)
+				{
+					pool.shutdown();
+					try {
+						pool.awaitTermination(24,TimeUnit.HOURS);
+					} catch(InterruptedException ex) {
+						throw new AdapterException(ex);
+					}
+					destinfo = null;
+					if (poolexception != null)
+					{
+						if (poolexception instanceof RuntimeException) throw new RuntimeException(poolexception);
+						throw new AdapterException(poolexception);
+					}
+				}
+			}
 		}
 
 		XML result = new XML();
@@ -262,43 +325,43 @@ abstract class UpdateSubscriber extends Subscriber
 		return result;
 	}
 
-	protected abstract void start(UpdateDestInfo destinfo,XML xml) throws AdapterException;
-	protected abstract void end(UpdateDestInfo destinfo,XML xml) throws AdapterException;
-	protected abstract void add(UpdateDestInfo destinfo,XML xml) throws AdapterException;
-	protected abstract void remove(UpdateDestInfo destinfo,XML xml) throws AdapterException;
-	protected abstract void update(UpdateDestInfo destinfo,XML xml) throws AdapterException;
+	protected abstract void start(XML xml) throws AdapterException;
+	protected abstract void end(XML xml) throws AdapterException;
+	protected abstract void add(XML xml) throws AdapterException;
+	protected abstract void remove(XML xml) throws AdapterException;
+	protected abstract void update(XML xml) throws AdapterException;
 
-	private void startOper(UpdateDestInfo destinfo,XML xml) throws AdapterException
+	private void startOper(XML xml) throws AdapterException
 	{
 		addcounter = 0;
 		removecounter = 0;
 		updatecounter = 0;
 		rate = new Rate();
-		start(destinfo,xml);
+		start(xml);
 	}
 
-	private void addOper(UpdateDestInfo destinfo,XML xml) throws AdapterException
+	private void addOper(XML xml) throws AdapterException
 	{
 		addcounter++;
 		rate.toString();
-		add(destinfo,xml);
+		add(xml);
 	}
 
-	private void removeOper(UpdateDestInfo destinfo,XML xml) throws AdapterException
+	private void removeOper(XML xml) throws AdapterException
 	{
 		removecounter++;
 		rate.toString();
-		remove(destinfo,xml);
+		remove(xml);
 	}
 
-	private void updateOper(UpdateDestInfo destinfo,XML xml) throws AdapterException
+	private void updateOper(XML xml) throws AdapterException
 	{
 		updatecounter++;
 		rate.toString();
-		update(destinfo,xml);
+		update(xml);
 	}
 
-	private void endOper(UpdateDestInfo destinfo,XML xml) throws AdapterException
+	private void endOper(XML xml) throws AdapterException
 	{
 		keyvalue = null;
 		String add = xml.getAttribute("add");
@@ -320,7 +383,7 @@ abstract class UpdateSubscriber extends Subscriber
 		}
 
 		rate = null;
-		end(destinfo,xml);
+		end(xml);
 	}
 
 	protected String getExceptionMessage(Exception ex)
@@ -329,7 +392,7 @@ abstract class UpdateSubscriber extends Subscriber
 		return msg == null ? ex.toString() : msg;
 	}
 
-	public final void oper(UpdateDestInfo destinfo,XML xmloper) throws AdapterException
+	public final void oper(XML xmloper) throws AdapterException
 	{
 		try
 		{
@@ -337,19 +400,19 @@ abstract class UpdateSubscriber extends Subscriber
 			switch(oper)
 			{
 			case UPDATE:
-				updateOper(destinfo,xmloper);
+				updateOper(xmloper);
 				break;
 			case ADD:
-				addOper(destinfo,xmloper);
+				addOper(xmloper);
 				break;
 			case REMOVE:
-				removeOper(destinfo,xmloper);
+				removeOper(xmloper);
 				break;
 			case START:
-				startOper(destinfo,xmloper);
+				startOper(xmloper);
 				break;
 			case END:
-				endOper(destinfo,xmloper);
+				endOper(xmloper);
 				break;
 			}
 		}
@@ -378,8 +441,9 @@ class DatabaseUpdateSubscriber extends UpdateSubscriber
 		quotefield = field;
 	}
 
-	protected void start(UpdateDestInfo destinfo,XML xml) throws AdapterException
+	protected void start(XML xml) throws AdapterException
 	{
+		UpdateDestInfo destinfo = getDestInfo();
 		String instance = destinfo.getInstance();
 		for(String sql:destinfo.getPreInsertList())
 		{
@@ -388,8 +452,9 @@ class DatabaseUpdateSubscriber extends UpdateSubscriber
 		}
 	}
 
-	protected void end(UpdateDestInfo destinfo,XML xml) throws AdapterException
+	protected void end(XML xml) throws AdapterException
 	{
+		UpdateDestInfo destinfo = getDestInfo();
 		String instance = destinfo.getInstance();
 		for(String sql:destinfo.getPostInsertList())
 		{
@@ -398,8 +463,9 @@ class DatabaseUpdateSubscriber extends UpdateSubscriber
 		}
 	}
 
-	private boolean customsql(SyncOper oper,final UpdateDestInfo destinfo,XML xml) throws AdapterException
+	private boolean customsql(SyncOper oper,XML xml) throws AdapterException
 	{
+		UpdateDestInfo destinfo = getDestInfo();
 		String instance = destinfo.getInstance();
 		ArrayList<XML> sqlxmllist = destinfo.getCustomSqlList(oper);
 		if (sqlxmllist.size() == 0) return false;
@@ -434,9 +500,10 @@ class DatabaseUpdateSubscriber extends UpdateSubscriber
 		return true;
 	}
 
-	private String getWhereClause(UpdateDestInfo destinfo,XML xml,List<DBField> list) throws AdapterException
+	private String getWhereClause(XML xml,List<DBField> list) throws AdapterException
 	{
 		XML[] fields = xml.getElements();
+		UpdateDestInfo destinfo = getDestInfo();
 		String table = destinfo.getTableName();
 
 		String sep = "where";
@@ -478,8 +545,9 @@ class DatabaseUpdateSubscriber extends UpdateSubscriber
 		return sql.toString();
 	}
 
-	private void handleRetryException(AdapterDbException ex,UpdateDestInfo destinfo,XML xml,boolean isretry) throws AdapterException
+	private void handleRetryException(AdapterDbException ex,XML xml,boolean isretry) throws AdapterException
 	{
+		UpdateDestInfo destinfo = getDestInfo();
 		String table = destinfo.getTableName();
 		String instance = destinfo.getInstance();
 		XML[] fields = xml.getElements();
@@ -496,7 +564,7 @@ class DatabaseUpdateSubscriber extends UpdateSubscriber
 			{
 				Misc.log("Extracting current duplicate since message: " + message);
 				ArrayList<DBField> list = new ArrayList<>();
-				String sqlchk = "select * from " + table + getWhereClause(destinfo,xml,list);
+				String sqlchk = "select * from " + table + getWhereClause(xml,list);
 				db.execsql(instance,sqlchk,list);
 			}
 
@@ -534,7 +602,7 @@ class DatabaseUpdateSubscriber extends UpdateSubscriber
 						}
 					}
 					Misc.log(1,"WARNING: Record already present." + Misc.CR + "Updating record information with XML message: " + updxml);
-					update(destinfo,updxml,true);
+					update(updxml,true);
 					break;
 				case CLEAR:
 					String[] clearfields = destinfo.getClearFields();
@@ -549,7 +617,7 @@ class DatabaseUpdateSubscriber extends UpdateSubscriber
 						listclear.add(new DBField(table,field,null));
 						sepclear = ",";
 					}
-					sqlclear.append(" " + getWhereClause(destinfo,xml,listclear));
+					sqlclear.append(" " + getWhereClause(xml,listclear));
 					db.execsql(instance,sqlclear.toString(),listclear);
 					break;
 				case SUFFIX:
@@ -565,13 +633,13 @@ class DatabaseUpdateSubscriber extends UpdateSubscriber
 						listsuffix.add(new DBField(table,field,db.getConcat(instance,field,"'_'")));
 						sepsuf = ",";
 					}
-					sqlsuf.append(" " + getWhereClause(destinfo,xml,listsuffix));
+					sqlsuf.append(" " + getWhereClause(xml,listsuffix));
 					db.execsql(instance,sqlsuf.toString(),listsuffix);
 					break;
 				case RECREATE:
 					Misc.log(1,"WARNING: [" + getKeyValue() + "] Record already present. Record will be automatically recreated with XML message: " + xml);
-					remove(destinfo,xml);
-					add(destinfo,xml,true);
+					remove(xml);
+					add(xml,true);
 					break;
 				case WARNING:
 					Misc.log(1,"WARNING: [" + getKeyValue() + "] Record already present. Error: " + message + Misc.CR + "Ignored XML message: " + xml);	
@@ -586,15 +654,16 @@ class DatabaseUpdateSubscriber extends UpdateSubscriber
 		Misc.rethrow(ex);
 	}
 
-	protected void add(UpdateDestInfo destinfo,XML xml) throws AdapterException
+	protected void add(XML xml) throws AdapterException
 	{
-		add(destinfo,xml,false);
+		add(xml,false);
 	}
 
-	protected void add(UpdateDestInfo destinfo,XML xml,boolean isretry) throws AdapterException
+	protected void add(XML xml,boolean isretry) throws AdapterException
 	{
+		UpdateDestInfo destinfo = getDestInfo();
 		String instance = destinfo.getInstance();
-		if (customsql(SyncOper.ADD,destinfo,xml)) return;
+		if (customsql(SyncOper.ADD,xml)) return;
 
 		String table = destinfo.getTableName();
 		if (table == null) throw new AdapterException("dbsync: destination 'table' attribute required");
@@ -639,14 +708,15 @@ class DatabaseUpdateSubscriber extends UpdateSubscriber
 		}
 		catch(AdapterDbException ex)
 		{
-			handleRetryException(ex,destinfo,xml,isretry);
+			handleRetryException(ex,xml,isretry);
 		}
 	}
 
-	protected void remove(UpdateDestInfo destinfo,XML xml) throws AdapterException
+	protected void remove(XML xml) throws AdapterException
 	{
+		UpdateDestInfo destinfo = getDestInfo();
 		String instance = destinfo.getInstance();
-		if (customsql(SyncOper.REMOVE,destinfo,xml)) return;
+		if (customsql(SyncOper.REMOVE,xml)) return;
 
 		String table = destinfo.getTableName();
 		if (table == null) throw new AdapterException("dbsync: destination 'table' attribute required");
@@ -669,24 +739,25 @@ class DatabaseUpdateSubscriber extends UpdateSubscriber
 				list.add(new DBField(table,name,Misc.substitute(value,xml)));
 				sep = ",";
 			}
-			sql.append(getWhereClause(destinfo,xml,list));
+			sql.append(getWhereClause(xml,list));
 		}
 		else
-			sql.append("delete from " + table + getWhereClause(destinfo,xml,list));
+			sql.append("delete from " + table + getWhereClause(xml,list));
 
 		if (Misc.isLog(10)) Misc.log("remove SQL: " + sql);
 		db.execsql(instance,sql.toString(),list);
 	}
 
-	protected void update(UpdateDestInfo destinfo,XML xml) throws AdapterException
+	protected void update(XML xml) throws AdapterException
 	{
-		update(destinfo,xml,false);
+		update(xml,false);
 	}
 
-	protected void update(UpdateDestInfo destinfo,XML xml,boolean isretry) throws AdapterException
+	protected void update(XML xml,boolean isretry) throws AdapterException
 	{
+		UpdateDestInfo destinfo = getDestInfo();
 		String instance = destinfo.getInstance();
-		if (customsql(SyncOper.UPDATE,destinfo,xml)) return;
+		if (customsql(SyncOper.UPDATE,xml)) return;
 
 		String table = destinfo.getTableName();
 		if (table == null) throw new AdapterException("dbsync: destination 'table' attribute required");
@@ -711,7 +782,7 @@ class DatabaseUpdateSubscriber extends UpdateSubscriber
 
 		if (sep.equals("set")) return;
 
-		sql.append(getWhereClause(destinfo,xml,list));
+		sql.append(getWhereClause(xml,list));
 
 		if (Misc.isLog(10)) Misc.log("update SQL: " + sql);
 
@@ -721,7 +792,7 @@ class DatabaseUpdateSubscriber extends UpdateSubscriber
 		}
 		catch(AdapterDbException ex)
 		{
-			handleRetryException(ex,destinfo,xml,isretry);
+			handleRetryException(ex,xml,isretry);
 		}
 	}
 }

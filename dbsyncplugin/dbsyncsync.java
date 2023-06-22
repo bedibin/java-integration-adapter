@@ -134,6 +134,8 @@ class Sync implements Closeable
 		{
 			String fieldsattr = xml.getAttribute("csv_fields");
 			if (fieldsattr == null) fieldsattr = xml.getAttribute("fields");
+			String charset = xml.getAttribute("csv_charset");
+
 			Set<String> headers;
 			if (fieldsattr == null)
 			{
@@ -142,7 +144,8 @@ class Sync implements Closeable
 				headers.addAll(getResultHeader());
 			}
 			else headers = Misc.arrayToSet(fieldsattr.split("\\s*,\\s*"));
-			csvout = new CsvWriter(dumpcsvfilename,headers,xml);
+
+			csvout = new CsvWriter(dumpcsvfilename,headers,charset,xml);
 		}
 
 		Set<String> notused = getDBSync().getFields().getKeysNotUsed(this);

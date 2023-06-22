@@ -59,19 +59,20 @@ class CsvWriter
 	private char delimiter = ',';
 	private char listdelimiter = '\n';
 	private boolean forceenclosure = false;
-	private String charset = "ISO-8859-1";
 	private boolean doheader = true;
 	private boolean crafter = false;
+	private String charset;
 	private CryptoBase crypto;
 
 	private void init(String filename,String charset) throws AdapterException
 	{
 		this.filename = filename;
-		if (charset != null) this.charset = charset;
+		if (charset == null) charset = "ISO-8859-1"; // Default charset
+		this.charset = charset;
 		outlist = new HashMap<>();
 		if (Misc.isSubstituteDefault(filename)) return;
 		try {
-			defaultout = new WriterOper(new BufferedWriter(new OutputStreamWriter(new FileOutputStream(new File(javaadapter.getCurrentDir(),Misc.substitute(filename))),this.charset)));
+			defaultout = new WriterOper(new BufferedWriter(new OutputStreamWriter(new FileOutputStream(new File(javaadapter.getCurrentDir(),Misc.substitute(filename))),charset)));
 		} catch(IOException ex) {
 			throw new AdapterException(ex);
 		}
@@ -108,13 +109,19 @@ class CsvWriter
 		if (defaultout != null) write(headers);
 	}
 
-	public CsvWriter(String filename,Collection<String> headers,XML xml) throws AdapterException
+	public CsvWriter(String filename,Collection<String> headers,String charset,XML xml) throws AdapterException
 	{
+		this(filename,charset == null ? xml.getAttribute("charset") : charset);
 		setDelimiters(xml);
 		crypto = Misc.getCipher(xml);
 		init(filename,xml.getAttribute("charset"));
 		this.headers = headers;
 		if (defaultout != null && headers != null && doheader) write(headers);
+	}
+
+	public CsvWriter(String filename,Collection<String> headers,XML xml) throws AdapterException
+	{
+		this(filename,headers,null,xml);
 	}
 
 	public CsvWriter(Writer out,Collection<String> headers) throws AdapterException

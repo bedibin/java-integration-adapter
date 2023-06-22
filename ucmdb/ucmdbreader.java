@@ -797,8 +797,9 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 		}
 	}
 
-	protected void add(UpdateDestInfo destinfo,XML xml) throws AdapterException
+	protected void add(XML xml) throws AdapterException
 	{
+		UpdateDestInfo destinfo = getDestInfo();
 		ArrayList<XML> customs = destinfo.getCustomList(SyncOper.ADD);
 		for(XML custom:customs)
 		{
@@ -886,8 +887,9 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 		push(xml,SyncOper.UPDATE);
 	}
 
-	protected void remove(UpdateDestInfo destinfo,XML xml) throws AdapterException
+	protected void remove(XML xml) throws AdapterException
 	{
+		UpdateDestInfo destinfo = getDestInfo();
 		ArrayList<XML> customs = destinfo.getCustomList(SyncOper.REMOVE);
 		for(XML custom:customs)
 		{
@@ -949,7 +951,7 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 		push(xml,SyncOper.REMOVE);
 	}
 
-	protected void update(UpdateDestInfo destinfo,XML xml) throws AdapterException
+	protected void update(XML xml) throws AdapterException
 	{
 		String old1 = getUpdateValue(xml,"END1");
 		String old2 = getUpdateValue(xml,"END2");
@@ -1014,9 +1016,9 @@ class UCMDBUpdateSubscriber extends UpdateSubscriber
 		updatemulti(SyncOper.UPDATE,xml);
 	}
 
-	protected void start(UpdateDestInfo destinfo,XML xml) throws AdapterException {}
+	protected void start(XML xml) throws AdapterException {}
 
-	protected void end(UpdateDestInfo destinfo,XML xml) throws AdapterException
+	protected void end(XML xml) throws AdapterException
 	{
 		flush();
 	}

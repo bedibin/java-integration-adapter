@@ -21,13 +21,18 @@ class MQQueue extends JMSBase
 
 		void send(String message)
 		{
-			if (producer == null) producer = ctx.createProducer();
+			if (producer == null)
+				producer = ctx.createProducer();
 			producer.send(destination,message);
 		}
 
 		JMSConsumer getConsumer()
 		{
-			if (consumer == null) consumer = ctx.createConsumer(destination);
+			if (consumer == null)
+			{
+				consumer = ctx.createConsumer(destination);
+				javaadapter.setForShutdown(consumer);
+			}
 			return consumer;
 		}
 	};
@@ -76,6 +81,7 @@ class MQQueue extends JMSBase
 		XML password = xml.getElement("password");
 		if (password != null) cf.setStringProperty(WMQConstants.PASSWORD,password.getValueCrypt());
 		ctx = cf.createContext(JMSContext.CLIENT_ACKNOWLEDGE);
+		javaadapter.setForShutdown(ctx);
 		System.out.println("Done");
 
 		XML[] jmslist = xml.getElements("queue");

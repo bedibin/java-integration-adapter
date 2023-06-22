@@ -277,26 +277,27 @@ class ServiceManagerUpdateSubscriber extends UpdateSubscriber
 		return sb.toString();
 	}
 
-	protected void add(UpdateDestInfo destinfo,XML xmloper) throws AdapterException
+	protected void add(XML xmloper) throws AdapterException
 	{
-		oper(xmloper.getParent().getAttribute("name"),destinfo,xmloper);
+		oper(xmloper.getParent().getAttribute("name"),xmloper);
 	}
 
-	protected void remove(UpdateDestInfo destinfo,XML xmloper) throws AdapterException
+	protected void remove(XML xmloper) throws AdapterException
 	{
-		oper(xmloper.getParent().getAttribute("name"),destinfo,xmloper);
+		oper(xmloper.getParent().getAttribute("name"),xmloper);
 	}
 
-	protected void update(UpdateDestInfo destinfo,XML xmloper) throws AdapterException
+	protected void update(XML xmloper) throws AdapterException
 	{
-		oper(xmloper.getParent().getAttribute("name"),destinfo,xmloper);
+		oper(xmloper.getParent().getAttribute("name"),xmloper);
 	}
 
-	protected void start(UpdateDestInfo destinfo,XML xmloper) throws AdapterException {}
-	protected void end(UpdateDestInfo destinfo,XML xmloper) throws AdapterException {}
+	protected void start(XML xmloper) throws AdapterException {}
+	protected void end(XML xmloper) throws AdapterException {}
 
-	protected void oper(String object,UpdateDestInfo destinfo,XML xmloper) throws AdapterException
+	protected void oper(String object,XML xmloper) throws AdapterException
 	{
+		UpdateDestInfo destinfo = getDestInfo();
 		XML publisher = new XML();
 		XML pub = publisher.add("publisher");
 		pub.setAttribute("name",object);
@@ -362,7 +363,7 @@ class ServiceManagerUpdateSubscriber extends UpdateSubscriber
 					else
 						remove.add(update);
 				}
-				if (doremove) oper(object,destinfo,xmlremove);
+				if (doremove) oper(object,xmlremove);
 			}
 			break;
 		default:

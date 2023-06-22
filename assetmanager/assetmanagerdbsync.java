@@ -325,25 +325,25 @@ class AssetManagerRestSubscriber extends UpdateSubscriber
 		return value;
 	}
 
-	protected void add(UpdateDestInfo destinfo,XML xmloper) throws AdapterException
+	protected void add(XML xmloper) throws AdapterException
 	{
-		oper("post",destinfo,xmloper);
+		oper("post",xmloper);
 	}
 
-	protected void remove(UpdateDestInfo destinfo,XML xmloper) throws AdapterException
+	protected void remove(XML xmloper) throws AdapterException
 	{
-		oper("delete",destinfo,xmloper);
+		oper("delete",xmloper);
 	}
 
-	protected void update(UpdateDestInfo destinfo,XML xmloper) throws AdapterException
+	protected void update(XML xmloper) throws AdapterException
 	{
-		oper("put",destinfo,xmloper);
+		oper("put",xmloper);
 	}
 
-	protected void start(UpdateDestInfo destinfo,XML xmloper) throws AdapterException {}
-	protected void end(UpdateDestInfo destinfo,XML xmloper) throws AdapterException {}
+	protected void start(XML xmloper) throws AdapterException {}
+	protected void end(XML xmloper) throws AdapterException {}
 
-	protected void oper(String httpoper,UpdateDestInfo destinfo,XML xmloper) throws AdapterException
+	protected void oper(String httpoper,XML xmloper) throws AdapterException
 	{
 		XML xml = javaadapter.getConfiguration().getElementByPath("/configuration/connection[@type='am']");
 		if (xml == null) throw new AdapterException("No connection element with type 'am' specified");
@@ -356,6 +356,7 @@ class AssetManagerRestSubscriber extends UpdateSubscriber
 		pub.setAttribute("type","http");
 		pub.setAttribute("content_type","application/json");
 
+		UpdateDestInfo destinfo = getDestInfo();
 		String table = destinfo.getTableName();
 		if (table == null) throw new AdapterException("dbsync: destination 'table' attribute required");
 
