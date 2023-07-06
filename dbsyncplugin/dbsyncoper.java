@@ -52,7 +52,6 @@ class DBSyncOper
 	public DBSyncOper() throws AdapterException
 	{
 		db = DB.getInstance();
-		update = new DatabaseUpdateSubscriber();
 	}
 
 	public String getName()
@@ -494,7 +493,11 @@ class DBSyncOper
 		final Comparator<String> collator = db.getCollator();
 		final Comparator<String> collator_ignore_case = db.getCollatorIgnoreCase();
 		xmloperlist = new ArrayList<>();
+
 		counter = new RateCounter();
+		String statcountstr = System.getProperty("javaadapter.sync.stat.count");
+		int statcount = statcountstr == null ? 0 : Integer.parseInt(statcountstr);
+		Date start = new Date();
 
 		if (Misc.isLog(2))
 		{
@@ -554,6 +557,12 @@ class DBSyncOper
 			if (javaadapter.isShuttingDown()) return;
 			if (tobreak) break;
 			counter.total++;
+			if (statcount != 0 && counter.total % statcount == 0)
+			{
+				Date end = new Date();
+				Misc.log("Compare: Count=" + counter.total + ", Add=" + counter.add + ", Update=" + counter.update + ", Remove=" + counter.remove + ", Time=" + (end.getTime() - start.getTime()) / 1000 + "s");
+				start = end;
+			}
 			Misc.clearTrace(traceid);
 
 			if ((row != null && tracekeys.contains(sourcekey)) || (rowdest != null && tracekeys.contains(destkey)))
@@ -913,6 +922,8 @@ class DBSyncOper
 
 						destinationsync = getSync(destinations[k],source,xmlsource);
 						if (destinationsync == null) continue;
+
+						update = new DatabaseUpdateSubscriber(destinationsync.getXML());
 						fields.setDefaultFields(destinationsync.getReader().getHeader(),Scope.SCOPE_DESTINATION);
 
 						XML[] fieldsxml = destinations[k].getElements("field");
@@ -999,6 +1010,7 @@ class DBSyncOper
 					destinationsync = getSync(destination,null,xmlsource);
 					if (destinationsync == null) continue;
 
+					update = new DatabaseUpdateSubscriber(destinationsync.getXML());
 					fields.setDefaultFields(destinationsync.getReader().getHeader(),Scope.SCOPE_DESTINATION);
 
 					if (iscache)

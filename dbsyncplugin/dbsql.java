@@ -335,6 +335,7 @@ class DBOper
 	protected String[] columnnames;
 	private int[] columntypes;
 	private DBConnection dbc;
+	private String sql;
 	private boolean totrim = true;
 	protected int resultcount = 0;
 	public static final Pattern replacementPattern = Pattern.compile("\\*@\\?@\\!");
@@ -363,6 +364,7 @@ class DBOper
 
 		if (Misc.isLog(5)) Misc.log("SQL query [" + dbc.getName() + "]: " + sql + implode(list));
 
+		this.sql = sql;
 		stmt = dbc.prepareStatement(sql);
 
 		int timeout = dbc.getQueryTimeout();
@@ -576,7 +578,11 @@ class DBOper
 
 				row.put(columnnames[i],totrim ? value.trim() : value);
 			}
-		} catch(IOException | SQLException ex) {
+		} catch(SQLException ex) {
+			// TODO: Handle "Could not continue scan with NOLOCK due to data movement"
+			Misc.log(1,"SQL error " + ex.getErrorCode() + " [" + dbc.getName() + "]: " + sql);
+			throw new AdapterDbException(ex);
+		} catch(IOException ex) {
 			throw new AdapterDbException(ex);
 		}
 

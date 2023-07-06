@@ -103,7 +103,8 @@ class XML
 	static final String LINE_NUMBER_KEY_NAME = "lineNumber";
 	Stack<Element> elementStack = new Stack<>();
 	StringBuilder textBuffer = new StringBuilder();
-	SAXParser parser;
+	static SAXParser parser;
+	static DocumentBuilder builder;
 	// See: https://www.w3.org/TR/xml/#charsets
 	private static Pattern xmlvaluepattern = Pattern.compile("[^\\x09\\x0a\\x0d\\x20-\\x7f\\xa0-\\uD7EF\\uE000-\\uFFFD]");
 
@@ -196,27 +197,46 @@ class XML
 		el.setAttributeNS("http://www.w3.org/2000/xmlns/","xmlns:" + prefix,url);
 	}
 
+	private synchronized static SAXParser getParser() throws AdapterXmlException
+	{
+		if (parser == null)
+		{
+			try {
+				SAXParserFactory factory = SAXParserFactory.newInstance();
+				//factory.setNamespaceAware(true);
+				parser = factory.newSAXParser();
+			} catch(ParserConfigurationException | SAXException ex) {
+				throw new AdapterXmlException(ex);
+			}
+		}
+		return parser;
+	}
+
+	private synchronized static Document getNewDocument() throws AdapterXmlException
+	{
+		if (builder == null)
+		{
+			try {
+				DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
+				builder = dbf.newDocumentBuilder();
+			} catch (ParserConfigurationException ex) {
+				throw new AdapterXmlException(ex);
+			}
+		}
+		return builder.newDocument();
+	}
 
 	public XML() throws AdapterXmlException
 	{
-		try {
-			SAXParserFactory factory = SAXParserFactory.newInstance();
-			//factory.setNamespaceAware(true);
-			parser = factory.newSAXParser();
-			DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
-			DocumentBuilder db = dbf.newDocumentBuilder();
-			dom = db.newDocument();
-			node = getRootNode();
-		} catch(ParserConfigurationException | SAXException ex) {
-			throw new AdapterXmlException(ex);
-		}
+		dom = getNewDocument();
+		node = getRootNode();
 	}
 
 	public XML(String filename) throws AdapterXmlException
 	{
-		this();
+		dom = getNewDocument();
 		try {
-			parser.parse(new File(javaadapter.getCurrentDir(),filename),handler);
+			getParser().parse(new File(javaadapter.getCurrentDir(),filename),handler);
 		} catch(IOException | SAXException ex) {
 			throw new AdapterXmlException(ex);
 		}
@@ -225,9 +245,9 @@ class XML
 
 	public XML(String filename,String root) throws AdapterXmlException
 	{
-		this();
+		dom = getNewDocument();
 		try {
-			parser.parse(new File(javaadapter.getCurrentDir(),filename),handler);
+			getParser().parse(new File(javaadapter.getCurrentDir(),filename),handler);
 		} catch(IOException | SAXException ex) {
 			throw new AdapterXmlException(ex);
 		}
@@ -243,11 +263,11 @@ class XML
 	{
 		// https://github.com/stleary/JSON-java
 		// https://search.maven.org/#search%7Cgav%7C1%7Cg%3A%22org.json%22%20AND%20a%3A%22json%22
-		this();
+		dom = getNewDocument();
 		String txt = org.json.XML.toString(json,"root");
 		try
 		{
-			parser.parse(new InputSource(new StringReader(txt)),handler);
+			getParser().parse(new InputSource(new StringReader(txt)),handler);
 		} catch(IOException | SAXException ex) {
 			Misc.rethrow(new AdapterXmlException(ex),"Invalid XML: " + txt);
 		}
@@ -256,11 +276,11 @@ class XML
 
 	public XML(StringBuffer sb) throws AdapterXmlException
 	{
-		this();
+		dom = getNewDocument();
 		String txt = sb.toString();
 		try
 		{
-			parser.parse(new InputSource(new StringReader(txt)),handler);
+			getParser().parse(new InputSource(new StringReader(txt)),handler);
 		} catch(IOException | SAXException ex) {
 			Misc.rethrow(new AdapterXmlException(ex),"Invalid XML: " + txt);
 		}
@@ -269,11 +289,11 @@ class XML
 
 	public XML(StringBuilder sb) throws AdapterXmlException
 	{
-		this();
+		dom = getNewDocument();
 		String txt = sb.toString();
 		try
 		{
-			parser.parse(new InputSource(new StringReader(txt)),handler);
+			getParser().parse(new InputSource(new StringReader(txt)),handler);
 		} catch(IOException | SAXException ex) {
 			Misc.rethrow(new AdapterXmlException(ex),"Invalid XML: " + txt);
 		}
@@ -282,10 +302,10 @@ class XML
 
 	public XML(StringBuilder sb,String root) throws AdapterXmlException
 	{
-		this();
+		dom = getNewDocument();
 		String txt = sb.toString();
 		try {
-			parser.parse(new InputSource(new StringReader(txt)),handler);
+			getParser().parse(new InputSource(new StringReader(txt)),handler);
 		} catch(IOException | SAXException ex) {
 			throw new AdapterXmlException(ex);
 		}

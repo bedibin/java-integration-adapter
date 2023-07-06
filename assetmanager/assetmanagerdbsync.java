@@ -293,8 +293,9 @@ class AMDB extends DB
 
 class AssetManagerUpdateSubscriber extends DatabaseUpdateSubscriber
 {
-	public AssetManagerUpdateSubscriber() throws AdapterException
+	public AssetManagerUpdateSubscriber(XML xml) throws AdapterException
 	{
+		super(xml);
 		db = AMDB.getInstance();
 		setQuoteField("");
 	}

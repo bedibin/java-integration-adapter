@@ -241,6 +241,11 @@ abstract class UpdateSubscriber extends Subscriber
 		if (!displayvalue.isEmpty()) keyvalue = displayvalue + "/" + keyvalue;
 	}
 
+	public void setDestInfo(XML xml) throws AdapterException
+	{
+		destinfo = new UpdateDestInfo(xml);
+	}
+
 	@Override
 	public XML run(XML xml) throws AdapterException
 	{
@@ -431,9 +436,10 @@ class DatabaseUpdateSubscriber extends UpdateSubscriber
 	protected DB db;
 	private String quotefield = "\"";
 
-	public DatabaseUpdateSubscriber() throws AdapterException
+	public DatabaseUpdateSubscriber(XML xml) throws AdapterException
 	{
 		db = DB.getInstance();
+		setDestInfo(xml);
 	}
 
 	public void setQuoteField(String field)
